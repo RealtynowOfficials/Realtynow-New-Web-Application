@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation, ScrollRestoration } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { queryClient } from './lib/queryClient';
@@ -12,6 +12,8 @@ import { ErrorBoundary } from './components/error-boundary';
 import { ToastProvider } from './components/toast';
 import { ScrollToTop } from './components/scroll-to-top';
 import type { UserRole } from './lib/types';
+import { LanguageProvider } from './lib/i18n/language-context';
+import { LocationProvider } from './contexts/location-context';
 
 const HomePage = lazy(() => import('./pages/public/home').then((m) => ({ default: m.HomePage })));
 const SearchPage = lazy(() => import('./pages/public/search').then((m) => ({ default: m.SearchPage })));
@@ -130,8 +132,25 @@ function PublicRoute() {
 }
 
 function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, signOut } = useAuth();
   const location = useLocation();
+
+  useEffect(() => {
+    if (profile?.role === 'admin') {
+      const loginTime = localStorage.getItem('adminSessionStart');
+      if (!loginTime) {
+        localStorage.setItem('adminSessionStart', Date.now().toString());
+      } else if (Date.now() - parseInt(loginTime, 10) > 3 * 60 * 60 * 1000) {
+        // 3 hours expired
+        signOut().then(() => {
+          localStorage.removeItem('adminSessionStart');
+          window.location.href = '/login?expired=true';
+        });
+      }
+    } else {
+      localStorage.removeItem('adminSessionStart');
+    }
+  }, [profile, signOut]);
   if (loading) return <PageLoader />;
   if (!user) return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   if (allowRoles && profile && !allowRoles.includes(profile.role)) {
@@ -147,8 +166,8 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   }
   return (
     <ErrorBoundary>
+      <ScrollRestoration />
       <Suspense fallback={<PageLoader />}>
-        <ScrollRestoration />
         <Outlet />
       </Suspense>
     </ErrorBoundary>
@@ -185,6 +204,7 @@ function AppRoutes() {
                 { path: '/compare', element: <ComparePage /> },
                 { path: '/ai-advisor', element: <AIHubPage /> },
                 { path: '/ai-property-advisor', element: <AIHubPage /> },
+                { path: '/ai_property_advisor', element: <AIHubPage /> },
                 { path: '/ai-hub', element: <AIHubPage /> },
                 { path: '/agents', element: <AgentsPage /> },
                 // Common aliases and redirects to prevent 404s
@@ -344,9 +364,6 @@ function AppRoutes() {
     />
   );
 }
-
-import { LanguageProvider } from './lib/i18n/language-context';
-import { LocationProvider } from './contexts/location-context';
 
 export default function App() {
   return (
