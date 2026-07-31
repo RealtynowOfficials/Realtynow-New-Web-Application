@@ -1,0 +1,863 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: routing.spec.ts >> Phase 2 - Routing & Navigation >> Public Search Page loads correctly
+- Location: e2e\routing.spec.ts:12:3
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+
+Locator: getByPlaceholder(/City, neighborhood/i)
+Expected: visible
+Timeout: 5000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for getByPlaceholder(/City, neighborhood/i)
+
+```
+
+```yaml
+- button "Select City":
+  - img
+  - text: Select City
+  - img
+- button "🌐 EN (English)":
+  - img
+  - text: 🌐 EN (English)
+- text: "Follow:"
+- link:
+  - /url: "#"
+  - img
+- link:
+  - /url: "#"
+  - img
+- link:
+  - /url: "#"
+  - img
+- link:
+  - /url: "#"
+  - img
+- link:
+  - /url: "#"
+  - img
+- banner:
+  - link "RealtyNow":
+    - /url: /
+    - img "RealtyNow"
+  - navigation:
+    - link "Buy":
+      - /url: /buy
+      - text: Buy
+      - img
+    - link "Rent":
+      - /url: /rent
+      - text: Rent
+      - img
+    - link "Commercial":
+      - /url: /commercial
+      - text: Commercial
+      - img
+    - link "Projects":
+      - /url: /projects
+      - text: Projects
+      - img
+    - link "Plots":
+      - /url: /plots
+      - text: Plots
+      - img
+    - link "AI Property Advisor":
+      - /url: /ai-property-advisor
+    - link "About Us":
+      - /url: /about-us
+  - button "Search":
+    - img
+  - link "Post Property FREE":
+    - /url: /portal/list-property
+    - button "Post Property FREE"
+  - button "Account & User Options":
+    - img
+- main:
+  - img
+  - textbox "City, locality, project or builder..."
+  - button "Voice Search":
+    - img
+  - text: 10 results
+  - img
+  - combobox:
+    - option "Newest First" [selected]
+    - 'option "Price: Low to High"'
+    - 'option "Price: High to Low"'
+    - 'option "Area: Low to High"'
+    - 'option "Area: High to Low"'
+    - option "AI Recommended"
+    - option "Most Viewed"
+    - option "Most Contacted"
+    - option "Featured First"
+  - button "List":
+    - img
+    - text: List
+  - button "Grid":
+    - img
+    - text: Grid
+  - button "Map":
+    - img
+    - text: Map
+  - complementary:
+    - img
+    - heading "Filters" [level=3]
+    - paragraph: Find your exact match
+    - button "Reset"
+    - heading "Category" [level=4]:
+      - text: Category
+      - img
+    - button "Buy"
+    - button "Rent"
+    - button "Commercial"
+    - button "Projects"
+    - button "Plots"
+    - heading "Location" [level=4]:
+      - text: Location
+      - img
+    - img
+    - combobox:
+      - option "All Cities" [selected]
+      - option "Ahmedabad"
+      - option "Bengaluru"
+      - option "Chennai"
+      - option "Delhi"
+      - option "Gurugram"
+      - option "Hyderabad"
+      - option "Kanyakuamri"
+      - option "Kolkata"
+      - option "Mumbai"
+      - option "Noida"
+      - option "Pune"
+    - heading "Budget" [level=4]:
+      - text: Budget
+      - img
+    - text: Min Price
+    - spinbutton "₹0"
+    - text: Max Price
+    - spinbutton "Any"
+    - heading "Bedrooms" [level=4]:
+      - text: Bedrooms
+      - img
+    - button "1"
+    - button "2"
+    - button "3"
+    - button "4"
+    - button "5+"
+    - heading "Area (Sq.ft)" [level=4]:
+      - text: Area (Sq.ft)
+      - img
+    - heading "Possession" [level=4]:
+      - text: Possession
+      - img
+    - heading "Amenities" [level=4]:
+      - text: Amenities
+      - img
+  - heading "Search Properties(10 results)" [level=1]
+  - article:
+    - img "Luxury 3BHK apartment for Rent"
+    - text: For Rent Featured
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - img
+    - text: "2"
+    - img
+    - text: AI 78%
+    - heading "Luxury 3BHK apartment for Rent" [level=2]
+    - img
+    - text: Hyderabad Jubiliee Hilss, Jubiliee Hills, Hyderabad Penthouse
+    - paragraph: ₹25K
+    - paragraph: ₹5/sq.ft
+    - paragraph: /month
+    - img
+    - text: 6 BHK
+    - img
+    - text: 5 Bath
+    - img
+    - text: 4 Park
+    - img
+    - text: 5,000 sq.ft
+    - img
+    - text: Floor 2/4
+    - img
+    - text: North-East 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km ✓ Car Parking ✓ Fire Safety 🛡️ Security 🛗 Lift ✓ Gated Society +6 more
+    - img
+    - text: Invest 93%
+    - img
+    - text: Rental Yield 2.7%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 1 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/30a6afea-3f6c-40f7-b291-8d5f0a3eac45
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "affsdsd"
+    - text: For Sale Featured Luxury
+    - button:
+      - img
+    - button:
+      - img
+    - img
+    - text: "1"
+    - img
+    - text: AI 99%
+    - heading "affsdsd" [level=2]
+    - img
+    - text: sdfsdf, Hyderabad Penthouse
+    - paragraph: ₹2.56 L
+    - img
+    - text: "-5 BHK"
+    - img
+    - text: 2 Park 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km
+    - img
+    - text: Invest 94%
+    - img
+    - text: Rental Yield 4.3%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 0
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/9298d4a4-8062-472c-85f6-cf2efd75e4b1
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Luxury 3BHK apartment"
+    - text: For Sale Featured Luxury
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - button
+    - button
+    - button
+    - img
+    - text: "6"
+    - img
+    - text: AI 87%
+    - heading "Luxury 3BHK apartment" [level=2]
+    - img
+    - text: kuaktpllaty, Hyderabad Residential Apartment
+    - paragraph: ₹15.00 L
+    - paragraph: ₹100/sq.ft
+    - img
+    - text: 5 BHK
+    - img
+    - text: 5 Bath
+    - img
+    - text: 4 Park
+    - img
+    - text: 15,000 sq.ft
+    - img
+    - text: Floor 3/3
+    - img
+    - text: North-East 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km ✓ Car Parking ✓ Fire Safety ✓ Intercom ⚡ Power Backup ✓ Visitor Parking +9 more
+    - img
+    - text: Invest 76%
+    - img
+    - text: Rental Yield 3.3%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/28/2026 ·
+    - img
+    - text: 7 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/9cd832cb-60ce-4630-98bf-c7dc149599ae
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "luxury 5 bhk villa"
+    - text: For Sale Featured Luxury
+    - button:
+      - img
+    - button:
+      - img
+    - img
+    - text: "1"
+    - img
+    - text: AI 93%
+    - heading "luxury 5 bhk villa" [level=2]
+    - img
+    - text: Gachibowli, Cybercity, Hyderabad Luxury Villa
+    - paragraph: ₹8.00 Cr
+    - paragraph: ₹26,667/sq.ft
+    - img
+    - text: 5 BHK
+    - img
+    - text: 6 Bath
+    - img
+    - text: 5 Park
+    - img
+    - text: 3,000 sq.ft
+    - img
+    - text: Floor 2/2
+    - img
+    - text: North-East 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km ✓ Car Parking ✓ CCTV ✓ Children Play Area ✓ Gated Society ✓ Fire Safety +10 more
+    - img
+    - text: Invest 64%
+    - img
+    - text: Rental Yield 3.0%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 12 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/49dc7e80-610d-4153-bf1d-63a185258ae2
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Modern 2BHK in Koramangala"
+    - text: For Sale Featured
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - img
+    - text: "2"
+    - img
+    - text: AI 93%
+    - heading "Modern 2BHK in Koramangala" [level=2]
+    - img
+    - text: 5th Block, Koramangala, Bengaluru, Koramangala, Bengaluru Residential Apartment
+    - paragraph: ₹95.00 L
+    - paragraph: ₹8,636/sq.ft
+    - img
+    - text: 2 BHK
+    - img
+    - text: 2 Bath
+    - img
+    - text: 1 Park
+    - img
+    - text: 1,100 sq.ft
+    - img
+    - text: Floor 3/7 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km 💪 Gym 🛗 Lift 🛡️ Security ✓ CCTV ✓ Car Parking
+    - img
+    - text: Invest 61%
+    - img
+    - text: Rental Yield 4.1%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 8 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/a1111111-0000-0000-0000-000000000002
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Spacious 3BHK Apartment for Rent in Baner"
+    - text: For Rent
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - img
+    - text: "2"
+    - img
+    - text: AI 99%
+    - heading "Spacious 3BHK Apartment for Rent in Baner" [level=2]
+    - img
+    - text: Baner Road, Pune, Baner, Pune Residential Apartment
+    - paragraph: ₹5.40 L
+    - paragraph: ₹360/sq.ft
+    - paragraph: /month
+    - img
+    - text: 3 BHK
+    - img
+    - text: 3 Bath
+    - img
+    - text: 2 Park
+    - img
+    - text: 1,500 sq.ft
+    - img
+    - text: Floor 4/11 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km 🏊 Swimming Pool 💪 Gym 🛡️ Security ⚡ Power Backup 🛗 Lift +1 more
+    - img
+    - text: Invest 93%
+    - img
+    - text: Rental Yield 3.6%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 10 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/a1111111-0000-0000-0000-000000000003
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Luxury 3BHK Sea-View Apartment in Worli"
+    - text: For Sale Featured Luxury
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - img
+    - text: "2"
+    - img
+    - text: AI 96%
+    - heading "Luxury 3BHK Sea-View Apartment in Worli" [level=2]
+    - img
+    - text: Sea Face Road, Worli, Mumbai, Worli, Mumbai Residential Apartment
+    - paragraph: ₹6.50 Cr
+    - paragraph: ₹44,828/sq.ft
+    - img
+    - text: 3 BHK
+    - img
+    - text: 3 Bath
+    - img
+    - text: 2 Park
+    - img
+    - text: 1,450 sq.ft
+    - img
+    - text: Floor 12/22 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km 🏊 Swimming Pool 💪 Gym ✓ CCTV ⚡ Power Backup 🛗 Lift +2 more
+    - img
+    - text: Invest 86%
+    - img
+    - text: Rental Yield 3.8%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 12 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/a1111111-0000-0000-0000-000000000001
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Ultra-Luxury Penthouse in Cyber City Gurugram"
+    - text: For Sale Featured Luxury
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - img
+    - text: "2"
+    - img
+    - text: AI 88%
+    - heading "Ultra-Luxury Penthouse in Cyber City Gurugram" [level=2]
+    - img
+    - text: Cyber City, Gurugram, Cyber City, Gurugram Penthouse
+    - paragraph: ₹8.50 Cr
+    - paragraph: ₹26,563/sq.ft
+    - img
+    - text: 4 BHK
+    - img
+    - text: 4 Bath
+    - img
+    - text: 3 Park
+    - img
+    - text: 3,200 sq.ft
+    - img
+    - text: Floor 21/21 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km 🏊 Swimming Pool 💪 Gym ✓ CCTV ⚡ Power Backup 🛗 Lift +3 more
+    - img
+    - text: Invest 73%
+    - img
+    - text: Rental Yield 4.2%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 4 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/a1111111-0000-0000-0000-000000000004
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Grade-A Commercial Office Space in Cyber City"
+    - text: For Sale
+    - button:
+      - img
+    - button:
+      - img
+    - button
+    - button
+    - img
+    - text: "2"
+    - img
+    - text: AI 89%
+    - heading "Grade-A Commercial Office Space in Cyber City" [level=2]
+    - img
+    - text: Cyber City, Gurugram, Cyber City, Gurugram Office Space
+    - paragraph: ₹26.40 L
+    - paragraph: ₹528/sq.ft
+    - img
+    - text: 0 BHK
+    - img
+    - text: 4 Bath
+    - img
+    - text: 40 Park
+    - img
+    - text: 5,000 sq.ft 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km ⚡ Power Backup 🛗 Lift 🛡️ Security ✓ CCTV ✓ Fire Safety +1 more
+    - img
+    - text: Invest 72%
+    - img
+    - text: Rental Yield 3.9%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 1 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/a1111111-0000-0000-0000-000000000005
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - article:
+    - img "Prime Corner Residential Plot in Baner"
+    - text: For Sale
+    - button:
+      - img
+    - button:
+      - img
+    - img
+    - text: "1"
+    - img
+    - text: AI 98%
+    - heading "Prime Corner Residential Plot in Baner" [level=2]
+    - img
+    - text: Baner, Pune, Baner, Pune Residential Land
+    - paragraph: ₹60.00 L
+    - img
+    - text: 0 BHK
+    - img
+    - text: 0 Bath
+    - img
+    - text: 0 Park 🚇 Metro 800m 🏫 School 500m 🏥 Hospital 1.2km ✓ Gated Society 🛡️ Security ✓ CCTV
+    - img
+    - text: Invest 93%
+    - img
+    - text: Rental Yield 3.4%
+    - img
+    - text: High Demand
+    - img
+    - text: Updated 7/27/2026 ·
+    - img
+    - text: 1 views
+    - button "Contact Agent":
+      - img
+      - text: Contact Agent
+    - button "WhatsApp":
+      - img
+      - text: WhatsApp
+    - button "Book a Visit":
+      - img
+      - text: Book a Visit
+    - link "View Details":
+      - /url: /property/a1111111-0000-0000-0000-000000000006
+      - img
+      - text: View Details
+    - button "Add to Compare":
+      - img
+    - button "Save Property":
+      - img
+  - complementary:
+    - text: Sponsored
+    - img "sdfsdf"
+    - heading "sdfsdf" [level=4]
+    - paragraph: sdfsdfsdf
+    - text: Learn More
+    - img
+    - heading "Sell or rent faster at the right price!" [level=2]
+    - link "Post Property, It's FREE":
+      - /url: /portal/list-property
+      - button "Post Property, It's FREE"
+- contentinfo:
+  - link "RealtyNow":
+    - /url: /
+    - img "RealtyNow"
+  - paragraph: India's AI-powered real estate marketplace. Find, compare, and buy properties with intelligent recommendations, price predictions, and verified listings.
+  - paragraph:
+    - img
+    - text: "#19, Road No. 2B, Chandrapuri Colony, LB Nagar, Hyderabad 500081, Telangana"
+  - paragraph:
+    - img
+    - link "+91 94942 30774":
+      - /url: tel:+919494230774
+  - paragraph:
+    - img
+    - link "info@realtynow.in":
+      - /url: mailto:info@realtynow.in
+  - link:
+    - /url: "#"
+    - img
+  - link:
+    - /url: "#"
+    - img
+  - link:
+    - /url: "#"
+    - img
+  - link:
+    - /url: "#"
+    - img
+  - link:
+    - /url: "#"
+    - img
+  - paragraph: Popular Searches
+  - list:
+    - listitem:
+      - link "Flats for Sale":
+        - /url: /search?purpose=Sale
+    - listitem:
+      - link "Flats for Rent":
+        - /url: /search?purpose=Rent
+    - listitem:
+      - link "Luxury Villas":
+        - /url: /search?type=Villa
+    - listitem:
+      - link "Commercial Properties":
+        - /url: /commercial
+    - listitem:
+      - link "Plots & Land":
+        - /url: /search?type=Plots
+  - paragraph: Top Cities
+  - list:
+    - listitem:
+      - link "Properties in Hyderabad":
+        - /url: /search?q=Hyderabad
+    - listitem:
+      - link "Properties in Mumbai":
+        - /url: /search?q=Mumbai
+    - listitem:
+      - link "Properties in Bengaluru":
+        - /url: /search?q=Bengaluru
+    - listitem:
+      - link "Properties in Pune":
+        - /url: /search?q=Pune
+    - listitem:
+      - link "Properties in Delhi NCR":
+        - /url: /search?q=Delhi
+  - paragraph: Company
+  - list:
+    - listitem:
+      - link "About Us":
+        - /url: /about
+    - listitem:
+      - link "Blogs":
+        - /url: /blogs
+    - listitem:
+      - link "Contact Us":
+        - /url: /contact
+    - listitem:
+      - link "Terms of Service":
+        - /url: /terms
+    - listitem:
+      - link "Privacy Policy":
+        - /url: /privacy
+  - paragraph: © 2026 RealtyNow Technologies Pvt. Ltd. All rights reserved.
+  - paragraph: Made with ❤️ for Indian Real Estate
+- link "Chat on WhatsApp":
+  - /url: https://wa.me/919494230774
+  - img
+- button "AI Assistant":
+  - img
+  - text: AI Assistant
+```
+
+# Test source
+
+```ts
+  1  | import { test, expect } from '@playwright/test';
+  2  | 
+  3  | test.describe('Phase 2 - Routing & Navigation', () => {
+  4  |   test('HomePage loads correctly without 404', async ({ page }) => {
+  5  |     const response = await page.goto('/');
+  6  |     expect(response?.status()).toBe(200);
+  7  |     await expect(page).toHaveTitle(/RealtyNow/i);
+  8  |     // Ensure no broken UI
+  9  |     await expect(page.locator('body')).not.toContainText('404 Not Found');
+  10 |   });
+  11 | 
+  12 |   test('Public Search Page loads correctly', async ({ page }) => {
+  13 |     const response = await page.goto('/search');
+  14 |     expect(response?.status()).toBe(200);
+> 15 |     await expect(page.getByPlaceholder(/City, neighborhood/i)).toBeVisible();
+     |                                                                ^ Error: expect(locator).toBeVisible() failed
+  16 |   });
+  17 | 
+  18 |   test('Public AI Hub loads correctly', async ({ page }) => {
+  19 |     const response = await page.goto('/ai-hub');
+  20 |     expect(response?.status()).toBe(200);
+  21 |     await expect(page.getByText(/AI Property Assistant/i).first()).toBeVisible();
+  22 |   });
+  23 | 
+  24 |   test('Static Pages load correctly', async ({ page }) => {
+  25 |     await page.goto('/about');
+  26 |     await expect(page.getByText(/About RealtyNow/i).first()).toBeVisible();
+  27 | 
+  28 |     await page.goto('/contact');
+  29 |     await expect(page.getByText(/Contact Us/i).first()).toBeVisible();
+  30 | 
+  31 |     await page.goto('/faq');
+  32 |     await expect(page.getByText(/Frequently Asked Questions/i).first()).toBeVisible();
+  33 |   });
+  34 | 
+  35 |   test('Invalid routes correctly show 404 Page', async ({ page }) => {
+  36 |     const response = await page.goto('/this-route-does-not-exist');
+  37 |     // For SPAs, Vite usually returns 200, but the UI should show 404
+  38 |     await expect(page.getByText(/Page not found/i).first()).toBeVisible();
+  39 |     await expect(page.getByRole('link', { name: /Go Back Home/i })).toBeVisible();
+  40 |   });
+  41 | 
+  42 |   test('Protected routes redirect unauthorized users to login', async ({ page }) => {
+  43 |     await page.goto('/portal/dashboard');
+  44 |     // Should be redirected or show unauthorized
+  45 |     await expect(page).toHaveURL(/.*login.*/);
+  46 |   });
+  47 | });
+  48 | 
+```

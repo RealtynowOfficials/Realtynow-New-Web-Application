@@ -1,0 +1,1262 @@
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { Check, X, Eye, Send, FileText, Search, Download } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { queryClient } from '../../lib/queryClient';
+import { getAdminSections } from '../portal/sections';
+import { useLanguageContext } from '../../lib/i18n/language-context';
+import { Card, Button, Modal, Badge, Input, Textarea, EmptyState, Select } from '../../components/ui';
+import { StatusBadge } from '../../components/property-card';
+import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
+import { updatePropertyStatus } from '../../lib/properties';
+import { mapJoined } from '../../lib/join-helpers';
+import { formatPrice, formatDate, cn, exportToCsv } from '../../lib/utils';
+import { useRealtimeCount } from '../../lib/realtime';
+import { useToast } from '../../components/toast';
+import type { Property } from '../../lib/types';
+
+interface PendingProperty extends Property {
+  owner?: { first_name: string | null; last_name: string | null; email: string } | null;
+}
+
+function PropertyReviewCard({ property, onReview }: { property: PendingProperty; onReview: () => void }) {
+  return (
+    <Card className="p-4">
+      <div className="flex gap-3">
+        <img
+          src={property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+          alt=""
+          className="h-20 w-28 shrink-0 rounded-lg object-cover"
+        />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-semibold text-navy-900 line-clamp-1">{property.title}</p>
+            <StatusBadge status={property.status} />
+          </div>
+          <p className="text-xs text-navy-500">
+            {property.locality_name}, {property.city_name}
+          </p>
+          <p className="mt-1 font-semibold text-navy-900">{formatPrice(property.price, property.purpose)}</p>
+          <p className="text-xs text-navy-400 mt-1">
+            by {property.owner?.email ?? 'Unknown'} · {formatDate(property.created_at)}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" onClick={onReview}>
+          Review
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          icon={<Check className="h-4 w-4" />}
+          onClick={() => updatePropertyStatus(property.id, 'approved').then(() => {
+            queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+          })}
+        >
+          Quick approve
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+export function AdminApprovals() {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<PendingProperty | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const [showRequestChanges, setShowRequestChanges] = useState(false);
+  const [rejectError, setRejectError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-approvals'],
+    queryFn: async () => {
+      // Use admin RPC to bypass RLS entirely
+      const { data: allProps, error } = await supabase.rpc('admin_get_properties');
+
+      if (error) {
+        console.error('admin_get_properties RPC Error:', error);
+        throw error;
+      }
+
+      const nonPublished = ['submitted', 'pending_verification', 'changes_requested', 'approved', 'rejected'];
+      const properties = (allProps ?? [])
+        .filter((p: any) => nonPublished.includes(p.status))
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      console.log('✅ admin_get_properties total:', allProps?.length, 'filtered:', properties.length);
+
+      const ownerIds = [...new Set(properties.map((p: any) => p.owner_id))].filter(Boolean);
+
+      let profilesMap: Record<string, any> = {};
+      if (ownerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email, phone')
+          .in('id', ownerIds);
+
+        if (profiles) {
+          profilesMap = profiles.reduce(
+            (acc, profile) => {
+              acc[profile.id] = profile;
+              return acc;
+            },
+            {} as Record<string, any>,
+          );
+        }
+      }
+
+      return properties.map((p: any) => {
+        const mapped = mapJoined(p as unknown as Record<string, unknown>);
+        const owner = profilesMap[p.owner_id] || null;
+        return { ...mapped, owner } as unknown as PendingProperty;
+      });
+    },
+  });
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-approvals-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, status, reason }: { id: string; status: string; reason?: string }) => {
+      await updatePropertyStatus(id, status as Property['status'], reason);
+      if (['published', 'approved', 'rejected', 'changes_requested'].includes(status)) {
+        const property = data?.find((p: any) => p.id === id);
+        if (property?.owner?.email) {
+          await supabase.from('notifications').insert({
+            user_id: property.owner_id,
+            type: 'property_status',
+            title: `Property ${status}`,
+            body: `Your property "${property.title}" status is now ${status}.${reason ? ` Reason: ${reason}` : ''}`,
+            link: `/property/${id}`,
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      setSelected(null);
+      setShowReject(false);
+      setShowRequestChanges(false);
+      setRejectionReason('');
+      setRejectError('');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('properties').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+  });
+
+  const columns: Column<PendingProperty>[] = [
+    {
+      key: 'id',
+      header: 'ID',
+      render: (p) => <span className="font-mono text-xs text-navy-500">{p.id.slice(0, 8)}</span>,
+    },
+    {
+      key: 'title',
+      header: 'Property',
+      sortable: true,
+      render: (p) => (
+        <div className="flex items-center gap-3">
+          <img
+            src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            alt=""
+            className="h-10 w-14 rounded object-cover"
+          />
+          <div>
+            <Link to={`/property/${p.id}`} className="font-medium text-navy-900 hover:underline line-clamp-1">
+              {p.title}
+            </Link>
+            <p className="text-xs text-navy-500">{p.property_type_name}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'customer',
+      header: 'Customer',
+      render: (p) => (
+        <div>
+          <p className="font-medium text-navy-900">
+            {p.owner?.first_name || 'Owner'} {p.owner?.last_name || ''}
+          </p>
+          <p className="text-xs text-navy-500">{p.owner?.email || p.owner_id.slice(0, 8)}</p>
+        </div>
+      ),
+    },
+    { key: 'city', header: 'City', render: (p) => p.city_name || '—' },
+    {
+      key: 'price',
+      header: 'Price',
+      sortable: true,
+      render: (p) => <span className="font-semibold">{formatPrice(p.price, p.purpose)}</span>,
+    },
+    { key: 'purpose', header: 'Listing Type', render: (p) => <Badge variant="default">{p.purpose}</Badge> },
+    { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
+    { key: 'created_at', header: 'Submitted Date', sortable: true, render: (p) => formatDate(p.created_at) },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (p) => (
+        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="secondary" onClick={() => setSelected(p)}>
+            View
+          </Button>
+          {p.status !== 'approved' && p.status !== 'published' ? (
+            <button
+              onClick={() => statusMutation.mutate({ id: p.id, status: 'approved' })}
+              disabled={statusMutation.isPending}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all disabled:opacity-50"
+            >
+              <Check className="h-3.5 w-3.5" /> Approve
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm">
+              <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" /> Approved
+            </span>
+          )}
+          {p.status !== 'rejected' && (
+            <Button
+              size="sm"
+              variant="danger"
+              icon={<X className="h-3.5 w-3.5" />}
+              onClick={() => {
+                setSelected(p);
+                setShowReject(true);
+              }}
+            >
+              Reject
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-error-600 hover:bg-error-50"
+            onClick={() => {
+              if (confirm('Delete this property permanently?')) deleteMutation.mutate(p.id);
+            }}
+            icon={<X className="h-3.5 w-3.5" />}
+            title="Delete"
+          />
+        </div>
+      ),
+    },
+  ];
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:approvals', 'Approvals')}>
+      <PageHeader
+        title="Property approvals"
+        subtitle="Review and approve submitted properties, then publish to the portal."
+      />
+
+      <div className="mb-6">
+        <DataTable
+          columns={columns}
+          rows={data ?? []}
+          loading={isLoading}
+          getRowId={(p) => p.id}
+          pageSize={10}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((s) => {
+              const n = new Set(s);
+              n.has(id) ? n.delete(id) : n.add(id);
+              return n;
+            })
+          }
+          onSelectAll={(ids) =>
+            setSelectedIds((s) => {
+              const n = new Set(s);
+              ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
+              return n;
+            })
+          }
+          cardRender={(p) => (
+            <Card className="p-4 flex flex-col justify-between h-full hover:shadow-md transition-shadow">
+              <div>
+                <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-navy-100">
+                  <img
+                    src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute top-2 right-2">
+                    <StatusBadge status={p.status} />
+                  </div>
+                </div>
+                <h4 className="font-bold text-navy-900 text-base line-clamp-1">{p.title}</h4>
+                <p className="text-xs text-navy-500 mt-0.5">
+                  {p.locality_name ?? '—'}, {p.city_name ?? '—'}
+                </p>
+                <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(p.price, p.purpose)}</p>
+                <p className="text-xs text-navy-400 mt-1">Owner: {p.owner?.email ?? 'Unknown'}</p>
+                <p className="text-xs text-navy-400">Date: {formatDate(p.created_at)}</p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-navy-100 flex items-center justify-between gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setSelected(p)}>
+                  View
+                </Button>
+                <div className="flex gap-1.5">
+                  {p.status === 'approved' ? (
+                    <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                      ✓ Approved
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => statusMutation.mutate({ id: p.id, status: 'approved' })}
+                      disabled={statusMutation.isPending}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Approve
+                    </button>
+                  )}
+                  {p.status !== 'rejected' && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      icon={<X className="h-3.5 w-3.5" />}
+                      onClick={() => {
+                        setSelected(p);
+                        setShowReject(true);
+                      }}
+                    >
+                      Reject
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+        />
+      </div>
+
+      {/* Review Modal */}
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        title="Review property details"
+        size="lg"
+        footer={
+          selected && (
+            <div className="flex flex-wrap gap-2">
+              {selected.status === 'approved' ? (
+                <Button
+                  variant="gold"
+                  icon={<Send className="h-4 w-4" />}
+                  onClick={() => statusMutation.mutate({ id: selected.id, status: 'published' })}
+                  loading={statusMutation.isPending}
+                >
+                  Publish (Go live)
+                </Button>
+              ) : (
+                <button
+                  onClick={() => statusMutation.mutate({ id: selected.id, status: 'approved' })}
+                  disabled={statusMutation.isPending}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all disabled:opacity-50"
+                >
+                  <Check className="h-4 w-4" /> Approve
+                </button>
+              )}
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRejectError('');
+                  setShowRequestChanges(true);
+                }}
+              >
+                Request Changes
+              </Button>
+              <Button
+                variant="danger"
+                icon={<X className="h-4 w-4" />}
+                onClick={() => {
+                  setRejectError('');
+                  setShowReject(true);
+                }}
+              >
+                Reject
+              </Button>
+              <Link to={`/property/${selected.id}`} target="_blank">
+                <Button variant="secondary" icon={<Eye className="h-4 w-4" />}>
+                  Open Listing
+                </Button>
+              </Link>
+            </div>
+          )
+        }
+      >
+        {selected && (
+          <div className="max-h-[70vh] overflow-y-auto pr-2">
+            {selected.images?.[0] && (
+              <img src={selected.images[0]} alt="" className="mb-4 aspect-video w-full rounded-lg object-cover" />
+            )}
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 font-display text-lg font-bold text-navy-900">Basic Information</h3>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    <span className="text-navy-500">Title:</span> <span className="font-medium">{selected.title}</span>
+                  </p>
+                  <p>
+                    <span className="text-navy-500">Property Type:</span>{' '}
+                    <span className="font-medium">{selected.property_type_name}</span>
+                  </p>
+                  <p>
+                    <span className="text-navy-500">Listing Type:</span>{' '}
+                    <span className="font-medium">{selected.purpose}</span>
+                  </p>
+                  <p>
+                    <span className="text-navy-500">Price:</span>{' '}
+                    <span className="font-medium text-navy-900">{formatPrice(selected.price, selected.purpose)}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-2 font-display text-lg font-bold text-navy-900">Customer Details</h3>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    <span className="text-navy-500">Name:</span>{' '}
+                    <span className="font-medium">
+                      {selected.owner?.first_name} {selected.owner?.last_name}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-navy-500">Email:</span>{' '}
+                    <span className="font-medium">{selected.owner?.email}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="md:col-span-2">
+                <h3 className="mb-2 font-display text-lg font-bold text-navy-900">Location</h3>
+                <p className="text-sm text-navy-800">{selected.address}</p>
+                <p className="text-sm text-navy-600">
+                  {selected.locality_name}, {selected.city_name}
+                </p>
+              </div>
+
+              <div className="md:col-span-2">
+                <h3 className="mb-2 font-display text-lg font-bold text-navy-900">Specifications</h3>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  {selected.bedrooms != null && (
+                    <div>
+                      <p className="text-navy-400">Bedrooms</p>
+                      <p className="font-medium">{selected.bedrooms}</p>
+                    </div>
+                  )}
+                  {selected.bathrooms != null && (
+                    <div>
+                      <p className="text-navy-400">Bathrooms</p>
+                      <p className="font-medium">{selected.bathrooms}</p>
+                    </div>
+                  )}
+                  {selected.built_up_area != null && (
+                    <div>
+                      <p className="text-navy-400">Area</p>
+                      <p className="font-medium">{selected.built_up_area} sqft</p>
+                    </div>
+                  )}
+                  {selected.facing != null && (
+                    <div>
+                      <p className="text-navy-400">Facing</p>
+                      <p className="font-medium">{selected.facing}</p>
+                    </div>
+                  )}
+                  {selected.furnishing != null && (
+                    <div>
+                      <p className="text-navy-400">Furnishing</p>
+                      <p className="font-medium">{selected.furnishing}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {selected.amenities && selected.amenities.length > 0 && (
+                <div className="md:col-span-2">
+                  <h3 className="mb-2 font-display text-lg font-bold text-navy-900">Amenities</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selected.amenities.map((a: string) => (
+                      <Badge key={a} variant="default">
+                        {a}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selected.description && (
+                <div className="md:col-span-2">
+                  <h3 className="mb-2 font-display text-lg font-bold text-navy-900">Description</h3>
+                  <p className="text-sm text-navy-700 whitespace-pre-line">{selected.description}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Reject reason modal */}
+      <Modal
+        open={showReject}
+        onClose={() => {
+          setShowReject(false);
+          setRejectError('');
+        }}
+        title="Reject property"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowReject(false);
+                setRejectError('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (!rejectionReason.trim()) {
+                  setRejectError('Rejection reason is required');
+                  return;
+                }
+                setRejectError('');
+                selected && statusMutation.mutate({ id: selected.id, status: 'rejected', reason: rejectionReason });
+              }}
+              loading={statusMutation.isPending}
+            >
+              Confirm reject
+            </Button>
+          </>
+        }
+      >
+        <Textarea
+          label="Reason for rejection"
+          value={rejectionReason}
+          onChange={(e) => setRejectionReason(e.target.value)}
+          placeholder="e.g. Missing ownership documents, images unclear..."
+          error={rejectError}
+        />
+      </Modal>
+
+      {/* Request Changes modal */}
+      <Modal
+        open={showRequestChanges}
+        onClose={() => {
+          setShowRequestChanges(false);
+          setRejectError('');
+        }}
+        title="Request Changes"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowRequestChanges(false);
+                setRejectError('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (!rejectionReason.trim()) {
+                  setRejectError('Comments are required');
+                  return;
+                }
+                setRejectError('');
+                selected &&
+                  statusMutation.mutate({ id: selected.id, status: 'changes_requested', reason: rejectionReason });
+              }}
+              loading={statusMutation.isPending}
+            >
+              Send to Customer
+            </Button>
+          </>
+        }
+      >
+        <Textarea
+          label="Comments for customer"
+          value={rejectionReason}
+          onChange={(e) => setRejectionReason(e.target.value)}
+          placeholder="e.g. Please upload a clearer image of the front facade..."
+          error={rejectError}
+        />
+      </Modal>
+    </DashboardLayout>
+  );
+}
+
+export function AdminProperties() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [tab, setTab] = useState('all');
+  const [search, setSearch] = useState('');
+  const [toDelete, setToDelete] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<PendingProperty | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    price: '',
+    purpose: 'Sale',
+    city_id: '',
+    locality_id: '',
+    property_type_id: '',
+    status: 'draft',
+  });
+  const [filters, setFilters] = useState({
+    city: '',
+    minPrice: '',
+    maxPrice: '',
+    purpose: '',
+    type: '',
+    dateFrom: '',
+    dateTo: '',
+  });
+  const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
+  const [propertyTypes, setPropertyTypes] = useState<{ id: string; name: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const realtimeTick = useRealtimeCount('properties');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-properties', tab, search, filters, realtimeTick],
+    queryFn: async () => {
+      const { data: citiesData } = await supabase.from('cities').select('id, name').order('name');
+      const { data: typesData } = await supabase.from('property_types').select('id, name').order('name');
+      setCities(citiesData ?? []);
+      setPropertyTypes(typesData ?? []);
+      let q = supabase
+        .from('v_properties_search')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (tab !== 'all') {
+        if (tab === 'pending') q = q.in('status', ['submitted', 'pending_verification']);
+        else if (tab === 'published' || tab === 'approved') q = q.in('status', ['published', 'approved']);
+        else q = q.eq('status', tab);
+      }
+      if (search) {
+        const isNumeric = !isNaN(Number(search)) && search.trim() !== '';
+        if (isNumeric) {
+          q = q.or(`search_text.ilike.%${search}%,price.eq.${search},rent_amount.eq.${search}`);
+        } else {
+          q = q.ilike('search_text', `%${search}%`);
+        }
+      }
+      if (filters.city) q = q.eq('city_id', filters.city);
+      if (filters.minPrice) q = q.gte('price', Number(filters.minPrice));
+      if (filters.maxPrice) q = q.lte('price', Number(filters.maxPrice));
+      if (filters.purpose) q = q.eq('purpose', filters.purpose);
+      if (filters.type) q = q.eq('property_type_id', filters.type);
+      if (filters.dateFrom) q = q.gte('created_at', filters.dateFrom);
+      if (filters.dateTo) q = q.lte('created_at', `${filters.dateTo}T23:59:59Z`);
+
+      const queryRes = await q;
+      let data = queryRes.data;
+      const error = queryRes.error;
+
+      if (error) {
+        console.warn('Supabase Query Warning, falling back to raw select:', error);
+        const rawRes = await supabase.from('v_properties_search').select('*').order('created_at', { ascending: false });
+        data = rawRes.data;
+      }
+
+      const properties = data ?? [];
+      const ownerIds = [...new Set(properties.map((p) => p.owner_id))].filter(Boolean);
+
+      let profilesMap: Record<string, any> = {};
+      if (ownerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, email, first_name, last_name')
+          .in('id', ownerIds);
+
+        if (profiles) {
+          profilesMap = profiles.reduce(
+            (acc, profile) => {
+              acc[profile.id] = profile;
+              return acc;
+            },
+            {} as Record<string, any>,
+          );
+        }
+      }
+
+      return properties.map((p) => {
+        const owner = profilesMap[p.owner_id] || null;
+        // The view already returns flattened fields like city_name, so we don't need mapJoined here
+        return { ...p, owner } as unknown as PendingProperty;
+      });
+    },
+  });
+
+  const seedSampleProperties = async () => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id || '00000000-0000-0000-0000-000000000001';
+
+      const samples = [
+        {
+          title: 'DLF The Camellias Luxury Penthouse',
+          description:
+            'Ultra-luxurious 4 BHK penthouse with Golf Course views, private elevator, and smart automation.',
+          purpose: 'Buy',
+          price: 35000000,
+          area_sqft: 4200,
+          bedrooms: 4,
+          bathrooms: 5,
+          address: 'Golf Course Road, Sector 42',
+          status: 'published',
+          is_featured: true,
+          owner_id: userId,
+          images: ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'],
+        },
+        {
+          title: 'Prestige Lakeside Habitat Villa',
+          description: 'Contemporary 3 BHK independent villa with private garden, swimming pool, and solar power.',
+          purpose: 'Buy',
+          price: 28000000,
+          area_sqft: 3100,
+          bedrooms: 3,
+          bathrooms: 4,
+          address: 'Varthur Main Road, Whitefield',
+          status: 'published',
+          is_featured: true,
+          owner_id: userId,
+          images: ['https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg'],
+        },
+        {
+          title: 'Cyber Towers Grade-A Office Space',
+          description:
+            'Fully furnished commercial office space with 120 workstations, 4 conference rooms, and 100% power backup.',
+          purpose: 'Commercial',
+          price: 180000,
+          area_sqft: 5500,
+          bedrooms: 0,
+          bathrooms: 4,
+          address: 'Hitec City, Madhapur',
+          status: 'published',
+          is_featured: false,
+          owner_id: userId,
+          images: ['https://images.pexels.com/photos/269077/pexels-photo-269077.jpeg'],
+        },
+      ];
+
+      const { error } = await supabase.from('properties').insert(samples);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+      toast.addToast('success', 'Restored demo properties successfully!');
+    } catch (err) {
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to seed properties');
+    }
+  };
+
+  const columns: Column<PendingProperty>[] = [
+    {
+      key: 'title',
+      header: 'Property',
+      sortable: true,
+      render: (p) => (
+        <div className="flex items-center gap-3">
+          <img
+            src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            alt=""
+            className="h-10 w-14 rounded object-cover"
+          />
+          <div>
+            <Link to={`/property/${p.id}`} className="font-medium text-navy-900 hover:underline line-clamp-1">
+              {p.title}
+            </Link>
+            <p className="text-xs text-navy-500">
+              {p.locality_name}, {p.city_name}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'price',
+      header: 'Price',
+      sortable: true,
+      render: (p) => <span className="font-semibold">{formatPrice(p.price, p.purpose)}</span>,
+    },
+    { key: 'purpose', header: 'Purpose', render: (p) => <Badge variant="default">{p.purpose}</Badge> },
+    { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
+    { key: 'view_count', header: 'Views', sortable: true, render: (p) => p.view_count },
+    { key: 'created_at', header: 'Created', sortable: true, render: (p) => formatDate(p.created_at) },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (p) => (
+        <div className="flex gap-1 items-center">
+          <Button
+            size="sm"
+            variant="ghost"
+            title="View Property"
+            onClick={() => window.open(`/property/${p.id}`, '_blank')}
+            icon={<Eye className="h-4 w-4" />}
+          />
+          {(p.status === 'submitted' || p.status === 'pending_verification') && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-emerald-600"
+                title="Approve"
+                onClick={async () => {
+                  try {
+                    await updatePropertyStatus(p.id, 'published');
+                    queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+                  } catch (e) {
+                    console.error('Failed to approve:', e);
+                  }
+                }}
+                icon={<Check className="h-4 w-4" />}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-amber-600"
+                title="Reject"
+                onClick={async () => {
+                  const reason = window.prompt("Reason for rejection:");
+                  if (reason !== null) {
+                    try {
+                      await updatePropertyStatus(p.id, 'rejected', reason);
+                      queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+                    } catch (e) {
+                      console.error('Failed to reject:', e);
+                    }
+                  }
+                }}
+                icon={<X className="h-4 w-4" />}
+              />
+            </>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditing(p);
+              setEditForm({
+                title: p.title,
+                price: String(p.price),
+                purpose: p.purpose,
+                city_id: p.city_id ?? '',
+                locality_id: p.locality_id ?? '',
+                property_type_id: p.property_type_id ?? '',
+                status: p.status,
+              });
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-error-600"
+            title="Delete"
+            onClick={() => setToDelete(p.id)}
+            icon={<X className="h-4 w-4" />}
+          />
+        </div>
+      ),
+    },
+  ];
+
+  const bulkStatusUpdate = async (status: string) => {
+    await Promise.all([...selected].map((id) => updatePropertyStatus(id, status as Property['status'])));
+    setSelected(new Set());
+    queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+  };
+
+  const bulkDelete = async () => {
+    await Promise.all([...selected].map((id) => supabase.from('properties').delete().eq('id', id)));
+    setSelected(new Set());
+    queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from('properties').delete().eq('id', id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+      setToDelete(null);
+    },
+  });
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    await supabase
+      .from('properties')
+      .update({
+        title: editForm.title,
+        price: Number(editForm.price),
+        purpose: editForm.purpose as 'Sale' | 'Rent',
+        city_id: editForm.city_id,
+        locality_id: editForm.locality_id,
+        property_type_id: editForm.property_type_id,
+        status: editForm.status,
+      })
+      .eq('id', editing.id);
+    setSaving(false);
+    setEditing(null);
+    queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+  };
+
+  const handleExport = () => {
+    if (!data) return;
+    exportToCsv('admin-properties', data as unknown as Record<string, unknown>[], [
+      { key: 'id', label: 'ID' },
+      { key: 'title', label: 'Title' },
+      { key: 'status', label: 'Status' },
+      { key: 'price', label: 'Price' },
+      { key: 'purpose', label: 'Purpose' },
+      { key: 'city_name', label: 'City' },
+      { key: 'locality_name', label: 'Locality' },
+      { key: 'created_at', label: 'Created' },
+    ]);
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:properties', 'Properties')}>
+      <PageHeader
+        title="All properties"
+        subtitle="Manage every property on the platform."
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
+              Export CSV
+            </Button>
+          </div>
+        }
+      />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-1 overflow-x-auto">
+          {['all', 'published', 'pending', 'approved', 'rejected', 'draft'].map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
+                tab === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50',
+              )}
+            >
+              {t === 'pending' ? 'Pending' : t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-400" />
+            <Input
+              placeholder="Search title or address…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Rich filters */}
+      <Card className="mb-4 p-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <Select
+            value={filters.city}
+            onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))}
+            className="text-sm"
+          >
+            <option value="">All cities</option>
+            {cities.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={filters.purpose}
+            onChange={(e) => setFilters((f) => ({ ...f, purpose: e.target.value }))}
+            className="text-sm"
+          >
+            <option value="">All purposes</option>
+            <option value="Sale">Sale</option>
+            <option value="Rent">Rent</option>
+          </Select>
+          <Select
+            value={filters.type}
+            onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+            className="text-sm"
+          >
+            <option value="">All types</option>
+            {propertyTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            type="number"
+            placeholder="Min price"
+            value={filters.minPrice}
+            onChange={(e) => setFilters((f) => ({ ...f, minPrice: e.target.value }))}
+            className="text-sm"
+          />
+          <Input
+            type="number"
+            placeholder="Max price"
+            value={filters.maxPrice}
+            onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value }))}
+            className="text-sm"
+          />
+          <Input
+            type="date"
+            placeholder="Date from"
+            value={filters.dateFrom}
+            onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
+            className="text-sm"
+          />
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <Input
+            type="date"
+            placeholder="Date to"
+            value={filters.dateTo}
+            onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+            className="text-sm w-auto"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              setFilters({ city: '', minPrice: '', maxPrice: '', purpose: '', type: '', dateFrom: '', dateTo: '' })
+            }
+          >
+            Clear filters
+          </Button>
+        </div>
+      </Card>
+
+      {selected.size > 0 && (
+        <BulkActionsBar
+          count={selected.size}
+          onDelete={bulkDelete}
+          actions={
+            <>
+              <Button size="sm" variant="primary" onClick={() => bulkStatusUpdate('approved')} loading={false}>
+                Approve selected
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  if (confirm('Reject selected? Reason will be empty.')) bulkStatusUpdate('rejected');
+                }}
+              >
+                Reject selected
+              </Button>
+            </>
+          }
+        />
+      )}
+
+      {data?.length === 0 && !isLoading ? (
+        <Card>
+          <EmptyState
+            icon={<FileText className="h-6 w-6" />}
+            title="No properties found"
+            description={
+              tab !== 'all' || search || filters.city || filters.type || filters.purpose
+                ? 'No properties match the selected filter or status tab.'
+                : 'No properties listed on the platform yet.'
+            }
+            action={
+              <div className="flex flex-wrap gap-2 justify-center mt-2">
+                {(tab !== 'all' || search || filters.city || filters.type || filters.purpose) && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setTab('all');
+                      setSearch('');
+                      setFilters({
+                        city: '',
+                        minPrice: '',
+                        maxPrice: '',
+                        purpose: '',
+                        type: '',
+                        dateFrom: '',
+                        dateTo: '',
+                      });
+                    }}
+                  >
+                    Clear All Filters
+                  </Button>
+                )}
+                <Button onClick={seedSampleProperties}>Restore Demo Properties</Button>
+              </div>
+            }
+          />
+        </Card>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={data ?? []}
+          loading={isLoading}
+          getRowId={(p) => p.id}
+          pageSize={10}
+          selectedIds={selected}
+          onToggleSelect={toggleSelect}
+          onSelectAll={(ids) =>
+            setSelected((s) => {
+              const n = new Set(s);
+              ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
+              return n;
+            })
+          }
+        />
+      )}
+
+      <Modal
+        open={!!toDelete}
+        onClose={() => setToDelete(null)}
+        title="Delete property"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => toDelete && deleteMutation.mutate(toDelete)}
+              loading={deleteMutation.isPending}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-navy-700">This will permanently remove the property and all related data.</p>
+      </Modal>
+
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title="Edit property"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEdit} loading={saving}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        {editing && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Input
+                label="Title"
+                value={editForm.title}
+                onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+              />
+            </div>
+            <Input
+              label="Price"
+              type="number"
+              value={editForm.price}
+              onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))}
+            />
+            <Select
+              label="Purpose"
+              value={editForm.purpose}
+              onChange={(e) => setEditForm((f) => ({ ...f, purpose: e.target.value }))}
+            >
+              <option value="Sale">Sale</option>
+              <option value="Rent">Rent</option>
+            </Select>
+            <Select
+              label="City"
+              value={editForm.city_id}
+              onChange={(e) => setEditForm((f) => ({ ...f, city_id: e.target.value }))}
+            >
+              <option value="">Select city</option>
+              {cities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Property type"
+              value={editForm.property_type_id}
+              onChange={(e) => setEditForm((f) => ({ ...f, property_type_id: e.target.value }))}
+            >
+              <option value="">Select type</option>
+              {propertyTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Status"
+              value={editForm.status}
+              onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+            >
+              {['draft', 'submitted', 'pending_verification', 'approved', 'published', 'rejected'].map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+      </Modal>
+    </DashboardLayout>
+  );
+}

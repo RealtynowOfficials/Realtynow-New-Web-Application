@@ -1,0 +1,19 @@
+{
+  "adminPanel": "एडमिन पैनल",
+  "manageProperties": "संपत्तियां प्रबंधित करें",
+  "manageUsers": "उपयोगकर्ता प्रबंधित करें",
+  "manageAgents": "एजेंट प्रबंधित करें",
+  "approvals": "अनुमोदन",
+  "analytics": "विश्लेषण",
+  "settings": "सेटिंग्स",
+  "contentManager": "सामग्री प्रबंधक",
+  "auditLogs": "ऑडिट लॉग",
+  "approve": "अनुमोदित करें",
+  "reject": "अस्वीकार करें",
+  "review": "समीक्षा",
+  "viewAll": "सब देखें",
+  "cms": "[HI] Homepage CMS Console",
+  "languages": "[HI] Languages & i18n",
+  "languagesHeader": "[HI] Language & Dynamic Localization Engine",
+  "languagesSubtitle": "[HI] Manage active Indian languages, view real-time completion status, and sync dynamic database translations."
+}

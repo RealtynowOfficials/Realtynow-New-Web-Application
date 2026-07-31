@@ -1,0 +1,14 @@
+{
+  "title": "Compare",
+  "subtitle": "Side-by-side comparison of your selected properties (up to 4).",
+  "emptyTitle": "No properties selected to compare",
+  "emptyDesc": "Click the compare icon on any property card or detail page to add up to 4 properties side-by-side.",
+  "propertyCol": "Property",
+  "remove": "Remove from comparison",
+  "viewProperty": "View Details",
+  "removedToast": "Property removed from comparison",
+  "clearedToast": "Comparison list cleared",
+  "selectedCount": "selected",
+  "backToSearch": "Back to Search",
+  "noSelected": "No properties selected"
+}

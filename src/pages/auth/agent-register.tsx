@@ -1,0 +1,582 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  User,
+  Mail,
+  Phone,
+  FileText,
+  Briefcase,
+  MapPin,
+  Upload,
+  CheckCircle2,
+  ArrowRight,
+  ArrowLeft,
+  ShieldCheck,
+  Building2,
+  Star,
+  Clock,
+  X,
+} from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { Button } from '../../components/ui';
+import { Logo, LogoLight } from '../../components/logo';
+import { uploadFile } from '../../lib/storage';
+
+const SPECIALIZATIONS = [
+  'Residential',
+  'Commercial',
+  'Luxury',
+  'Plots & Land',
+  'Rental',
+  'Builder Projects',
+  'Industrial',
+];
+
+const STEPS = [
+  { id: 1, label: 'Personal Info', icon: User },
+  { id: 2, label: 'Professional', icon: Briefcase },
+  { id: 3, label: 'Documents', icon: FileText },
+  { id: 4, label: 'Review & Submit', icon: CheckCircle2 },
+];
+
+interface FormData {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  company: string;
+  bio: string;
+  license_number: string;
+  specialization: string;
+  experience_years: string;
+  assigned_areas: string;
+  id_doc: File | null;
+  license_doc: File | null;
+}
+
+const INITIAL: FormData = {
+  first_name: '',
+  last_name: '',
+  email: '',
+  phone: '',
+  company: '',
+  bio: '',
+  license_number: '',
+  specialization: '',
+  experience_years: '',
+  assigned_areas: '',
+  id_doc: null,
+  license_doc: null,
+};
+
+function FileUploadArea({
+  label,
+  hint,
+  file,
+  onChange,
+  accept = 'image/*,.pdf',
+}: {
+  label: string;
+  hint: string;
+  file: File | null;
+  onChange: (f: File | null) => void;
+  accept?: string;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-white mb-1.5">{label}</p>
+      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/20 bg-white/5 px-4 py-5 cursor-pointer hover:border-gold-400/60 hover:bg-white/10 transition-all">
+        <input
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        />
+        {file ? (
+          <div className="flex items-center gap-2 text-gold-300">
+            <CheckCircle2 className="h-5 w-5" />
+            <span className="text-sm font-medium truncate max-w-[200px]">{file.name}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                onChange(null);
+              }}
+              className="ml-1 text-navy-400 hover:text-error-400"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <Upload className="h-6 w-6 text-navy-400" />
+            <span className="text-sm text-navy-300">Click to upload</span>
+            <span className="text-xs text-navy-500">{hint}</span>
+          </>
+        )}
+      </label>
+    </div>
+  );
+}
+
+export function AgentRegisterPage() {
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState<FormData>(INITIAL);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const set = (key: keyof FormData, val: string | File | null) => setForm((f) => ({ ...f, [key]: val }));
+
+  const validateStep = () => {
+    const errs: Partial<Record<keyof FormData, string>> = {};
+    if (step === 1) {
+      if (!form.first_name.trim()) errs.first_name = 'Required';
+      if (!form.last_name.trim()) errs.last_name = 'Required';
+      if (!form.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) errs.email = 'Valid email required';
+      if (form.phone.replace(/\D/g, '').length < 10) errs.phone = 'Valid phone required';
+    }
+    if (step === 2) {
+      if (!form.specialization) errs.specialization = 'Required';
+      if (!form.experience_years) errs.experience_years = 'Required';
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const next = () => {
+    if (validateStep()) setStep((s) => s + 1);
+  };
+  const prev = () => setStep((s) => s - 1);
+
+  const submit = async () => {
+    setLoading(true);
+    setServerError(null);
+    try {
+      let id_doc_url: string | null = null;
+      let license_doc_url: string | null = null;
+
+      if (form.id_doc) {
+        const r = await uploadFile('agent-documents', form.id_doc, `applications/id-${Date.now()}-${form.id_doc.name}`);
+        if (r.error) throw new Error(r.error);
+        id_doc_url = r.url || r.path;
+      }
+      if (form.license_doc) {
+        const r = await uploadFile(
+          'agent-documents',
+          form.license_doc,
+          `applications/lic-${Date.now()}-${form.license_doc.name}`,
+        );
+        if (r.error) throw new Error(r.error);
+        license_doc_url = r.url || r.path;
+      }
+
+      const { error } = await supabase.from('agent_applications').insert({
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        company: form.company.trim() || null,
+        bio: form.bio.trim() || null,
+        license_number: form.license_number.trim() || null,
+        specialization: form.specialization || null,
+        experience_years: form.experience_years ? Number(form.experience_years) : null,
+        assigned_areas: form.assigned_areas
+          ? form.assigned_areas
+              .split(',')
+              .map((a) => a.trim())
+              .filter(Boolean)
+          : null,
+        id_doc_url,
+        license_doc_url,
+      });
+      if (error) throw new Error(error.message);
+      setSubmitted(true);
+    } catch (e: unknown) {
+      setServerError(e instanceof Error ? e.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 flex items-center justify-center px-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-md text-center"
+        >
+          <div className="h-24 w-24 mx-auto rounded-full bg-gold-400/20 flex items-center justify-center mb-6">
+            <CheckCircle2 className="h-12 w-12 text-gold-400" />
+          </div>
+          <h1 className="font-display text-3xl font-bold text-white">Application Submitted!</h1>
+          <p className="mt-3 text-navy-200">
+            Thank you, <span className="text-gold-300 font-semibold">{form.first_name}</span>! Our team will review your
+            application and contact you at <span className="text-gold-300">{form.email}</span> within 2–3 business days.
+          </p>
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-navy-300 space-y-2">
+            <p className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-gold-400" /> Review: 2–3 business days
+            </p>
+            <p className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-gold-400" /> Document verification
+            </p>
+            <p className="flex items-center gap-2">
+              <Star className="h-4 w-4 text-gold-400" /> License validation
+            </p>
+          </div>
+          <Link to="/" className="mt-8 inline-block">
+            <Button variant="gold" size="lg">
+              Back to Home
+            </Button>
+          </Link>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gold-400/10 blur-3xl" />
+        <div className="absolute bottom-0 -left-20 h-96 w-96 rounded-full bg-navy-700/20 blur-3xl" />
+      </div>
+
+      <div className="relative grid lg:grid-cols-[380px,1fr] min-h-screen">
+        {/* LEFT PANEL */}
+        <div className="hidden lg:flex flex-col justify-between bg-white/5 backdrop-blur-sm border-r border-white/10 p-10">
+          <LogoLight to="/" size={220} />
+
+          <div>
+            <h2 className="font-display text-3xl font-bold text-white leading-tight">
+              Join RealtyNow as a Verified Agent
+            </h2>
+            <p className="mt-3 text-navy-200 text-sm leading-relaxed">
+              Connect with serious buyers & renters. Grow your real estate business with AI-powered tools.
+            </p>
+            <ul className="mt-8 space-y-4">
+              {[
+                { icon: Building2, text: 'Access 10,000+ active listings' },
+                { icon: Star, text: 'Priority lead distribution' },
+                { icon: ShieldCheck, text: 'Verified agent badge on profile' },
+                { icon: Clock, text: '24/7 dedicated agent support' },
+              ].map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-center gap-3 text-sm text-navy-200">
+                  <div className="flex-shrink-0 h-8 w-8 rounded-lg bg-gold-400/20 grid place-items-center">
+                    <Icon className="h-4 w-4 text-gold-400" />
+                  </div>
+                  {text}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Progress */}
+          <div className="space-y-2">
+            <p className="text-xs text-navy-400 uppercase tracking-wide font-semibold">Application progress</p>
+            {STEPS.map((s) => (
+              <div
+                key={s.id}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all ${step === s.id ? 'bg-gold-400/20 text-gold-300' : step > s.id ? 'text-success-400' : 'text-navy-500'}`}
+              >
+                <s.icon className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm">{s.label}</span>
+                {step > s.id && <CheckCircle2 className="h-3.5 w-3.5 ml-auto" />}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* RIGHT PANEL */}
+        <div className="flex items-start justify-center px-6 py-12 overflow-y-auto">
+          <div className="w-full max-w-lg">
+            {/* Mobile logo */}
+            <div className="lg:hidden flex justify-center mb-8">
+              <Logo to="/" size={220} />
+            </div>
+
+            {/* Step indicator (mobile) */}
+            <div className="lg:hidden flex items-center gap-2 mb-6 justify-center">
+              {STEPS.map((s) => (
+                <div
+                  key={s.id}
+                  className={`h-2 rounded-full transition-all ${step === s.id ? 'w-8 bg-gold-400' : step > s.id ? 'w-4 bg-success-500' : 'w-4 bg-white/20'}`}
+                />
+              ))}
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.25 }}
+              >
+                {/* Step 1 – Personal Info */}
+                {step === 1 && (
+                  <div>
+                    <h1 className="font-display text-2xl font-bold text-white">Personal Information</h1>
+                    <p className="mt-1 text-sm text-navy-300">Tell us about yourself</p>
+                    <div className="mt-6 space-y-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-navy-200 mb-1.5">First Name *</label>
+                          <input
+                            value={form.first_name}
+                            onChange={(e) => set('first_name', e.target.value)}
+                            className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                            placeholder="Arjun"
+                          />
+                          {errors.first_name && <p className="mt-1 text-xs text-error-400">{errors.first_name}</p>}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-navy-200 mb-1.5">Last Name *</label>
+                          <input
+                            value={form.last_name}
+                            onChange={(e) => set('last_name', e.target.value)}
+                            className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                            placeholder="Sharma"
+                          />
+                          {errors.last_name && <p className="mt-1 text-xs text-error-400">{errors.last_name}</p>}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                          <Mail className="inline h-3.5 w-3.5 mr-1" />
+                          Email Address *
+                        </label>
+                        <input
+                          type="email"
+                          value={form.email}
+                          onChange={(e) => set('email', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          placeholder="arjun@realty.com"
+                        />
+                        {errors.email && <p className="mt-1 text-xs text-error-400">{errors.email}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                          <Phone className="inline h-3.5 w-3.5 mr-1" />
+                          Phone Number *
+                        </label>
+                        <input
+                          type="tel"
+                          value={form.phone}
+                          onChange={(e) => set('phone', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          placeholder="+91 98000 00000"
+                        />
+                        {errors.phone && <p className="mt-1 text-xs text-error-400">{errors.phone}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                          Company / Brokerage (optional)
+                        </label>
+                        <input
+                          value={form.company}
+                          onChange={(e) => set('company', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          placeholder="Sharma Realty Pvt Ltd"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 2 – Professional */}
+                {step === 2 && (
+                  <div>
+                    <h1 className="font-display text-2xl font-bold text-white">Professional Details</h1>
+                    <p className="mt-1 text-sm text-navy-300">Help clients understand your expertise</p>
+                    <div className="mt-6 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Specialization *</label>
+                        <select
+                          value={form.specialization}
+                          onChange={(e) => set('specialization', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-navy-800 px-3.5 py-2.5 text-sm text-white focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                        >
+                          <option value="">Select specialization…</option>
+                          {SPECIALIZATIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.specialization && (
+                          <p className="mt-1 text-xs text-error-400">{errors.specialization}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Years of Experience *</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={form.experience_years}
+                          onChange={(e) => set('experience_years', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          placeholder="5"
+                        />
+                        {errors.experience_years && (
+                          <p className="mt-1 text-xs text-error-400">{errors.experience_years}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                          RERA License Number (if available)
+                        </label>
+                        <input
+                          value={form.license_number}
+                          onChange={(e) => set('license_number', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          placeholder="MH/RERA/XXXXXX"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                          <MapPin className="inline h-3.5 w-3.5 mr-1" />
+                          Areas You Cover (comma separated)
+                        </label>
+                        <input
+                          value={form.assigned_areas}
+                          onChange={(e) => set('assigned_areas', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          placeholder="Banjara Hills, Jubilee Hills, Gachibowli"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Bio / About You</label>
+                        <textarea
+                          rows={3}
+                          value={form.bio}
+                          onChange={(e) => set('bio', e.target.value)}
+                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30 resize-none"
+                          placeholder="Tell us about your experience and what makes you a great agent…"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3 – Documents */}
+                {step === 3 && (
+                  <div>
+                    <h1 className="font-display text-2xl font-bold text-white">Upload Documents</h1>
+                    <p className="mt-1 text-sm text-navy-300">Help us verify your identity and credentials</p>
+                    <div className="mt-6 space-y-5">
+                      <FileUploadArea
+                        label="Government ID (Aadhaar / PAN / Passport) *"
+                        hint="JPG, PNG or PDF — max 10MB"
+                        file={form.id_doc}
+                        onChange={(f) => set('id_doc', f)}
+                      />
+                      <FileUploadArea
+                        label="RERA License / Registration Certificate (optional)"
+                        hint="JPG, PNG or PDF — max 10MB"
+                        file={form.license_doc}
+                        onChange={(f) => set('license_doc', f)}
+                      />
+                      <div className="rounded-xl border border-gold-400/20 bg-gold-400/5 p-4 text-xs text-navy-300">
+                        <ShieldCheck className="h-4 w-4 text-gold-400 mb-2" />
+                        <p className="font-semibold text-white">Your documents are safe</p>
+                        <p className="mt-1">
+                          All documents are encrypted and only reviewed by our verified team. They will not be shared
+                          publicly.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 4 – Review */}
+                {step === 4 && (
+                  <div>
+                    <h1 className="font-display text-2xl font-bold text-white">Review & Submit</h1>
+                    <p className="mt-1 text-sm text-navy-300">Please check your details before submitting</p>
+                    <div className="mt-6 space-y-3">
+                      {[
+                        { label: 'Name', value: `${form.first_name} ${form.last_name}` },
+                        { label: 'Email', value: form.email },
+                        { label: 'Phone', value: form.phone },
+                        { label: 'Company', value: form.company || '—' },
+                        { label: 'Specialization', value: form.specialization || '—' },
+                        { label: 'Experience', value: form.experience_years ? `${form.experience_years} years` : '—' },
+                        { label: 'RERA License', value: form.license_number || '—' },
+                        { label: 'Areas', value: form.assigned_areas || '—' },
+                        { label: 'Govt ID', value: form.id_doc?.name ?? 'Not uploaded' },
+                        { label: 'License Doc', value: form.license_doc?.name ?? 'Not uploaded' },
+                      ].map(({ label, value }) => (
+                        <div
+                          key={label}
+                          className="flex justify-between items-start gap-4 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5"
+                        >
+                          <span className="text-xs text-navy-400 flex-shrink-0 w-32">{label}</span>
+                          <span className="text-sm text-white text-right break-all">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {serverError && (
+                      <div className="mt-4 rounded-lg border border-error-500/30 bg-error-500/10 px-3 py-2 text-sm text-error-300">
+                        {serverError}
+                      </div>
+                    )}
+
+                    <p className="mt-4 text-xs text-navy-400">
+                      By submitting, you agree to our{' '}
+                      <Link to="/terms" className="text-gold-400 hover:underline">
+                        Terms of Service
+                      </Link>{' '}
+                      and{' '}
+                      <Link to="/privacy" className="text-gold-400 hover:underline">
+                        Privacy Policy
+                      </Link>
+                      .
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Navigation */}
+            <div className="mt-8 flex items-center justify-between gap-3">
+              {step > 1 ? (
+                <button
+                  onClick={prev}
+                  className="flex items-center gap-2 text-sm text-navy-300 hover:text-white transition-colors"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Back
+                </button>
+              ) : (
+                <Link to="/agent/login" className="text-sm text-navy-400 hover:text-white transition-colors">
+                  Already registered?
+                </Link>
+              )}
+
+              {step < 4 ? (
+                <Button variant="gold" size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={next}>
+                  Continue
+                </Button>
+              ) : (
+                <Button
+                  variant="gold"
+                  size="lg"
+                  loading={loading}
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  onClick={submit}
+                >
+                  Submit Application
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

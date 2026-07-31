@@ -1,0 +1,15 @@
+{
+  "propertyApproved": "आपकी संपत्ति को अनुमोदित कर दिया गया है!",
+  "propertyRejected": "आपकी संपत्ति लिस्टिंग अस्वीकार कर दी गई।",
+  "newEnquiry": "आपके पास एक नई पूछताछ है",
+  "appointmentConfirmed": "अपॉइंटमेंट की पुष्टि हुई",
+  "appointmentCancelled": "अपॉइंटमेंट रद्द हुई",
+  "profileUpdated": "प्रोफ़ाइल सफलतापूर्वक अपडेट हुई",
+  "passwordChanged": "पासवर्ड सफलतापूर्वक बदला गया",
+  "saved": "सफलतापूर्वक सहेजा गया",
+  "deleted": "सफलतापूर्वक हटाया गया",
+  "error": "कुछ गलत हुआ। कृपया पुनः प्रयास करें।",
+  "addedToCompare": "[HI] Added to compare list",
+  "removedFromCompare": "[HI] Removed from compare list",
+  "errorCompare": "[HI] Could not update compare list"
+}

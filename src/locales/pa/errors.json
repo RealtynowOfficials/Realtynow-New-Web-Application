@@ -1,0 +1,6 @@
+{
+  "somethingWentWrong": "Something went wrong. Please try again.",
+  "networkError": "Network error. Please check your internet connection.",
+  "unauthorized": "Unauthorized access. Please login.",
+  "notFound": "The requested resource was not found."
+}

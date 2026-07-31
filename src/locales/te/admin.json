@@ -1,0 +1,15 @@
+{
+  "adminPanel": "అడ్మిన్ ప్యానెల్",
+  "manageProperties": "ఆస్తులు నిర్వహించు",
+  "manageUsers": "వినియోగదారులు నిర్వహించు",
+  "manageAgents": "ఏజెంట్‌లను నిర్వహించు",
+  "approvals": "ఆమోదాలు",
+  "analytics": "విశ్లేషణలు",
+  "settings": "సెట్టింగ్‌లు",
+  "contentManager": "కంటెంట్ మేనేజర్",
+  "auditLogs": "ఆడిట్ లాగ్‌లు",
+  "approve": "ఆమోదించు",
+  "reject": "తిరస్కరించు",
+  "review": "సమీక్ష",
+  "viewAll": "అన్నీ చూడు"
+}

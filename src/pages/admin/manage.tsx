@@ -1,0 +1,1351 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { UserPlus, Trash2, Ban, CheckCircle2, Edit3, Plus, FileText, Upload, ExternalLink } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/auth';
+import { useLanguageContext } from '../../lib/i18n/language-context';
+import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { getAdminSections } from '../portal/sections';
+import { Card, Button, Modal, Input, Select, Badge, Avatar, EmptyState, Skeleton } from '../../components/ui';
+import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
+import { formatDate, cn } from '../../lib/utils';
+import { useRealtimeCount } from '../../lib/realtime';
+import { uploadFile } from '../../lib/storage';
+import { useToast } from '../../components/toast';
+import type { Profile } from '../../lib/types';
+
+export function AdminCustomers() {
+  const queryClient = useQueryClient();
+  const [toDelete, setToDelete] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<Profile | null>(null);
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', status: 'active' });
+  const [saving, setSaving] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-customers'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'customer')
+        .order('created_at', { ascending: false });
+      return (data ?? []) as Profile[];
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await supabase.from('profiles').delete().in('id', ids);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+      setToDelete(null);
+      setSelected(new Set());
+    },
+  });
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    await supabase.from('profiles').update(editForm).eq('id', editing.id);
+    setSaving(false);
+    setEditing(null);
+    queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+  };
+
+  const toggleStatus = async (p: Profile) => {
+    await supabase
+      .from('profiles')
+      .update({ status: p.status === 'active' ? 'suspended' : 'active' })
+      .eq('id', p.id);
+    queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+  };
+
+  const columns: Column<Profile>[] = [
+    {
+      key: 'first_name',
+      header: 'Customer',
+      sortable: true,
+      render: (p) => (
+        <div className="flex items-center gap-3">
+          <Avatar name={`${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email} src={p.avatar_url} size={36} />
+          <div>
+            <p className="font-medium text-navy-900">
+              {p.first_name} {p.last_name}
+            </p>
+            <p className="text-xs text-navy-500">{p.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'phone', header: 'Phone', render: (p) => p.phone ?? '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (p) => (
+        <Badge variant={p.status === 'active' ? 'success' : p.status === 'suspended' ? 'error' : 'warning'}>
+          {p.status}
+        </Badge>
+      ),
+    },
+    { key: 'created_at', header: 'Joined', sortable: true, render: (p) => formatDate(p.created_at) },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (p) => (
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditing(p);
+              setEditForm({
+                first_name: p.first_name ?? '',
+                last_name: p.last_name ?? '',
+                email: p.email,
+                phone: p.phone ?? '',
+                status: p.status,
+              });
+            }}
+            icon={<Edit3 className="h-4 w-4" />}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={p.status === 'active' ? <Ban className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            onClick={() => toggleStatus(p)}
+          >
+            {p.status === 'active' ? 'Suspend' : 'Activate'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-error-600"
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={() => setToDelete(p.id)}
+          />
+        </div>
+      ),
+    },
+  ];
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:customers', 'Customers')}>
+      <PageHeader title="Customers" subtitle="Manage all customer accounts." />
+      <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
+      <DataTable
+        columns={columns}
+        rows={data ?? []}
+        loading={isLoading}
+        getRowId={(p) => p.id}
+        searchKeys={['first_name', 'last_name', 'email', 'phone']}
+        selectedIds={selected}
+        onToggleSelect={(id) =>
+          setSelected((s) => {
+            const n = new Set(s);
+            n.has(id) ? n.delete(id) : n.add(id);
+            return n;
+          })
+        }
+        onSelectAll={(ids) =>
+          setSelected((s) => {
+            const n = new Set(s);
+            ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
+            return n;
+          })
+        }
+      />
+      <Modal
+        open={!!toDelete}
+        onClose={() => setToDelete(null)}
+        title="Delete customer"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={() => toDelete && deleteMutation.mutate([toDelete])}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-navy-700">This will permanently delete the customer and all their properties.</p>
+      </Modal>
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title="Edit customer"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEdit} loading={saving}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        {editing && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label="First name"
+              value={editForm.first_name}
+              onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))}
+            />
+            <Input
+              label="Last name"
+              value={editForm.last_name}
+              onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))}
+            />
+            <Input
+              label="Email"
+              value={editForm.email}
+              onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+            />
+            <Input
+              label="Phone"
+              value={editForm.phone}
+              onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+            />
+            <Select
+              label="Status"
+              value={editForm.status}
+              onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+            >
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+            </Select>
+          </div>
+        )}
+      </Modal>
+    </DashboardLayout>
+  );
+}
+
+export function AdminAgents() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    password: '',
+    license_number: '',
+    company: '',
+    specialization: '',
+    avatar_url: '',
+  });
+  const [creating, setCreating] = useState(false);
+  const [toDelete, setToDelete] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<Profile | null>(null);
+  const [editForm, setEditForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    status: 'active',
+    license_number: '',
+    company: '',
+    specialization: '',
+    avatar_url: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const realtimeTick = useRealtimeCount('profiles');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-agents', realtimeTick],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'agent')
+        .order('created_at', { ascending: false });
+      if (error) console.error('Error fetching agents:', error);
+      return (data ?? []) as Profile[];
+    },
+  });
+
+  const handleAvatarUpload = async (file: File, isEdit: boolean) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.addToast('error', 'Only JPG, PNG, and WEBP image formats are supported');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.addToast('error', 'Profile image must be less than 5MB');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    const { url, error } = await uploadFile('profile-images', file);
+    if (error || !url) {
+      toast.addToast('error', error || 'Failed to upload profile image');
+    } else {
+      if (isEdit) {
+        setEditForm((f) => ({ ...f, avatar_url: url }));
+      } else {
+        setForm((f) => ({ ...f, avatar_url: url }));
+      }
+      toast.addToast('success', 'Profile image uploaded successfully');
+    }
+    setUploadingAvatar(false);
+  };
+
+  const createAgent = async () => {
+    if (!form.email || !form.password) {
+      toast.addToast('error', 'Email and password are required');
+      return;
+    }
+    setCreating(true);
+    try {
+      let agentId: string | null = null;
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: { data: { role: 'agent', first_name: form.first_name, last_name: form.last_name, phone: form.phone } },
+      });
+
+      if (authData?.user) {
+        agentId = authData.user.id;
+      } else {
+        // Lookup if profile already exists or get existing user ID
+        const { data: existing } = await supabase.from('profiles').select('id').eq('email', form.email).maybeSingle();
+        if (existing) {
+          agentId = existing.id;
+        } else if (authError) {
+          throw authError;
+        }
+      }
+
+      if (!agentId) {
+        agentId = crypto.randomUUID();
+      }
+
+      const { error: profileError } = await supabase.from('profiles').upsert(
+        {
+          id: agentId,
+          email: form.email,
+          first_name: form.first_name,
+          last_name: form.last_name,
+          phone: form.phone,
+          role: 'agent',
+          license_number: form.license_number,
+          company: form.company,
+          specialization: form.specialization,
+          avatar_url: form.avatar_url || null,
+          profile_image_url: form.avatar_url || null,
+          status: 'active',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' },
+      );
+
+      if (profileError) {
+        console.error('Error saving agent profile:', profileError);
+        throw profileError;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      setShowCreate(false);
+      setForm({
+        first_name: '',
+        last_name: '',
+        email: '',
+        phone: '',
+        password: '',
+        license_number: '',
+        company: '',
+        specialization: '',
+        avatar_url: '',
+      });
+      toast.addToast('success', 'Agent account created & saved successfully');
+    } catch (err) {
+      console.error('Failed to create agent:', err);
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to create agent');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await supabase.from('profiles').delete().in('id', ids);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+      setToDelete(null);
+      setSelected(new Set());
+    },
+  });
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const payload = {
+        ...editForm,
+        avatar_url: editForm.avatar_url || null,
+        profile_image_url: editForm.avatar_url || null,
+      };
+      const { error } = await supabase.from('profiles').update(payload).eq('id', editing.id);
+      if (error) throw error;
+      toast.addToast('success', 'Agent profile updated');
+      setEditing(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+    } catch (err) {
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleStatus = async (p: Profile) => {
+    await supabase
+      .from('profiles')
+      .update({ status: p.status === 'active' ? 'suspended' : 'active' })
+      .eq('id', p.id);
+    queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+  };
+
+  const columns: Column<Profile>[] = [
+    {
+      key: 'first_name',
+      header: 'Agent',
+      sortable: true,
+      render: (p) => (
+        <div className="flex items-center gap-3">
+          <Avatar
+            name={`${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email}
+            src={p.avatar_url || (p as unknown as { profile_image_url?: string }).profile_image_url}
+            size={40}
+          />
+          <div>
+            <p className="font-bold text-navy-900">
+              {p.first_name} {p.last_name}
+            </p>
+            <p className="text-xs text-navy-500">{p.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'phone', header: 'Phone', render: (p) => p.phone ?? '—' },
+    { key: 'license_number', header: 'License', render: (p) => p.license_number ?? '—' },
+    { key: 'company', header: 'Company', render: (p) => p.company ?? '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (p) => <Badge variant={p.status === 'active' ? 'success' : 'warning'}>{p.status}</Badge>,
+    },
+    { key: 'created_at', header: 'Joined', sortable: true, render: (p) => formatDate(p.created_at) },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (p) => (
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditing(p);
+              setEditForm({
+                first_name: p.first_name ?? '',
+                last_name: p.last_name ?? '',
+                email: p.email,
+                phone: p.phone ?? '',
+                status: p.status,
+                license_number: p.license_number ?? '',
+                company: p.company ?? '',
+                specialization: p.specialization ?? '',
+                avatar_url: p.avatar_url || (p as unknown as { profile_image_url?: string }).profile_image_url || '',
+              });
+            }}
+            icon={<Edit3 className="h-4 w-4" />}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={p.status === 'active' ? <Ban className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            onClick={() => toggleStatus(p)}
+          >
+            {p.status === 'active' ? 'Suspend' : 'Activate'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-error-600"
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={() => setToDelete(p.id)}
+          />
+        </div>
+      ),
+    },
+  ];
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:agents', 'Agents')}>
+      <PageHeader
+        title="Agents"
+        subtitle="Create and manage agent accounts."
+        action={
+          <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
+            Create agent
+          </Button>
+        }
+      />
+      <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
+      <DataTable
+        columns={columns}
+        rows={data ?? []}
+        loading={isLoading}
+        getRowId={(p) => p.id}
+        searchKeys={['first_name', 'last_name', 'email', 'company', 'license_number']}
+        selectedIds={selected}
+        onToggleSelect={(id) =>
+          setSelected((s) => {
+            const n = new Set(s);
+            n.has(id) ? n.delete(id) : n.add(id);
+            return n;
+          })
+        }
+        onSelectAll={(ids) =>
+          setSelected((s) => {
+            const n = new Set(s);
+            ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
+            return n;
+          })
+        }
+      />
+
+      {/* CREATE AGENT MODAL WITH PROFILE IMAGE UPLOAD */}
+      <Modal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        title="Create agent account"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowCreate(false)}>
+              Cancel
+            </Button>
+            <Button onClick={createAgent} loading={creating}>
+              Create agent
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {/* Profile Picture Upload Section */}
+          <div className="bg-navy-50/70 p-4 rounded-2xl border border-navy-100 flex flex-col sm:flex-row items-center gap-4">
+            <div className="relative shrink-0">
+              <Avatar name={`${form.first_name} ${form.last_name}`} src={form.avatar_url} size={72} />
+              {form.avatar_url && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, avatar_url: '' }))}
+                  className="absolute -top-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-error-600 text-white text-xs hover:bg-error-700 shadow"
+                  title="Remove image"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <div className="space-y-1 text-center sm:text-left flex-1">
+              <label className="label font-bold text-navy-900 text-sm">Agent Profile Picture</label>
+              <p className="text-xs text-navy-500">Upload headshot (JPG, PNG, WEBP, max 5MB)</p>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="file"
+                  id="create-agent-avatar"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleAvatarUpload(file, false);
+                  }}
+                />
+                <label
+                  htmlFor="create-agent-avatar"
+                  className={cn(
+                    'cursor-pointer rounded-xl bg-navy-900 px-4 py-2 text-xs font-bold text-white shadow hover:bg-navy-800 transition-all inline-flex items-center gap-1.5',
+                    uploadingAvatar && 'opacity-50 pointer-events-none',
+                  )}
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  <span>{uploadingAvatar ? 'Uploading...' : form.avatar_url ? 'Change Photo' : 'Upload Photo'}</span>
+                </label>
+                {form.avatar_url && <span className="text-xs text-success-600 font-bold">✓ Uploaded</span>}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label="First name"
+              value={form.first_name}
+              onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+            />
+            <Input
+              label="Last name"
+              value={form.last_name}
+              onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+            />
+            <Input
+              label="Email"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            />
+            <Input
+              label="Phone"
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            />
+            <Input
+              label="Password"
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            />
+            <Input
+              label="License number"
+              value={form.license_number}
+              onChange={(e) => setForm((f) => ({ ...f, license_number: e.target.value }))}
+            />
+            <Input
+              label="Company"
+              value={form.company}
+              onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+            />
+            <Input
+              label="Specialization"
+              value={form.specialization}
+              onChange={(e) => setForm((f) => ({ ...f, specialization: e.target.value }))}
+            />
+          </div>
+          <p className="mt-3 text-xs text-navy-400">The agent will receive credentials to log into the agent portal.</p>
+        </div>
+      </Modal>
+
+      {/* EDIT AGENT MODAL WITH PROFILE IMAGE UPLOAD */}
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title="Edit agent profile"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEdit} loading={saving}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        {editing && (
+          <div className="space-y-4">
+            {/* Profile Picture Upload Section */}
+            <div className="bg-navy-50/70 p-4 rounded-2xl border border-navy-100 flex flex-col sm:flex-row items-center gap-4">
+              <div className="relative shrink-0">
+                <Avatar name={`${editForm.first_name} ${editForm.last_name}`} src={editForm.avatar_url} size={72} />
+                {editForm.avatar_url && (
+                  <button
+                    type="button"
+                    onClick={() => setEditForm((f) => ({ ...f, avatar_url: '' }))}
+                    className="absolute -top-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-error-600 text-white text-xs hover:bg-error-700 shadow"
+                    title="Remove image"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1 text-center sm:text-left flex-1">
+                <label className="label font-bold text-navy-900 text-sm">Agent Profile Picture</label>
+                <p className="text-xs text-navy-500">Update agent headshot (JPG, PNG, WEBP, max 5MB)</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="file"
+                    id="edit-agent-avatar"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleAvatarUpload(file, true);
+                    }}
+                  />
+                  <label
+                    htmlFor="edit-agent-avatar"
+                    className={cn(
+                      'cursor-pointer rounded-xl bg-navy-900 px-4 py-2 text-xs font-bold text-white shadow hover:bg-navy-800 transition-all inline-flex items-center gap-1.5',
+                      uploadingAvatar && 'opacity-50 pointer-events-none',
+                    )}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    <span>
+                      {uploadingAvatar ? 'Uploading...' : editForm.avatar_url ? 'Replace Photo' : 'Upload Photo'}
+                    </span>
+                  </label>
+                  {editForm.avatar_url && <span className="text-xs text-success-600 font-bold">✓ Photo Uploaded</span>}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="First name"
+                value={editForm.first_name}
+                onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))}
+              />
+              <Input
+                label="Last name"
+                value={editForm.last_name}
+                onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))}
+              />
+              <Input
+                label="Email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+              />
+              <Input
+                label="Phone"
+                value={editForm.phone}
+                onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+              />
+              <Input
+                label="License number"
+                value={editForm.license_number}
+                onChange={(e) => setEditForm((f) => ({ ...f, license_number: e.target.value }))}
+              />
+              <Input
+                label="Company"
+                value={editForm.company}
+                onChange={(e) => setEditForm((f) => ({ ...f, company: e.target.value }))}
+              />
+              <Input
+                label="Specialization"
+                value={editForm.specialization}
+                onChange={(e) => setEditForm((f) => ({ ...f, specialization: e.target.value }))}
+              />
+              <Select
+                label="Status"
+                value={editForm.status}
+                onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+              >
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+              </Select>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!toDelete}
+        onClose={() => setToDelete(null)}
+        title="Delete agent"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={() => toDelete && deleteMutation.mutate([toDelete])}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-navy-700">This will permanently delete the agent account.</p>
+      </Modal>
+    </DashboardLayout>
+  );
+}
+
+export function AdminBlogs() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const { user } = useAuth();
+  const [showEdit, setShowEdit] = useState(false);
+  const [editing, setEditing] = useState<{
+    id?: string;
+    title: string;
+    slug: string;
+    excerpt: string;
+    body: string;
+    cover_image: string;
+    tags: string;
+    published: boolean;
+    category: string;
+    author_id: string;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const realtimeTick = useRealtimeCount('blogs');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-blogs', realtimeTick],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('blogs').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching admin blogs:', error);
+      }
+      return data ?? [];
+    },
+  });
+
+  useQuery({
+    queryKey: ['admin-profiles-for-blogs'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, email')
+        .in('role', ['admin', 'agent'])
+        .order('first_name');
+      setProfiles((data ?? []) as unknown as Profile[]);
+      return data;
+    },
+  });
+
+  const openNew = () => {
+    setEditing({
+      title: '',
+      slug: '',
+      excerpt: '',
+      body: '',
+      cover_image: '',
+      tags: '',
+      published: true,
+      category: 'General',
+      author_id: user?.id ?? '',
+    });
+    setShowEdit(true);
+    setPreview(false);
+  };
+
+  const openEdit = (b: Record<string, unknown>) => {
+    setEditing({
+      id: b.id as string,
+      title: b.title as string,
+      slug: b.slug as string,
+      excerpt: (b.excerpt as string) ?? '',
+      body: b.body as string,
+      cover_image: (b.cover_image as string) ?? '',
+      tags: ((b.tags as string[]) ?? []).join(', '),
+      published: Boolean(b.published),
+      category: (b.category as string) ?? 'General',
+      author_id: (b.author_id as string) ?? user?.id ?? '',
+    });
+    setShowEdit(true);
+    setPreview(false);
+  };
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    const { url, error } = await uploadFile('blog-images', file);
+    if (!error && url) setEditing((ed) => (ed ? { ...ed, cover_image: url } : null));
+    setUploading(false);
+  };
+
+  const save = async () => {
+    if (!editing) return;
+    if (!editing.title.trim()) {
+      toast.addToast('error', 'Blog Title is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        title: editing.title,
+        slug:
+          editing.slug ||
+          editing.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, ''),
+        excerpt: editing.excerpt,
+        body: editing.body,
+        cover_image: editing.cover_image || null,
+        tags: editing.tags
+          ? editing.tags
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+          : [],
+        published: editing.published,
+        published_at: editing.published ? new Date().toISOString() : null,
+        category: editing.category,
+        author_id: editing.author_id || user?.id || null,
+      };
+
+      if (editing.id) {
+        const { error } = await supabase.from('blogs').update(payload).eq('id', editing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('blogs').insert(payload);
+        if (error) throw error;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['admin-blogs'] });
+      queryClient.invalidateQueries({ queryKey: ['blogs'] });
+      queryClient.invalidateQueries({ queryKey: ['home-blogs'] });
+
+      setShowEdit(false);
+      setPreview(false);
+      toast.addToast('success', 'Blog saved & updated live!');
+    } catch (err) {
+      console.error('Blog save error:', err);
+      toast.addToast('error', err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const togglePublish = async (b: Record<string, unknown>) => {
+    const isNowPublished = !b.published;
+    try {
+      const { error } = await supabase
+        .from('blogs')
+        .update({
+          published: isNowPublished,
+          published_at: isNowPublished ? new Date().toISOString() : b.published_at,
+        })
+        .eq('id', b.id);
+      if (error) throw error;
+
+      queryClient.invalidateQueries({ queryKey: ['admin-blogs'] });
+      queryClient.invalidateQueries({ queryKey: ['blogs'] });
+      queryClient.invalidateQueries({ queryKey: ['home-blogs'] });
+      toast.addToast('success', isNowPublished ? 'Blog is now Live on site!' : 'Blog changed to Draft');
+    } catch (err) {
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to update status');
+    }
+  };
+
+  const del = async (id: string) => {
+    if (!confirm('Delete this blog post?')) return;
+    const { error } = await supabase.from('blogs').delete().eq('id', id);
+    if (error) {
+      toast.addToast('error', error.message);
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ['admin-blogs'] });
+    queryClient.invalidateQueries({ queryKey: ['blogs'] });
+    queryClient.invalidateQueries({ queryKey: ['home-blogs'] });
+    toast.addToast('success', 'Blog deleted');
+  };
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:blogs', 'Blogs')}>
+      <PageHeader
+        title="Blog posts"
+        subtitle="Manage your content marketing & live posts."
+        action={
+          <Button icon={<Plus className="h-4 w-4" />} onClick={openNew}>
+            New post
+          </Button>
+        }
+      />
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+      ) : data && data.length > 0 ? (
+        <Card className="divide-y divide-navy-50">
+          {data.map((b) => (
+            <div key={b.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3">
+              <div className="flex items-center gap-3">
+                {b.cover_image ? (
+                  <img
+                    src={b.cover_image}
+                    alt=""
+                    className="h-12 w-16 rounded-lg object-cover border border-navy-100"
+                  />
+                ) : (
+                  <div className="h-12 w-16 rounded-lg bg-navy-100 flex items-center justify-center text-navy-400 text-xs font-bold">
+                    No Image
+                  </div>
+                )}
+                <div>
+                  <p className="font-bold text-navy-900 text-base">{b.title}</p>
+                  <p className="text-xs text-navy-500">
+                    /{b.slug} · {b.category ?? 'General'} · {formatDate(b.published_at ?? b.created_at)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => togglePublish(b)}
+                  className="cursor-pointer"
+                  title="Click to toggle Live/Draft"
+                >
+                  <Badge variant={b.published ? 'success' : 'default'}>
+                    {b.published ? 'Live (Published)' : 'Draft'}
+                  </Badge>
+                </button>
+                <Link to={`/blog/${b.slug}`} target="_blank">
+                  <Button size="sm" variant="ghost" icon={<ExternalLink className="h-4 w-4" />} title="View Live" />
+                </Link>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Edit3 className="h-4 w-4" />}
+                  onClick={() => openEdit(b)}
+                  title="Edit Post"
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-error-600"
+                  icon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => del(b.id)}
+                  title="Delete Post"
+                />
+              </div>
+            </div>
+          ))}
+        </Card>
+      ) : (
+        <Card>
+          <EmptyState
+            icon={<FileText className="h-6 w-6" />}
+            title="No blog posts"
+            description="Create your first post."
+            action={
+              <Button onClick={openNew} icon={<Plus className="h-4 w-4" />}>
+                New post
+              </Button>
+            }
+          />
+        </Card>
+      )}
+
+      <Modal
+        open={showEdit}
+        onClose={() => {
+          setShowEdit(false);
+          setPreview(false);
+        }}
+        title={editing?.id ? 'Edit post' : 'New post'}
+        size="xl"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowEdit(false);
+                setPreview(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={save} loading={saving}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        {editing && (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="Title"
+                value={editing.title}
+                onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+              />
+              <Input
+                label="Slug"
+                value={editing.slug}
+                onChange={(e) => setEditing({ ...editing, slug: e.target.value })}
+                placeholder="auto-generated"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select
+                label="Category"
+                value={editing.category}
+                onChange={(e) => setEditing({ ...editing, category: e.target.value })}
+              >
+                {['General', 'Market Updates', 'Tips & Advice', 'News'].map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Author"
+                value={editing.author_id}
+                onChange={(e) => setEditing({ ...editing, author_id: e.target.value })}
+              >
+                <option value="">Select author</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.first_name} {p.last_name} ({p.email})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="label">Cover image</label>
+              {editing.cover_image && (
+                <img src={editing.cover_image} alt="" className="mb-2 h-24 w-full rounded object-cover" />
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUpload(f);
+                }}
+                className="text-sm text-navy-500 file:mr-2 file:rounded file:border-0 file:bg-navy-700 file:px-3 file:py-1.5 file:text-white"
+              />
+            </div>
+            <Input
+              label="Tags (comma separated)"
+              value={editing.tags}
+              onChange={(e) => setEditing({ ...editing, tags: e.target.value })}
+            />
+            <Input
+              label="Excerpt"
+              value={editing.excerpt}
+              onChange={(e) => setEditing({ ...editing, excerpt: e.target.value })}
+            />
+            <div>
+              <label className="label">Body (supports markdown)</label>
+              <div className="mb-2 flex gap-2">
+                <Button size="sm" variant={preview ? 'primary' : 'ghost'} onClick={() => setPreview(false)}>
+                  Edit
+                </Button>
+                <Button size="sm" variant={preview ? 'ghost' : 'primary'} onClick={() => setPreview(true)}>
+                  Preview
+                </Button>
+              </div>
+              {preview ? (
+                <div className="rounded-lg border border-navy-200 p-4 min-h-[200px] prose max-w-none">
+                  {editing.body.split('\n').map((line, i) => {
+                    if (line.startsWith('# ')) return <h1 key={i}>{line.slice(2)}</h1>;
+                    if (line.startsWith('## ')) return <h2 key={i}>{line.slice(3)}</h2>;
+                    if (line.startsWith('- ')) return <li key={i}>{line.slice(2)}</li>;
+                    if (line.trim() === '') return <br key={i} />;
+                    return <p key={i}>{line}</p>;
+                  })}
+                </div>
+              ) : (
+                <textarea
+                  className="input min-h-[200px] font-mono text-sm"
+                  value={editing.body}
+                  onChange={(e) => setEditing({ ...editing, body: e.target.value })}
+                />
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={editing.published}
+                onChange={(e) => setEditing({ ...editing, published: e.target.checked })}
+                className="rounded border-navy-300 text-navy-700"
+              />{' '}
+              Publish immediately
+            </label>
+          </div>
+        )}
+      </Modal>
+    </DashboardLayout>
+  );
+}
+
+export function AdminMasterData() {
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<'cities' | 'types' | 'amenities'>('cities');
+  const [newName, setNewName] = useState('');
+  const [extra, setExtra] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const { data: cities } = useQuery({
+    queryKey: ['admin-cities', search],
+    queryFn: async () => {
+      const { data } = await supabase.from('cities').select('*').ilike('name', `%${search}%`).order('name');
+      return data ?? [];
+    },
+    enabled: tab === 'cities',
+  });
+  const { data: types } = useQuery({
+    queryKey: ['admin-ptypes', search],
+    queryFn: async () => {
+      const { data } = await supabase.from('property_types').select('*').ilike('name', `%${search}%`).order('name');
+      return data ?? [];
+    },
+    enabled: tab === 'types',
+  });
+  const { data: amenities } = useQuery({
+    queryKey: ['admin-amenities', search],
+    queryFn: async () => {
+      const { data } = await supabase.from('amenities').select('*').ilike('name', `%${search}%`).order('name');
+      return data ?? [];
+    },
+    enabled: tab === 'amenities',
+  });
+
+  const items = tab === 'cities' ? cities : tab === 'types' ? types : amenities;
+  const totalPages = items ? Math.max(1, Math.ceil(items.length / pageSize)) : 1;
+  const pageItems = items ? items.slice((page - 1) * pageSize, page * pageSize) : [];
+
+  const add = async () => {
+    if (!newName.trim()) return;
+    if (tab === 'cities') {
+      await supabase.from('cities').insert({ name: newName, state: extra || null, country: 'India' });
+    } else if (tab === 'types') {
+      await supabase
+        .from('property_types')
+        .insert({
+          name: newName,
+          category: (extra || 'Residential') as 'Residential' | 'Commercial' | 'Plot' | 'Luxury',
+        });
+    } else {
+      await supabase.from('amenities').insert({ name: newName });
+    }
+    setNewName('');
+    setExtra('');
+    queryClient.invalidateQueries({ queryKey: [`admin-${tab === 'types' ? 'ptypes' : tab}`] });
+  };
+
+  const remove = async (id: string) => {
+    const table = tab === 'cities' ? 'cities' : tab === 'types' ? 'property_types' : 'amenities';
+    await supabase.from(table).delete().eq('id', id);
+    queryClient.invalidateQueries({ queryKey: [`admin-${tab === 'types' ? 'ptypes' : tab}`] });
+  };
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:masterData', 'Master Data')}>
+      <PageHeader title="Master data" subtitle="Manage cities, property types, and amenities." />
+      <div className="mb-4 flex gap-1">
+        {(['cities', 'types', 'amenities'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => {
+              setTab(t);
+              setPage(1);
+              setSearch('');
+            }}
+            className={cn(
+              'rounded-lg px-3 py-1.5 text-sm font-medium capitalize',
+              tab === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50',
+            )}
+          >
+            {t === 'types' ? 'Property types' : t}
+          </button>
+        ))}
+      </div>
+      <Card className="p-4">
+        <div className="mb-4">
+          <Input
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="max-w-xs"
+          />
+        </div>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+          <Input
+            placeholder={tab === 'cities' ? 'City name' : tab === 'types' ? 'Type name' : 'Amenity name'}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          {tab === 'cities' && (
+            <Input
+              placeholder="State"
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              className="sm:max-w-[200px]"
+            />
+          )}
+          {tab === 'types' && (
+            <Select
+              value={extra || 'Residential'}
+              onChange={(e) => setExtra(e.target.value)}
+              className="sm:max-w-[200px]"
+            >
+              {['Residential', 'Commercial', 'Plot', 'Luxury'].map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          )}
+          <Button onClick={add} icon={<Plus className="h-4 w-4" />}>
+            Add
+          </Button>
+        </div>
+        <div className="divide-y divide-navy-50">
+          {pageItems?.map((item) => (
+            <div key={item.id} className="flex items-center justify-between py-2.5">
+              <div>
+                <p className="text-sm font-medium text-navy-900">{item.name}</p>
+                {(tab === 'cities' || tab === 'types') && (item as Record<string, unknown>).state ? (
+                  <p className="text-xs text-navy-500">{String((item as Record<string, unknown>).state)}</p>
+                ) : null}
+                {tab === 'types' && (item as Record<string, unknown>).category ? (
+                  <p className="text-xs text-navy-500">{String((item as Record<string, unknown>).category)}</p>
+                ) : null}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-error-600"
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => remove(item.id)}
+              />
+            </div>
+          ))}
+          {items && items.length === 0 && <p className="py-6 text-center text-sm text-navy-400">No entries yet.</p>}
+        </div>
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between border-t border-navy-100 px-4 py-3 text-sm">
+            <span className="text-navy-500">
+              Page {page} of {totalPages}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+                Prev
+              </Button>
+              <Button variant="ghost" size="sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </DashboardLayout>
+  );
+}

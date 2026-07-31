@@ -1,0 +1,14 @@
+{
+  "title": "तुलना करें",
+  "subtitle": "आपकी चयनित संपत्तियों (4 तक) की साथ-साथ तुलना।",
+  "emptyTitle": "तुलना के लिए कोई संपत्ति नहीं चुनी गई",
+  "emptyDesc": "4 तक संपत्तियों को साथ-साथ जोड़ने के लिए किसी भी संपत्ति कार्ड या विवरण पृष्ठ पर तुलना आइकन पर क्लिक करें।",
+  "propertyCol": "संपत्ति",
+  "remove": "तुलना से निकालें",
+  "viewProperty": "विवरण देखें",
+  "removedToast": "संपत्ति की तुलना से हटा दी गई",
+  "clearedToast": "तुलना सूची साफ़ की गई",
+  "selectedCount": "[HI] selected",
+  "backToSearch": "[HI] Back to Search",
+  "noSelected": "[HI] No properties selected"
+}

@@ -1,0 +1,23 @@
+{
+  "aiAssistant": "एआई सहायक",
+  "askQuestion": "संपत्तियों के बारे में कुछ भी पूछें...",
+  "generateDescription": "एआई विवरण उत्पन्न करें",
+  "analyzing": "विश्लेषण हो रहा है...",
+  "aiPowered": "एआई-संचालित",
+  "aiInsights": "एआई अंतर्दृष्टि",
+  "marketAnalysis": "बाज़ार विश्लेषण",
+  "pricePrediction": "मूल्य पूर्वानुमान",
+  "recommendedProperties": "एआई अनुशंसित संपत्तियां",
+  "bestTimeToBy": "खरीदने का सबसे अच्छा समय",
+  "welcomeMessage": "[HI] Hi! I'm RealtyNow's AI assistant. Ask me about properties, listings, or real estate in general.",
+  "quickPrompt1": "[HI] Find 3BHK apartments under 1 crore in Mumbai",
+  "quickPrompt2": "[HI] What documents do I need to list a property?",
+  "quickPrompt3": "[HI] Suggest areas in Hyderabad for renting under 30k",
+  "errorMessage": "[HI] Sorry, I couldn't process that.",
+  "tryAgain": "[HI] Try again.",
+  "assistant": "[HI] AI Assistant",
+  "title": "[HI] RealtyNow AI",
+  "online": "[HI] Online",
+  "tryAsking": "[HI] Try asking:",
+  "placeholder": "[HI] Type your message..."
+}

@@ -1,0 +1,1578 @@
+// Trigger HMR
+import React, { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useForm, FormProvider } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Save,
+  Shield,
+  Clock,
+  Smartphone,
+  Sparkles,
+  X,
+  MapPin,
+  Home,
+  Star,
+  Camera,
+  Eye,
+  Upload,
+} from 'lucide-react';
+import { DashboardLayout } from '../../components/dashboard-layout';
+import { getPortalSections } from './sections';
+import { useLanguageContext } from '../../lib/i18n/language-context';
+import { Button } from '../../components/ui';
+import { propertyWizardSchema, PropertyWizardForm, WIZARD_STEPS } from './wizard-schema';
+import { useAuth } from '../../lib/auth';
+import { useToast } from '../../hooks/useToast';
+import { supabase } from '../../lib/supabase';
+
+const PURPOSE_OPTIONS = [
+  { id: 'Sale', label: 'Sale', icon: '/icons/icon_sale_3d.png', desc: 'Sell your property' },
+  { id: 'Rent', label: 'Rent', icon: '/icons/icon_rent_3d.png', desc: 'Find a tenant' },
+  { id: 'Lease', label: 'Lease', icon: '/icons/icon_lease_3d.png', desc: 'Commercial lease' },
+  { id: 'PG', label: 'PG', icon: '/icons/icon_pg_3d.png', desc: 'Paying Guest' },
+  { id: 'CoLiving', label: 'CoLiving', icon: '/icons/icon_coliving_3d.png', desc: 'Shared spaces' },
+  { id: 'Hostel', label: 'Hostel', icon: '/icons/icon_hostel_3d.png', desc: 'Student hostels' },
+  { id: 'Vacation Rental', label: 'Vacation', icon: '🏖️', desc: 'Short stays' },
+];
+
+const AMENITIES_LIST = [
+  { id: 'parking', label: 'Parking', icon: '🚗' },
+  { id: 'gym', label: 'Gym', icon: '💪' },
+  { id: 'pool', label: 'Swimming Pool', icon: '🏊' },
+  { id: 'security', label: '24/7 Security', icon: '🔒' },
+  { id: 'lift', label: 'Lift / Elevator', icon: '🛗' },
+  { id: 'wifi', label: 'WiFi', icon: '📶' },
+  { id: 'power_backup', label: 'Power Backup', icon: '🔋' },
+  { id: 'garden', label: 'Garden', icon: '🌿' },
+  { id: 'clubhouse', label: 'Club House', icon: '🏛️' },
+  { id: 'cctv', label: 'CCTV', icon: '📷' },
+  { id: 'gas', label: 'Piped Gas', icon: '🔥' },
+  { id: 'intercom', label: 'Intercom', icon: '📞' },
+  { id: 'play_area', label: 'Play Area', icon: '🎠' },
+  { id: 'rainwater', label: 'Rainwater Harvesting', icon: '🌧️' },
+  { id: 'ev_charging', label: 'EV Charging', icon: '⚡' },
+  { id: 'servant', label: 'Servant Room', icon: '🛏️' },
+];
+
+// ── tiny reusable field wrapper ──
+const FieldLabel = ({ children }: { children: React.ReactNode }) => (
+  <label className="block text-xs font-semibold text-navy-500 uppercase tracking-widest mb-1.5 whitespace-nowrap truncate">{children}</label>
+);
+const InputField = ({ placeholder, type = 'text', ...rest }: React.InputHTMLAttributes<HTMLInputElement>) => (
+  <input
+    type={type}
+    placeholder={placeholder}
+    {...rest}
+    className={`w-full bg-white border border-navy-150 rounded-xl px-4 py-2.5 text-sm font-medium text-navy-900 focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/10 transition-all placeholder:text-navy-300 shadow-sm ${rest.className ?? ''}`}
+  />
+);
+const TextAreaField = ({ placeholder, rows = 3, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+  <textarea
+    placeholder={placeholder}
+    rows={rows}
+    {...rest}
+    className={`w-full bg-white border border-navy-150 rounded-xl px-4 py-2.5 text-sm font-medium text-navy-900 focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/10 transition-all placeholder:text-navy-300 shadow-sm resize-none ${rest.className ?? ''}`}
+  />
+);
+const SelectField = ({ children, ...rest }: React.SelectHTMLAttributes<HTMLSelectElement>) => (
+  <select
+    {...rest}
+    className={`w-full bg-white border border-navy-150 rounded-xl px-4 py-2.5 text-sm font-medium text-navy-900 focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/10 transition-all shadow-sm appearance-none ${rest.className ?? ''}`}
+  >
+    {children}
+  </select>
+);
+const SectionTitle = ({ title, sub }: { title: string; sub: string }) => (
+  <div className="text-center space-y-1.5 mb-6">
+    <h3 className="text-2xl md:text-3xl font-display font-bold text-navy-900 tracking-tight">{title}</h3>
+    <p className="text-navy-400 text-sm font-medium">{sub}</p>
+  </div>
+);
+
+// ── Preview Modal ──
+function PreviewModal({
+  data,
+  counters,
+  mediaUrls,
+  furnishing,
+  onClose,
+}: {
+  data: Partial<PropertyWizardForm>;
+  counters: Record<string, number>;
+  mediaUrls: string[];
+  furnishing: string;
+  onClose: () => void;
+}) {
+  const isSale = data.purpose === 'Sale';
+  const priceLabel = isSale ? 'Asking Price' : 'Monthly Rent';
+  const priceVal = isSale ? data.price : data.rent_amount;
+
+  return (
+    <div
+      className="fixed inset-0 bg-navy-900/40 backdrop-blur-md z-[9999] flex items-center justify-center p-4 md:p-8"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-[32px] shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row relative"
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 bg-white/50 backdrop-blur-xl hover:bg-white text-navy-900 rounded-full p-2.5 transition-all shadow-sm z-50"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {/* Left Side: Images Gallery */}
+        <div className="w-full md:w-5/12 bg-navy-50 relative min-h-[300px] md:min-h-full shrink-0">
+          {mediaUrls && mediaUrls.length > 0 ? (
+            <div className="w-full h-full relative group">
+              <img
+                src={mediaUrls[0]}
+                alt="Property"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src =
+                    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=800';
+                }}
+              />
+              {mediaUrls.length > 1 && (
+                <div className="absolute bottom-4 right-4 bg-navy-900/80 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+                  <Camera className="h-3.5 w-3.5" /> +{mediaUrls.length - 1} Photos
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-navy-300 p-8 text-center bg-gradient-to-br from-navy-50 to-navy-100/50">
+              <Home className="h-16 w-16 mb-4 opacity-50" />
+              <p className="text-sm font-semibold">No images uploaded yet</p>
+            </div>
+          )}
+          <div className="absolute top-4 left-4 flex flex-col gap-2">
+            <span className="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md uppercase tracking-wider">
+              {data.purpose || 'Sale'}
+            </span>
+            {data.category && (
+              <span className="bg-white/90 backdrop-blur-sm text-navy-900 text-[10px] font-bold px-3 py-1 rounded-full shadow-sm uppercase tracking-wider">
+                {data.category}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Details Content */}
+        <div className="w-full md:w-7/12 p-6 md:p-8 overflow-y-auto flex flex-col gap-8 custom-scrollbar">
+          {/* Header section */}
+          <div>
+            <div className="flex items-center gap-2 text-red-500 mb-2">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-xs font-bold tracking-widest uppercase">Preview Listing</span>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-display font-bold text-navy-900 leading-tight mb-2">
+              {data.title || 'Beautiful Property'}
+            </h2>
+            <div className="flex items-start gap-1.5 text-navy-500">
+              <MapPin className="h-4 w-4 shrink-0 mt-0.5" />
+              <p className="text-sm font-medium leading-relaxed">
+                {[data.locality_name, data.city_name].filter(Boolean).join(', ') || 'Location not specified'}
+                {data.address && <span className="block text-xs mt-0.5 opacity-80">{data.address}</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Key Pricing */}
+          <div className="flex items-end justify-between p-5 bg-gradient-to-br from-red-50 to-rose-50/30 rounded-2xl border border-red-100">
+            <div>
+              <p className="text-xs font-bold text-red-800/60 uppercase tracking-widest mb-1">{priceLabel}</p>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-bold text-red-600">₹</span>
+                <span className="text-3xl font-display font-bold text-red-600">
+                  {priceVal ? Number(priceVal).toLocaleString('en-IN') : 'TBD'}
+                </span>
+                {!isSale && priceVal && <span className="text-sm font-semibold text-red-600/70 ml-1">/mo</span>}
+              </div>
+            </div>
+            {data.security_deposit && (
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-navy-500 uppercase tracking-widest mb-0.5">Deposit</p>
+                <p className="text-sm font-bold text-navy-900">
+                  ₹{Number(data.security_deposit).toLocaleString('en-IN')}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: 'Beds', val: counters.bedrooms, icon: '🛏️' },
+              { label: 'Baths', val: counters.bathrooms, icon: '🚿' },
+              { label: 'Balcony', val: counters.balconies, icon: '🌿' },
+              { label: 'Type', val: furnishing || 'Bare', icon: '🛋️' },
+            ].map((s, i) => (
+              <div
+                key={i}
+                className="bg-navy-50 rounded-2xl p-3 flex flex-col items-center justify-center gap-1.5 border border-navy-100/50"
+              >
+                <span className="text-xl">{s.icon}</span>
+                <span className="text-base font-display font-bold text-navy-900 leading-none">{s.val}</span>
+                <span className="text-[10px] text-navy-500 uppercase tracking-widest font-semibold">{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Details List */}
+          <div className="space-y-4 border-t border-navy-100 pt-6">
+            <h3 className="text-sm font-bold text-navy-900 uppercase tracking-wider">Property Details</h3>
+            <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+              {[
+                { label: 'Property Type', val: data.property_sub_type },
+                {
+                  label: 'Floor No.',
+                  val:
+                    data.floor_number && data.total_floors
+                      ? `${data.floor_number} of ${data.total_floors}`
+                      : data.floor_number,
+                },
+                { label: 'Carpet Area', val: data.carpet_area ? `${data.carpet_area} sq.ft` : null },
+                { label: 'Super Area', val: data.super_area ? `${data.super_area} sq.ft` : null },
+                { label: 'Plot / Land', val: data.plot_area ? `${data.plot_area} sq.ft` : null },
+                { label: 'Indoor Parking', val: data.parking_indoor },
+                { label: 'Outdoor Parking', val: data.parking_outdoor },
+                { label: 'Age', val: data.age_of_property },
+                { label: 'Facing', val: data.facing },
+                { label: 'Available', val: data.availability_date },
+                { label: 'Ownership', val: data.ownership_type },
+              ]
+                .filter((x) => x.val)
+                .map((item, i) => (
+                  <div key={i} className="flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold text-navy-400 uppercase tracking-wider">{item.label}</span>
+                    <span className="text-sm font-medium text-navy-900">{item.val}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* Description */}
+          {data.description && (
+            <div className="space-y-2 border-t border-navy-100 pt-6">
+              <h3 className="text-sm font-bold text-navy-900 uppercase tracking-wider">About Property</h3>
+              <p className="text-sm text-navy-600 leading-relaxed">{data.description}</p>
+            </div>
+          )}
+
+          {/* Amenities */}
+          {data.amenities && data.amenities.length > 0 && (
+            <div className="space-y-3 border-t border-navy-100 pt-6 pb-2">
+              <h3 className="text-sm font-bold text-navy-900 uppercase tracking-wider">Amenities</h3>
+              <div className="flex flex-wrap gap-2">
+                {data.amenities.map((a) => {
+                  const found = AMENITIES_LIST.find((x) => x.id === a);
+                  return (
+                    <span
+                      key={a}
+                      className="flex items-center gap-1.5 text-xs bg-white border border-navy-200 rounded-full px-3 py-1.5 text-navy-700 font-medium shadow-sm"
+                    >
+                      <span className="text-sm">{found?.icon || '✨'}</span> {found?.label ?? a}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Source URLs */}
+          {data.source_urls && (
+            <div className="space-y-3 border-t border-navy-100 pt-6 pb-2">
+              <h3 className="text-sm font-bold text-navy-900 uppercase tracking-wider">Source Links</h3>
+              <div className="flex flex-col gap-2">
+                {data.source_urls.split(',').map((url: string, i: number) => url.trim() ? (
+                  <a key={i} href={url.trim()} target="_blank" rel="noopener noreferrer" className="text-xs text-red-500 hover:underline break-all">
+                    {url.trim()}
+                  </a>
+                ) : null)}
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+export function ListPropertyWizard() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { t } = useLanguageContext();
+  const toast = useToast();
+  const [activeStep, setActiveStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [searchParams] = useSearchParams();
+  const draftIdParam = searchParams.get('draft_id');
+  const [draftId, setDraftId] = useState<string | null>(draftIdParam);
+  const [showPreview, setShowPreview] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [isRestoring, setIsRestoring] = useState(!!draftIdParam);
+
+  // Step 3: Basic Details local state
+  const [bedrooms, setBedrooms] = useState(2);
+  const [bathrooms, setBathrooms] = useState(1);
+  const [balconies, setBalconies] = useState(1);
+  const [furnishing, setFurnishing] = useState('');
+
+  // Step 5: Amenities
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const toggleAmenity = (id: string) =>
+    setSelectedAmenities((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  // Step 6: Media
+  const [mediaUrls, setMediaUrls] = useState<string[]>([]);
+  const [mediaInput, setMediaInput] = useState('');
+  const addMedia = () => {
+    if (mediaInput.trim()) {
+      setMediaUrls((prev) => [...prev, mediaInput.trim()]);
+      setMediaInput('');
+    }
+  };
+
+  // Step 7: Pricing
+  const [negotiable, setNegotiable] = useState(true);
+
+  const methods = useForm<PropertyWizardForm>({
+    resolver: zodResolver(propertyWizardSchema) as any,
+    mode: 'onChange',
+    defaultValues: {
+      purpose: 'Sale',
+      amenities: [],
+      images: [],
+      negotiable: true,
+    },
+  });
+
+  const { handleSubmit, watch, register, getValues, setValue } = methods;
+
+  React.useEffect(() => {
+    const subscription = watch((value, { name, type }) => {
+      if (name === 'carpet_area' && type === 'change') {
+        const ca = parseFloat(value.carpet_area || '0');
+        if (!isNaN(ca) && ca > 0) {
+          setValue('super_area', (ca * 1.25).toFixed(2).replace(/\.00$/, ''));
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [watch, setValue]);
+
+  // Draft recovery
+  React.useEffect(() => {
+    if (draftIdParam && isRestoring) {
+      import('../../lib/properties').then(({ getDraftProperty }) => {
+        getDraftProperty(draftIdParam).then((draft) => {
+          if (draft && draft.draft_data) {
+            methods.reset(draft.draft_data);
+            setActiveStep(draft.current_step || 0);
+            setCompletedSteps(draft.completed_steps || []);
+            setBedrooms(draft.bedrooms || 2);
+            setBathrooms(draft.bathrooms || 1);
+            setBalconies(draft.balconies || 1);
+            setFurnishing(draft.furnishing || '');
+            setSelectedAmenities(draft.amenities || []);
+            setMediaUrls(draft.images || []);
+            if (draft.features?.negotiable !== undefined) {
+              setNegotiable(draft.features.negotiable);
+            }
+          }
+          setIsRestoring(false);
+        }).catch(err => {
+          console.error("Failed to restore draft", err);
+          setIsRestoring(false);
+        });
+      });
+    } else {
+      setIsRestoring(false);
+    }
+  }, [draftIdParam]);
+
+  // Autosave
+  React.useEffect(() => {
+    if (isRestoring) return;
+    const timer = setTimeout(() => {
+      handleSaveDraft();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [JSON.stringify(watch()), activeStep, completedSteps, bedrooms, bathrooms, balconies, furnishing, selectedAmenities, mediaUrls, negotiable]);
+
+  const handleNext = async () => {
+    if (activeStep < WIZARD_STEPS.length - 1) {
+      if (!completedSteps.includes(activeStep)) {
+        setCompletedSteps(prev => [...prev, activeStep]);
+      }
+      setActiveStep((prev) => prev + 1);
+    }
+  };
+  const handleBack = () => {
+    if (activeStep > 0) setActiveStep((prev) => prev - 1);
+  };
+
+  const calculateCompletion = (vals: any, step: number, completed: number[]) => {
+    // Simple heuristic for completion percentage based on steps completed
+    const baseProgress = Math.round((completed.length / WIZARD_STEPS.length) * 100);
+    return Math.min(100, baseProgress);
+  };
+
+  const buildPayload = () => {
+    const vals = getValues();
+
+    // Map UI furnishing to DB ENUM ('Unfurnished','Semi-Furnished','Fully Furnished')
+    let dbFurnishing = null;
+    if (furnishing === 'Fully') dbFurnishing = 'Fully Furnished';
+    else if (furnishing === 'Semi') dbFurnishing = 'Semi-Furnished';
+    else if (furnishing === 'Bare') dbFurnishing = 'Unfurnished';
+
+    // Map UI Purpose to DB ENUM ('Sale', 'Rent')
+    const dbPurpose = vals.purpose === 'Sale' ? 'Sale' : 'Rent';
+
+    let ageInt = null;
+    if (vals.age_of_property === '0-1 Years') ageInt = 1;
+    else if (vals.age_of_property === '1-5 Years') ageInt = 5;
+    else if (vals.age_of_property === '5-10 Years') ageInt = 10;
+    else if (vals.age_of_property === '10+ Years') ageInt = 15;
+
+    const autoTitle =
+      vals.title?.trim() ||
+      `${vals.purpose || 'Sale'} - ${vals.property_sub_type || vals.category || 'Property'}${vals.city_name ? ` in ${vals.city_name}` : ''}`;
+    const autoAddress =
+      vals.address?.trim() || [vals.locality_name, vals.city_name].filter(Boolean).join(', ') || 'Prime Location';
+
+    return {
+      owner_id: user?.id,
+      status: 'draft' as const,
+      is_draft: true,
+      current_step: activeStep,
+      completed_steps: completedSteps,
+      completion_percentage: calculateCompletion(vals, activeStep, completedSteps),
+      draft_data: vals,
+      purpose: dbPurpose,
+      title: autoTitle,
+      description: vals.description || null,
+      address: autoAddress,
+      latitude: vals.latitude ? parseFloat(vals.latitude) : null,
+      longitude: vals.longitude ? parseFloat(vals.longitude) : null,
+      price: vals.price ? parseFloat(vals.price) : 0,
+      rent_amount: vals.rent_amount ? parseFloat(vals.rent_amount) : null,
+      security_deposit: vals.security_deposit ? parseFloat(vals.security_deposit) : null,
+      bedrooms: bedrooms || 0,
+      bathrooms: bathrooms || 0,
+      balconies: balconies || 0,
+      furnishing: dbFurnishing,
+      floor_number: vals.floor_number ? parseInt(vals.floor_number) : null,
+      total_floors: vals.total_floors ? parseInt(vals.total_floors) : null,
+      built_up_area: vals.built_up_area ? parseFloat(vals.built_up_area) : null,
+      carpet_area: vals.carpet_area ? parseFloat(vals.carpet_area) : null,
+      plot_area: vals.plot_area ? parseFloat(vals.plot_area) : null,
+      parking: (parseInt(vals.parking_indoor || '0') + parseInt(vals.parking_outdoor || '0')) || 0,
+      amenities: selectedAmenities,
+      images: mediaUrls,
+      ownership_type: vals.ownership_type || null,
+      age_of_property: ageInt,
+      facing: vals.facing || null,
+      features: {
+        original_purpose: vals.purpose,
+        category: vals.category,
+        property_sub_type: vals.property_sub_type,
+        city_name: vals.city_name,
+        locality_name: vals.locality_name,
+        maintenance: vals.maintenance ? parseFloat(vals.maintenance) : null,
+        negotiable,
+        rera_number: vals.rera_number,
+        ownership_role: vals.ownership_role,
+        super_area: vals.super_area ? parseFloat(vals.super_area) : null,
+        balcony_size: vals.balcony_size,
+        bedroom_size: vals.bedroom_size,
+        parking_indoor: vals.parking_indoor ? parseInt(vals.parking_indoor) : 0,
+        parking_outdoor: vals.parking_outdoor ? parseInt(vals.parking_outdoor) : 0,
+        source_urls: vals.source_urls ? vals.source_urls.split(',').map(s => s.trim()).filter(Boolean) : [],
+      },
+    };
+  };
+
+  const handleSaveDraft = async () => {
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      
+      // Local backup
+      localStorage.setItem(`realtynow_draft_${user?.id || 'guest'}`, JSON.stringify(payload));
+      
+      // DB Save
+      if (navigator.onLine) {
+        const { savePropertyDraft } = await import('../../lib/properties');
+        const data = await savePropertyDraft(draftId, payload);
+        if (!draftId && data?.id) {
+          setDraftId(data.id);
+          // Update URL without reloading to reflect draft_id
+          window.history.replaceState({}, '', `?draft_id=${data.id}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to save draft:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onSubmit = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        ...buildPayload(),
+        status: 'submitted' as const,
+        approval_status: 'Pending' as const,
+        is_live: false,
+      };
+      if (draftId) {
+        const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('properties').insert(payload);
+        if (error) throw error;
+      }
+      toast.addToast('success', '🎉 Property submitted for admin review!');
+      setTimeout(() => {
+        navigate('/portal/my-properties');
+      }, 1200);
+    } catch (err: any) {
+      toast.addToast('error', err?.message || 'Submission failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onFormError = (errors: any) => {
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      toast.addToast('error', `Missing required field: ${errorKeys[0]}`);
+    } else {
+      toast.addToast('error', 'Please fill all required fields.');
+    }
+  };
+
+  const progressPercentage = Math.round((activeStep / (WIZARD_STEPS.length - 1)) * 100);
+  const formData = watch();
+
+  return (
+    <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+      {/* Background */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-red-100/40 blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] rounded-full bg-rose-50/50 blur-[150px]"></div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.01)_1px,transparent_1px)] bg-[size:24px_24px] opacity-30"></div>
+      </div>
+
+      {/* Preview Modal */}
+      <AnimatePresence>
+        {showPreview && (
+          <PreviewModal
+            data={formData}
+            counters={{ bedrooms, bathrooms, balconies }}
+            mediaUrls={mediaUrls}
+            furnishing={furnishing}
+            onClose={() => setShowPreview(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <div className="relative z-10 mx-auto max-w-5xl space-y-6 pb-20 mt-4">
+        {/* Top Header Card */}
+        <div className="bg-white/90 backdrop-blur-2xl p-5 md:p-6 rounded-[24px] border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col gap-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="bg-gradient-to-r from-red-600 to-rose-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg shadow-sm shadow-red-500/20">
+                Step {activeStep + 1}
+              </div>
+              <div>
+                <h2 className="text-xl font-display font-bold text-navy-900 leading-tight">
+                  {WIZARD_STEPS[activeStep]}
+                </h2>
+                <p className="text-sm text-navy-500 font-medium">
+                  {progressPercentage}% Complete • ~{WIZARD_STEPS.length - activeStep} mins left
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-navy-900 text-white px-4 py-2 rounded-full shadow-lg shadow-navy-900/10">
+              <span className="text-xs font-semibold tracking-wide">Auto-saving</span>
+              <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse"></span>
+            </div>
+          </div>
+          <div className="w-full bg-navy-100 rounded-full h-1.5 overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-red-500 to-rose-500 shadow-sm shadow-red-500/30"
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPercentage}%` }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+
+        {/* Main Wizard Card */}
+        <div className="bg-white/90 backdrop-blur-2xl rounded-[32px] border border-white/60 shadow-[0_20px_60px_rgba(0,0,0,0.06)] overflow-hidden">
+          <FormProvider {...methods}>
+            <form onSubmit={handleSubmit(onSubmit, onFormError)}>
+              <div className="p-6 md:p-10 min-h-[480px] relative">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeStep}
+                    initial={{ opacity: 0, x: 40 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -40 }}
+                    transition={{ duration: 0.25, ease: 'easeOut' }}
+                    className="max-w-4xl mx-auto"
+                  >
+                    {/* ─── STEP 0: Purpose ─── */}
+                    {activeStep === 0 && (
+                      <div className="space-y-10">
+                        <SectionTitle
+                          title="What is the purpose of your listing?"
+                          sub="Select the primary intent for this property to tailor the remaining steps."
+                        />
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-5">
+                          {PURPOSE_OPTIONS.map((option) => {
+                            const isSelected = watch('purpose') === option.id;
+                            return (
+                              <motion.button
+                                whileHover={{ scale: 1.04, y: -2 }}
+                                whileTap={{ scale: 0.96 }}
+                                key={option.id}
+                                type="button"
+                                onClick={() => methods.setValue('purpose', option.id as any)}
+                                className={`group relative flex flex-col items-center p-5 md:p-6 rounded-[20px] transition-all duration-300 ease-out border-2 overflow-visible ${isSelected ? 'border-red-500 bg-white shadow-[0_12px_24px_rgba(229,57,53,0.12)] z-10 ring-2 ring-red-500/20' : 'border-navy-50 bg-white/70 hover:bg-white shadow-sm hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:border-red-200'}`}
+                              >
+                                {isSelected && (
+                                  <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full p-1 shadow-md z-20"
+                                  >
+                                    <Check className="h-3 w-3 stroke-[3]" />
+                                  </motion.div>
+                                )}
+                                <div className="h-16 w-16 mb-4 rounded-xl overflow-hidden bg-white flex items-center justify-center">
+                                  {option.icon.endsWith('.png') ? (
+                                    <img
+                                      src={option.icon}
+                                      alt={option.label}
+                                      className={`w-full h-full object-contain mix-blend-multiply transition-transform duration-500 ${isSelected ? 'scale-110' : 'group-hover:scale-110 group-hover:-rotate-3'}`}
+                                    />
+                                  ) : (
+                                    <span
+                                      className={`text-4xl transition-transform duration-500 ${isSelected ? 'scale-125' : 'group-hover:scale-110'}`}
+                                    >
+                                      {option.icon}
+                                    </span>
+                                  )}
+                                </div>
+                                <span
+                                  className={`block font-display font-bold text-lg leading-tight transition-colors ${isSelected ? 'text-red-600' : 'text-navy-800 group-hover:text-red-500'}`}
+                                >
+                                  {option.label}
+                                </span>
+                                <span
+                                  className={`block text-[11px] font-medium mt-1 transition-colors ${isSelected ? 'text-red-500/80' : 'text-navy-400'}`}
+                                >
+                                  {option.desc}
+                                </span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 1: Category ─── */}
+                    {activeStep === 1 && (
+                      <div className="space-y-10">
+                        <SectionTitle title="Select Property Category" sub="What kind of property are you listing?" />
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-5">
+                          {[
+                            { id: 'Residential', label: 'Residential', desc: 'Homes & Flats', icon: '🏠' },
+                            { id: 'Commercial', label: 'Commercial', desc: 'Offices & Shops', icon: '🏢' },
+                            { id: 'Land', label: 'Land', desc: 'Plots & Farms', icon: '🌄' },
+                            { id: 'Luxury', label: 'Luxury', desc: 'Premium Estates', icon: '✨' },
+                            { id: 'Rental Living', label: 'Rental', desc: 'PGs & Co-living', icon: '🛋️' },
+                          ].map((cat) => {
+                            const isSelected = watch('category') === cat.id;
+                            return (
+                              <motion.button
+                                whileHover={{ scale: 1.04, y: -2 }}
+                                whileTap={{ scale: 0.96 }}
+                                key={cat.id}
+                                type="button"
+                                onClick={() => methods.setValue('category', cat.id as any)}
+                                className={`group relative flex flex-col items-center p-5 rounded-[20px] border-2 transition-all duration-300 ${isSelected ? 'border-red-500 bg-white shadow-[0_12px_24px_rgba(229,57,53,0.12)] z-10 ring-2 ring-red-500/20' : 'border-navy-50 bg-white/70 hover:bg-white shadow-sm hover:border-red-200'}`}
+                              >
+                                {isSelected && (
+                                  <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full p-1 shadow-md z-20"
+                                  >
+                                    <Check className="h-3 w-3 stroke-[3]" />
+                                  </motion.div>
+                                )}
+                                <div className="h-14 w-14 mb-3 rounded-xl bg-gradient-to-br from-navy-50 to-white border border-navy-100/50 flex items-center justify-center">
+                                  <span
+                                    className={`text-3xl transition-transform duration-500 ${isSelected ? 'scale-125' : 'group-hover:scale-110'}`}
+                                  >
+                                    {cat.icon}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`font-display font-bold text-base ${isSelected ? 'text-red-600' : 'text-navy-800'}`}
+                                >
+                                  {cat.label}
+                                </span>
+                                <span
+                                  className={`text-[10px] mt-0.5 font-medium ${isSelected ? 'text-red-400' : 'text-navy-400'}`}
+                                >
+                                  {cat.desc}
+                                </span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 2: Property Type ─── */}
+                    {activeStep === 2 && (
+                      <div className="space-y-10 max-w-4xl mx-auto">
+                        <SectionTitle
+                          title="Property Type"
+                          sub={`Choose the specific type of ${watch('category')?.toLowerCase() || 'property'}.`}
+                        />
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-5">
+                          {[
+                            { id: 'Apartment', icon: '🏢' },
+                            { id: 'Independent House', icon: '🏡' },
+                            { id: 'Villa', icon: '🏰' },
+                            { id: 'Builder Floor', icon: '🏬' },
+                            { id: 'Studio', icon: '🛋️' },
+                            { id: 'Penthouse', icon: '🌆' },
+                            { id: 'Farmhouse', icon: '🌾' },
+                            { id: 'Plot', icon: '📐' },
+                          ].map((type) => {
+                            const isSelected = watch('property_sub_type') === type.id;
+                            return (
+                              <motion.button
+                                whileHover={{ scale: 1.04, y: -2 }}
+                                whileTap={{ scale: 0.96 }}
+                                key={type.id}
+                                type="button"
+                                onClick={() => methods.setValue('property_sub_type', type.id)}
+                                className={`group relative flex items-center gap-3 p-4 rounded-[18px] border-2 transition-all duration-300 ${isSelected ? 'border-red-500 bg-white shadow-[0_12px_24px_rgba(229,57,53,0.12)] z-10' : 'border-navy-50 bg-white/70 hover:bg-white shadow-sm hover:border-red-200'}`}
+                              >
+                                {isSelected && (
+                                  <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 shadow-md z-20"
+                                  >
+                                    <Check className="h-3 w-3 stroke-[3]" />
+                                  </motion.div>
+                                )}
+                                <div className="h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br from-navy-50 to-white border border-navy-100 flex items-center justify-center">
+                                  <span
+                                    className={`text-xl transition-transform duration-300 ${isSelected ? 'scale-125' : 'group-hover:scale-110'}`}
+                                  >
+                                    {type.icon}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`font-display font-bold text-sm ${isSelected ? 'text-red-600' : 'text-navy-800'}`}
+                                >
+                                  {type.id}
+                                </span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 3: Basic Details ─── */}
+                    {activeStep === 3 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle
+                          title="Basic Details"
+                          sub="Tell us about the property's size and configuration."
+                        />
+                        <div className="space-y-4">
+                          <div>
+                            <FieldLabel>Title *</FieldLabel>
+                            <InputField {...register('title')} placeholder="e.g. 3BHK Luxury Apartment in Bandra" />
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="relative">
+                              <FieldLabel>Carpet Area</FieldLabel>
+                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                                <input type="number" {...register('carpet_area')} placeholder="e.g. 1000" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                                <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
+                              </div>
+                            </div>
+                            <div className="relative">
+                              <FieldLabel>Super Area</FieldLabel>
+                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                                <input type="number" {...register('super_area')} placeholder="Auto (1.25x)" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                                <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
+                              </div>
+                            </div>
+                            <div className="relative">
+                              <FieldLabel>Built-up Area</FieldLabel>
+                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                                <input type="number" {...register('built_up_area')} placeholder="e.g. 1100" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                                <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
+                              </div>
+                            </div>
+                            <div className="relative">
+                              <FieldLabel>Land / Plot Area</FieldLabel>
+                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                                <input type="number" {...register('plot_area')} placeholder="e.g. 1500" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                                <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <FieldLabel>Description</FieldLabel>
+                          <TextAreaField
+                            {...register('description')}
+                            placeholder="Describe the property — highlights, layout, surroundings..."
+                            rows={3}
+                          />
+                        </div>
+
+                        <div>
+                          <FieldLabel>Source URLs (Optional)</FieldLabel>
+                          <TextAreaField
+                            {...register('source_urls')}
+                            placeholder="Add reference links (comma separated)"
+                            rows={2}
+                          />
+                        </div>
+
+                        <div>
+                          <FieldLabel>Furnishing</FieldLabel>
+                          <div className="flex gap-2">
+                            {[
+                              { label: 'Fully', icon: '🛋️' },
+                              { label: 'Semi', icon: '🪑' },
+                              { label: 'Bare', icon: '🧱' },
+                            ].map((s) => {
+                              const isActive = furnishing === s.label;
+                              return (
+                                <button
+                                  key={s.label}
+                                  type="button"
+                                  onClick={() => setFurnishing(s.label)}
+                                  className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all border flex flex-col items-center gap-0.5 ${isActive ? 'border-red-500 bg-red-50 text-red-600 ring-2 ring-red-500/10' : 'border-navy-150 bg-white text-navy-600 hover:border-red-300'}`}
+                                >
+                                  <span className="text-base">{s.icon}</span>
+                                  {s.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          {[
+                            { label: 'Bedrooms', icon: '🛏️', value: bedrooms, set: setBedrooms, min: 0, max: 10, reg: 'bedroom_size', pl: 'Size (sq.ft)' },
+                            { label: 'Bathrooms', icon: '🚿', value: bathrooms, set: setBathrooms, min: 0, max: 10 },
+                            { label: 'Balconies', icon: '🌿', value: balconies, set: setBalconies, min: 0, max: 10, reg: 'balcony_size', pl: 'Size (sq.ft)' },
+                          ].map((room) => (
+                            <div
+                              key={room.label}
+                              className="bg-white border border-navy-150 rounded-2xl p-3 flex flex-col items-center gap-2 shadow-sm"
+                            >
+                              <span className="text-xl">{room.icon}</span>
+                              <span className="text-[10px] font-bold text-navy-500 uppercase tracking-widest">
+                                {room.label}
+                              </span>
+                              <div className="flex items-center gap-2 bg-navy-50 rounded-xl px-1 py-1 w-full justify-between">
+                                <button
+                                  type="button"
+                                  onClick={() => room.set((v) => Math.max(room.min, v - 1))}
+                                  disabled={room.value <= room.min}
+                                  className="h-7 w-7 bg-white rounded-lg shadow-sm font-bold hover:text-red-600 transition-all flex items-center justify-center text-base disabled:opacity-30 disabled:cursor-not-allowed text-navy-600"
+                                >
+                                  −
+                                </button>
+                                <span className="font-display font-bold text-base text-navy-900 min-w-[20px] text-center">
+                                  {room.value}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => room.set((v) => Math.min(room.max, v + 1))}
+                                  disabled={room.value >= room.max}
+                                  className="h-7 w-7 bg-white rounded-lg shadow-sm font-bold hover:text-red-600 transition-all flex items-center justify-center text-base disabled:opacity-30 disabled:cursor-not-allowed text-navy-600"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              {room.reg && (
+                                <input type="number" {...register(room.reg as any)} placeholder={room.pl} className="w-full mt-1 bg-navy-50/50 border border-navy-100 rounded-lg px-2 py-1.5 text-[11px] font-medium text-center focus:outline-none focus:border-red-400 placeholder:text-navy-300" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          <div>
+                            <FieldLabel>Floor No.</FieldLabel>
+                            <InputField {...register('floor_number')} type="number" placeholder="e.g. 3" />
+                          </div>
+                          <div>
+                            <FieldLabel>Total Floors</FieldLabel>
+                            <InputField {...register('total_floors')} type="number" placeholder="e.g. 10" />
+                          </div>
+                          <div>
+                            <FieldLabel>Facing</FieldLabel>
+                            <SelectField {...register('facing')}>
+                              <option value="">Select</option>
+                              {['East', 'West', 'North', 'South', 'North-East', 'North-West', 'South-East', 'South-West'].map((f) => (
+                                <option key={f} value={f}>{f}</option>
+                              ))}
+                            </SelectField>
+                          </div>
+                          <div>
+                            <FieldLabel>Age of Property</FieldLabel>
+                            <SelectField {...register('age_of_property')}>
+                              <option value="">Select</option>
+                              {['Under Construction', '0-1 Years', '1-5 Years', '5-10 Years', '10+ Years'].map((a) => (
+                                <option key={a} value={a}>{a}</option>
+                              ))}
+                            </SelectField>
+                          </div>
+                          <div>
+                            <FieldLabel>Indoor Parking</FieldLabel>
+                            <InputField {...register('parking_indoor')} type="number" placeholder="e.g. 1" />
+                          </div>
+                          <div>
+                            <FieldLabel>Outdoor Parking</FieldLabel>
+                            <InputField {...register('parking_outdoor')} type="number" placeholder="e.g. 2" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 4: Location ─── */}
+                    {activeStep === 4 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle title="Location Details" sub="Where is the property located?" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <FieldLabel>City *</FieldLabel>
+                            <InputField {...register('city_name')} placeholder="e.g. Mumbai" />
+                          </div>
+                          <div>
+                            <FieldLabel>Locality *</FieldLabel>
+                            <InputField {...register('locality_name')} placeholder="e.g. Bandra West" />
+                          </div>
+                        </div>
+                        <div>
+                          <FieldLabel>Full Address *</FieldLabel>
+                          <TextAreaField
+                            {...register('address')}
+                            placeholder="Building name, Street, Landmark..."
+                            rows={2}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <FieldLabel>Latitude (optional)</FieldLabel>
+                            <InputField {...register('latitude')} placeholder="e.g. 19.0596" />
+                          </div>
+                          <div>
+                            <FieldLabel>Longitude (optional)</FieldLabel>
+                            <InputField {...register('longitude')} placeholder="e.g. 72.8295" />
+                          </div>
+                        </div>
+                        <div className="bg-navy-50 rounded-2xl p-4 border border-navy-100">
+                          <p className="text-xs font-bold text-navy-700 mb-3 uppercase tracking-widest">
+                            📍 Nearby Places
+                          </p>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {[
+                              { key: 'metro', label: 'Nearest Metro', placeholder: 'e.g. Bandra Station' },
+                              { key: 'hospital', label: 'Hospital', placeholder: 'e.g. Lilavati Hospital' },
+                              { key: 'school', label: 'School / College', placeholder: 'e.g. IIT Bombay' },
+                              { key: 'mall', label: 'Shopping Mall', placeholder: 'e.g. Phoenix Mall' },
+                              { key: 'airport', label: 'Airport', placeholder: 'e.g. CSIA - 8 km' },
+                            ].map((nb) => (
+                              <div key={nb.key}>
+                                <FieldLabel>{nb.label}</FieldLabel>
+                                <InputField
+                                  {...register(`nearby_places.${nb.key}` as any)}
+                                  placeholder={nb.placeholder}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 5: Amenities ─── */}
+                    {activeStep === 5 && (
+                      <div className="space-y-6 max-w-3xl mx-auto">
+                        <SectionTitle
+                          title="Amenities & Features"
+                          sub="Select all available amenities to attract more buyers."
+                        />
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {AMENITIES_LIST.map((a) => {
+                            const isSelected = selectedAmenities.includes(a.id);
+                            return (
+                              <motion.button
+                                whileHover={{ scale: 1.03 }}
+                                whileTap={{ scale: 0.97 }}
+                                key={a.id}
+                                type="button"
+                                onClick={() => toggleAmenity(a.id)}
+                                className={`relative flex items-center gap-2.5 p-3 rounded-[16px] border-2 transition-all text-left ${isSelected ? 'border-red-500 bg-red-50 ring-2 ring-red-500/10' : 'border-navy-50 bg-white/70 hover:bg-white hover:border-red-200'}`}
+                              >
+                                {isSelected && (
+                                  <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-0.5 z-20"
+                                  >
+                                    <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                  </motion.div>
+                                )}
+                                <span className="text-xl">{a.icon}</span>
+                                <span
+                                  className={`text-xs font-semibold ${isSelected ? 'text-red-700' : 'text-navy-700'}`}
+                                >
+                                  {a.label}
+                                </span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                        {selectedAmenities.length > 0 && (
+                          <p className="text-center text-xs text-navy-500 font-medium">
+                            {selectedAmenities.length} amenities selected
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ─── STEP 6: Media ─── */}
+                    {activeStep === 6 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle title="Photos & Media" sub="Add photos and videos to showcase the property." />
+                        <div className="border-2 border-dashed border-navy-200 rounded-2xl p-8 text-center bg-navy-50/30 hover:bg-navy-50/50 transition-all">
+                          <Camera className="h-8 w-8 text-navy-400 mx-auto mb-3" />
+                          <p className="text-sm font-semibold text-navy-700 mb-1">Upload Photos</p>
+                          <p className="text-xs text-navy-400 mb-4">
+                            JPG, PNG or WEBP · Max 5MB each · Up to 20 images
+                          </p>
+                          <label className="cursor-pointer inline-flex items-center gap-2 bg-navy-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-navy-800 transition-all shadow-md">
+                            <Camera className="h-4 w-4" /> Choose Files
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                const urls = files.map((f) => URL.createObjectURL(f));
+                                setMediaUrls((prev) => [...prev, ...urls]);
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {/* Add URL */}
+                        <div>
+                          <FieldLabel>Or paste image / video URL</FieldLabel>
+                          <div className="flex gap-2">
+                            <InputField
+                              value={mediaInput}
+                              onChange={(e) => setMediaInput(e.target.value)}
+                              placeholder="https://..."
+                              className="flex-1"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  addMedia();
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={addMedia}
+                              className="px-4 py-2.5 bg-navy-900 text-white text-sm font-semibold rounded-xl hover:bg-navy-800 transition-all"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Preview grid */}
+                        {mediaUrls.length > 0 && (
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                            {mediaUrls.map((url, i) => (
+                              <div
+                                key={i}
+                                className="relative aspect-square rounded-xl overflow-hidden bg-navy-100 group shadow-sm"
+                              >
+                                <img
+                                  src={url}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200';
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setMediaUrls((prev) => prev.filter((_, j) => j !== i))}
+                                  className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-600"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <FieldLabel>Video URL (YouTube / Vimeo)</FieldLabel>
+                            <InputField
+                              {...register('media_urls.videos.0' as any)}
+                              placeholder="https://youtube.com/..."
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel>Virtual Tour URL</FieldLabel>
+                            <InputField {...register('media_urls.virtual_tour')} placeholder="https://..." />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 7: Pricing ─── */}
+                    {activeStep === 7 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle
+                          title="Pricing & Financials"
+                          sub="Set the price, deposit, and maintenance details."
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {watch('purpose') === 'Sale' ? (
+                            <div>
+                              <FieldLabel>Asking Price (₹)</FieldLabel>
+                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                                <span className="pl-4 pr-2 text-sm font-bold text-navy-400">₹</span>
+                                <input
+                                  {...register('price')}
+                                  type="number"
+                                  placeholder="e.g. 8500000"
+                                  className="flex-1 bg-transparent px-2 py-2.5 text-sm font-medium focus:outline-none placeholder:text-navy-300"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <FieldLabel>Monthly Rent (₹)</FieldLabel>
+                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                                <span className="pl-4 pr-2 text-sm font-bold text-navy-400">₹</span>
+                                <input
+                                  {...register('rent_amount')}
+                                  type="number"
+                                  placeholder="e.g. 25000"
+                                  className="flex-1 bg-transparent px-2 py-2.5 text-sm font-medium focus:outline-none placeholder:text-navy-300"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <FieldLabel>Security Deposit (₹)</FieldLabel>
+                            <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                              <span className="pl-4 pr-2 text-sm font-bold text-navy-400">₹</span>
+                              <input
+                                {...register('security_deposit')}
+                                type="number"
+                                placeholder="e.g. 50000"
+                                className="flex-1 bg-transparent px-2 py-2.5 text-sm font-medium focus:outline-none placeholder:text-navy-300"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <FieldLabel>Maintenance (₹/month)</FieldLabel>
+                            <InputField {...register('maintenance')} type="number" placeholder="e.g. 2000" />
+                          </div>
+                          <div>
+                            <FieldLabel>Brokerage</FieldLabel>
+                            <SelectField {...register('brokerage')}>
+                              <option value="">Select</option>
+                              <option>No Brokerage</option>
+                              <option>15 Days Rent</option>
+                              <option>1 Month Rent</option>
+                              <option>2 Months Rent</option>
+                              <option>Custom</option>
+                            </SelectField>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 p-4 bg-navy-50 rounded-2xl border border-navy-100">
+                          <button
+                            type="button"
+                            onClick={() => setNegotiable((v) => !v)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${negotiable ? 'bg-red-500' : 'bg-navy-200'}`}
+                          >
+                            <motion.span
+                              animate={{ x: negotiable ? 20 : 2 }}
+                              className="inline-block h-4 w-4 bg-white rounded-full shadow-md"
+                            />
+                          </button>
+                          <div>
+                            <p className="text-sm font-semibold text-navy-900">Price is Negotiable</p>
+                            <p className="text-xs text-navy-400">Buyers can negotiate the price with you</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 8: Availability ─── */}
+                    {activeStep === 8 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle
+                          title="Availability"
+                          sub="When is the property available and how can it be visited?"
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <FieldLabel>Available From</FieldLabel>
+                            <InputField {...register('availability_date')} type="date" />
+                          </div>
+                          <div>
+                            <FieldLabel>Construction Status</FieldLabel>
+                            <SelectField {...register('construction_status')}>
+                              <option value="">Select</option>
+                              <option>Ready to Move</option>
+                              <option>Under Construction</option>
+                              <option>New Launch</option>
+                            </SelectField>
+                          </div>
+                          <div>
+                            <FieldLabel>Visiting Hours</FieldLabel>
+                            <div className="flex items-center gap-2">
+                              <InputField 
+                                type="time" 
+                                className="flex-1 text-center"
+                                value={(watch('visiting_hours') || '').split(' to ')[0] || ''}
+                                onChange={(e) => {
+                                  const parts = (watch('visiting_hours') || '').split(' to ');
+                                  setValue('visiting_hours', `${e.target.value} to ${parts[1] || ''}`);
+                                }}
+                              />
+                              <span className="text-navy-400 font-medium text-sm">to</span>
+                              <InputField 
+                                type="time" 
+                                className="flex-1 text-center"
+                                value={(watch('visiting_hours') || '').split(' to ')[1] || ''}
+                                onChange={(e) => {
+                                  const parts = (watch('visiting_hours') || '').split(' to ');
+                                  setValue('visiting_hours', `${parts[0] || ''} to ${e.target.value}`);
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <FieldLabel>Open House Date</FieldLabel>
+                            <InputField {...register('open_house_schedule')} type="date" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 9: Ownership ─── */}
+                    {activeStep === 9 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle
+                          title="Ownership & Legal"
+                          sub="Provide ownership and legal documentation details."
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <FieldLabel>Your Role</FieldLabel>
+                            <SelectField {...register('ownership_role')}>
+                              <option value="">Select Role</option>
+                              <option>Owner</option>
+                              <option>Broker / Agent</option>
+                              <option>Builder</option>
+                              <option>Power of Attorney</option>
+                            </SelectField>
+                          </div>
+                          <div>
+                            <FieldLabel>Ownership Type</FieldLabel>
+                            <SelectField {...register('ownership_type')}>
+                              <option value="">Select</option>
+                              <option>Freehold</option>
+                              <option>Leasehold</option>
+                              <option>Co-operative Society</option>
+                              <option>Power of Attorney</option>
+                            </SelectField>
+                          </div>
+                          <div>
+                            <FieldLabel>RERA Number (optional)</FieldLabel>
+                            <InputField {...register('rera_number')} placeholder="e.g. P51800047XXX" />
+                          </div>
+                          <div>
+                            <FieldLabel>Property Tax ID (optional)</FieldLabel>
+                            <InputField {...register('property_tax_id')} placeholder="e.g. MUM-2024-XXX" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 10: SEO ─── */}
+                    {activeStep === 10 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle
+                          title="SEO & Discoverability"
+                          sub="Boost visibility in Google and property portals."
+                        />
+                        <div className="space-y-4">
+                          <div>
+                            <FieldLabel>SEO Title</FieldLabel>
+                            <InputField
+                              {...register('seo_metadata.meta_title')}
+                              placeholder="e.g. 3BHK Apartment for Sale in Bandra West, Mumbai"
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel>Meta Description</FieldLabel>
+                            <TextAreaField
+                              {...register('seo_metadata.meta_description')}
+                              placeholder="A brief, compelling description for search engines..."
+                              rows={3}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <FieldLabel>URL Slug</FieldLabel>
+                              <InputField {...register('seo_metadata.slug')} placeholder="3bhk-apartment-bandra-west" />
+                            </div>
+                            <div>
+                              <FieldLabel>Keywords</FieldLabel>
+                              <InputField
+                                {...register('seo_metadata.keywords')}
+                                placeholder="3BHK, Bandra, Mumbai apartment"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 11: Review ─── */}
+                    {activeStep === 11 && (
+                      <div className="space-y-5 max-w-3xl mx-auto">
+                        <SectionTitle title="Review Your Listing" sub="Verify all details before submitting." />
+                        <div className="space-y-3">
+                          {[
+                            { label: 'Purpose', val: formData.purpose, icon: '🎯' },
+                            { label: 'Category', val: formData.category, icon: '🏷️' },
+                            { label: 'Property Type', val: formData.property_sub_type, icon: '🏠' },
+                            { label: 'Title', val: formData.title, icon: '📝' },
+                            {
+                              label: 'Location',
+                              val: [formData.locality_name, formData.city_name].filter(Boolean).join(', '),
+                              icon: '📍',
+                            },
+                            {
+                              label: 'Price',
+                              val:
+                                formData.price || formData.rent_amount
+                                  ? `₹${Number(formData.price || formData.rent_amount || 0).toLocaleString('en-IN')}`
+                                  : undefined,
+                              icon: '💰',
+                            },
+                            { label: 'Bedrooms', val: String(bedrooms), icon: '🛏️' },
+                            {
+                              label: 'Amenities',
+                              val: selectedAmenities.length ? `${selectedAmenities.length} selected` : undefined,
+                              icon: '✨',
+                            },
+                          ]
+                            .filter((row) => row.val)
+                            .map((row) => (
+                              <div
+                                key={row.label}
+                                className="flex items-center gap-3 p-3.5 bg-navy-50 rounded-xl border border-navy-100"
+                              >
+                                <span className="text-lg">{row.icon}</span>
+                                <div className="flex-1 flex items-center justify-between">
+                                  <span className="text-xs text-navy-500 font-semibold uppercase tracking-wider">
+                                    {row.label}
+                                  </span>
+                                  <span className="text-sm font-semibold text-navy-900">{row.val}</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                        <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex items-start gap-3">
+                          <Check className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                          <p className="text-sm text-green-800 font-medium">
+                            Your listing looks great! Click <strong>Submit</strong> to send it for admin review. It will
+                            go live once approved.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── STEP 12: Submit ─── */}
+                    {activeStep === 12 && (
+                      <div className="flex flex-col items-center justify-center py-12 space-y-6 text-center max-w-md mx-auto">
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: 'spring', stiffness: 200 }}
+                          className="h-20 w-20 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/30"
+                        >
+                          <Check className="h-10 w-10 text-white stroke-[3]" />
+                        </motion.div>
+                        <div>
+                          <h3 className="text-2xl font-display font-bold text-navy-900">Ready to Submit!</h3>
+                          <p className="text-navy-500 text-sm mt-2">
+                            Your property listing will be sent for review. Once approved, it goes live on RealtyNow.
+                          </p>
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white font-bold text-sm hover:from-red-700 hover:to-rose-700 transition-all shadow-md shadow-red-500/25 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {saving ? (
+                            <>
+                              <div className="h-4 w-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />{' '}
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              <Star className="h-4 w-4" /> Submit for Review
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Sticky Footer */}
+              <div className="bg-white/95 backdrop-blur-2xl border-t border-navy-100/50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 z-50 rounded-b-[32px]">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleBack}
+                  disabled={activeStep === 0}
+                  className="rounded-xl h-11 px-5 font-medium text-sm hover:bg-navy-50 text-navy-600 transition-colors"
+                  icon={<ChevronLeft className="h-4 w-4" />}
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={saving}
+                    className="h-11 rounded-xl px-5 flex items-center justify-center gap-2 font-medium text-sm bg-white border border-navy-200 text-navy-700 hover:bg-navy-50 hover:text-navy-900 transition-all shadow-sm disabled:opacity-50"
+                  >
+                    {saving ? (
+                      <div className="h-3.5 w-3.5 border-2 border-navy-400/50 border-t-navy-700 rounded-full animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}{' '}
+                    Save Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview(true)}
+                    className="h-11 rounded-xl px-5 hidden md:flex items-center justify-center gap-2 font-medium text-sm bg-white border border-navy-200 text-navy-700 hover:bg-navy-50 hover:text-navy-900 transition-all shadow-sm"
+                  >
+                    <Eye className="h-4 w-4" /> Preview
+                  </button>
+                  {activeStep < 12 ? (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      className="h-11 rounded-xl px-7 flex items-center justify-center gap-2 font-semibold text-sm bg-navy-900 hover:bg-navy-950 text-white shadow-md transition-all group"
+                    >
+                      Next Step <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="h-11 rounded-xl px-7 flex items-center justify-center gap-2 font-semibold text-sm bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white shadow-md transition-all disabled:opacity-50"
+                    >
+                      {saving ? (
+                        <div className="h-4 w-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <Star className="h-4 w-4" />
+                      )}{' '}
+                      Submit
+                    </button>
+                  )}
+                </div>
+              </div>
+            </form>
+          </FormProvider>
+        </div>
+
+        {/* Bottom Premium Features */}
+        <div className="bg-navy-950 rounded-[28px] p-6 md:p-8 border border-navy-800 shadow-2xl relative overflow-hidden mt-8">
+          <div className="absolute top-0 left-1/4 w-1/2 h-full bg-red-600/10 blur-[80px] rounded-full pointer-events-none"></div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 relative z-10">
+            {[
+              { icon: Clock, title: 'Auto Save', desc: 'Saved every 15s' },
+              { icon: Save, title: 'Resume Anytime', desc: 'Start where left off' },
+              { icon: Shield, title: '100% Safe', desc: 'Data is secure' },
+              { icon: Sparkles, title: 'AI Powered', desc: 'Smart suggestions' },
+              { icon: Smartphone, title: 'Mobile Friendly', desc: 'List on any device' },
+            ].map((feature, i) => (
+              <motion.div
+                key={i}
+                whileHover={{ y: -4, scale: 1.02 }}
+                className="flex flex-col items-center md:items-start gap-3 group cursor-default text-center md:text-left"
+              >
+                <div className="bg-red-500/10 p-3 rounded-2xl border border-red-500/20 group-hover:bg-red-500/20 transition-all">
+                  <feature.icon className="h-6 w-6 text-red-500" />
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-sm">{feature.title}</h4>
+                  <p className="text-navy-400 text-xs mt-1">{feature.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}

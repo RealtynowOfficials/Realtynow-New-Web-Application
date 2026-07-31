@@ -1,0 +1,257 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Sparkles,
+  LayoutDashboard,
+  Kanban,
+  Calendar as CalendarIcon,
+  FileSpreadsheet,
+} from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useLanguageContext } from '../../lib/i18n/language-context';
+import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { getAdminSections } from '../portal/sections';
+import { Badge } from '../../components/ui';
+import { StatusBadge } from '../../components/property-card';
+import { formatPrice, formatDate } from '../../lib/utils';
+import { useRealtimeMulti } from '../../lib/realtime';
+
+// Import Syncfusion Hybrid Architecture Enterprise Components
+import { EnterpriseDataGrid, type ColumnDef } from '../../components/enterprise/enterprise-datagrid';
+import { EnterpriseKanban, type KanbanLeadCard } from '../../components/enterprise/enterprise-kanban';
+import { EnterpriseCharts } from '../../components/enterprise/enterprise-charts';
+import { EnterpriseAIReportDashboard } from '../../components/enterprise/enterprise-aireport';
+import { EnterpriseScheduler } from '../../components/enterprise/enterprise-scheduler';
+import { RemindersWidget } from '../../components/reminders-widget';
+
+type DateRange = '7d' | '30d' | '6m' | '1y';
+
+const MOCK_KANBAN_LEADS: KanbanLeadCard[] = [
+  {
+    id: '1',
+    title: '3BHK Villa Inquiry in Gachibowli',
+    customerName: 'Rajesh Sharma',
+    phone: '+91 98490 12345',
+    email: 'rajesh@gmail.com',
+    budget: '1.4 Cr',
+    stage: 'new',
+    priority: 'High',
+    createdAt: 'Today',
+  },
+  {
+    id: '2',
+    title: 'Commercial Space in HITEC City',
+    customerName: 'Anita Rao',
+    phone: '+91 97001 98765',
+    email: 'anita@corp.in',
+    budget: '2.8 Cr',
+    stage: 'contacted',
+    priority: 'High',
+    createdAt: 'Yesterday',
+  },
+  {
+    id: '3',
+    title: '2BHK Apartment in Kondapur',
+    customerName: 'Vikram Verma',
+    phone: '+91 99887 65432',
+    email: 'vikram@yahoo.com',
+    budget: '75 Lakhs',
+    stage: 'site_visit',
+    priority: 'Medium',
+    createdAt: '2 days ago',
+  },
+  {
+    id: '4',
+    title: 'Plot in Tellapur Highway',
+    customerName: 'Srinivasulu Reddy',
+    phone: '+91 94942 30774',
+    email: 'srini@realtynow.in',
+    budget: '60 Lakhs',
+    stage: 'negotiation',
+    priority: 'High',
+    createdAt: '3 days ago',
+  },
+  {
+    id: '5',
+    title: 'Penthouse in Jubilee Hills',
+    customerName: 'Kavitha Swamy',
+    phone: '+91 91234 56789',
+    email: 'kavitha@design.in',
+    budget: '4.5 Cr',
+    stage: 'booking',
+    priority: 'High',
+    createdAt: '4 days ago',
+  },
+];
+
+export function AdminDashboard() {
+  const { t } = useLanguageContext();
+  const sections = getAdminSections(t);
+  const realtimeTick = useRealtimeMulti(['properties', 'enquiries', 'profiles']);
+  const [dateRange, setDateRange] = useState<DateRange>('6m');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'kanban' | 'datagrid' | 'scheduler' | 'ai_report'>(
+    'analytics',
+  );
+
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['admin-stats', realtimeTick, dateRange],
+    queryFn: async () => {
+      const [propsRpc, customers, payments, views, enquiries, closedEnquiries] = await Promise.all([
+        supabase.rpc('admin_get_properties'),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'customer'),
+        supabase.from('payments').select('amount').eq('status', 'paid'),
+        supabase.from('property_views').select('id', { count: 'exact', head: true }),
+        supabase.from('enquiries').select('id', { count: 'exact', head: true }),
+        supabase.from('enquiries').select('id', { count: 'exact', head: true }).eq('status', 'closed'),
+      ]);
+      const propsData = (propsRpc.data ?? []) as Array<{
+        id: string;
+        status: string;
+        title: string;
+        price: number;
+        purpose: string;
+        created_at: string;
+        city_name?: string;
+      }>;
+      const pendingStatuses = ['pending_verification', 'submitted', 'changes_requested'];
+      const pendingCount = propsData.filter((p) => pendingStatuses.includes(p.status)).length;
+      const revenue = (payments.data ?? []).reduce((a, p) => a + Number(p.amount), 0);
+
+      return {
+        propsData,
+        totalProps: propsData.length,
+        customers: customers.count ?? 0,
+        pending: pendingCount,
+        published: propsData.filter((p) => p.status === 'published').length,
+        views: views.count ?? 0,
+        enquiries: enquiries.count ?? 0,
+        closedEnquiries: closedEnquiries.count ?? 0,
+        revenue,
+        conversionRate: enquiries.count ? (((closedEnquiries.count ?? 0) / enquiries.count) * 100).toFixed(1) : '0.0',
+      };
+    },
+  });
+
+  // DataGrid Column Definitions
+  const propertyGridColumns: ColumnDef<any>[] = [
+    { field: 'title', headerName: t('compare.propertyCol', 'Property Title'), sortable: true },
+    {
+      field: 'purpose',
+      headerName: t('search.purposeLabel', 'Purpose'),
+      render: (r) => <Badge variant={r.purpose === 'Rent' ? 'info' : 'gold'}>{r.purpose}</Badge>,
+    },
+    {
+      field: 'price',
+      headerName: t('property.price', 'Price (INR)'),
+      sortable: true,
+      render: (r) => <span className="font-bold text-red-600">{formatPrice(r.price, r.purpose)}</span>,
+    },
+    {
+      field: 'status',
+      headerName: t('portal.workflowProgress', 'Status'),
+      render: (r) => <StatusBadge status={r.status} />,
+    },
+    {
+      field: 'created_at',
+      headerName: t('portal.created', 'Created Date'),
+      sortable: true,
+      render: (r) => formatDate(r.created_at),
+    },
+  ];
+
+  return (
+    <DashboardLayout
+      sections={sections}
+      title={t('nav.dashboard', 'Admin Dashboard')}
+      badge="Syncfusion Hybrid Enterprise"
+    >
+      <PageHeader
+        title={t('nav.dashboard', 'Enterprise Platform Overview')}
+        subtitle={t(
+          'portal.activityOverview',
+          'Monitor real-time marketplace performance, CRM pipelines, and AI analytics.',
+        )}
+      />
+
+      <div className="mb-6">
+        <RemindersWidget />
+      </div>
+
+      {/* Enterprise Tab Bar */}
+      <div className="mb-6 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        {[
+          { key: 'analytics', label: 'Syncfusion Analytics & Charts', icon: LayoutDashboard },
+          { key: 'kanban', label: 'CRM Lead Pipeline (Kanban)', icon: Kanban },
+          { key: 'datagrid', label: 'Enterprise DataGrid', icon: FileSpreadsheet },
+          { key: 'scheduler', label: 'Visit Scheduler', icon: CalendarIcon },
+          { key: 'ai_report', label: 'AI Intelligence Report', icon: Sparkles },
+        ].map((tItem) => {
+          const Icon = tItem.icon;
+          const isActive = activeTab === tItem.key;
+          return (
+            <button
+              key={tItem.key}
+              onClick={() => setActiveTab(tItem.key as any)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tItem.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab 1: Syncfusion Analytics Charts */}
+      {activeTab === 'analytics' && <EnterpriseCharts />}
+
+      {/* Tab 2: CRM Kanban Lead Pipeline */}
+      {activeTab === 'kanban' && <EnterpriseKanban initialLeads={MOCK_KANBAN_LEADS} />}
+
+      {/* Tab 3: Enterprise DataGrid with Virtual Scroll, Search, Filtering & CSV Export */}
+      {activeTab === 'datagrid' && (
+        <EnterpriseDataGrid
+          title="Master Properties Enterprise DataGrid"
+          subtitle="Real-time listing records with column reordering, global search, filtering and export"
+          columns={propertyGridColumns}
+          data={stats?.propsData ?? []}
+          loading={isLoading}
+        />
+      )}
+
+      {/* Tab 4: Appointment & Visit Scheduler */}
+      {activeTab === 'scheduler' && (
+        <EnterpriseScheduler
+          events={[
+            {
+              id: '1',
+              title: 'Site Visit: Luxury Villa',
+              date: new Date().toISOString().slice(0, 10),
+              time: '10:30 AM',
+              customerName: 'Rajesh Sharma',
+              locality: 'Gachibowli',
+              type: 'visit',
+              status: 'confirmed',
+            },
+            {
+              id: '2',
+              title: 'Agreement Signing Meeting',
+              date: new Date().toISOString().slice(0, 10),
+              time: '02:00 PM',
+              customerName: 'Anita Rao',
+              locality: 'HITEC City',
+              type: 'meeting',
+              status: 'pending',
+            },
+          ]}
+        />
+      )}
+
+      {/* Tab 5: AI Intelligence Report */}
+      {activeTab === 'ai_report' && <EnterpriseAIReportDashboard />}
+    </DashboardLayout>
+  );
+}

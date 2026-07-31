@@ -1,0 +1,9 @@
+{
+  "postProperty": "संपत्ति सूचीबद्ध करें",
+  "title": "Listing Title",
+  "selectCity": "Select City",
+  "selectLocality": "Select Locality",
+  "selectType": "Select Property Type",
+  "uploadImages": "Upload Property Images",
+  "generateAI": "Generate AI Description"
+}
