@@ -13,7 +13,7 @@ import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { submitPropertyForReview } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate } from '../../lib/utils';
+import { formatPrice, formatDate , generatePropertyUrl} from '../../lib/utils';
 import type { Property } from '../../lib/types';
 
 export function PortalMyProperties() {
@@ -238,7 +238,7 @@ export function PortalMyProperties() {
               }
             />
           </Link>
-          <Link to={`/property/${p.id}`}>
+          <Link to={generatePropertyUrl(p)}>
             <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
           </Link>
           <Button
@@ -403,7 +403,7 @@ export function PortalMyProperties() {
                       />
                     </Link>
                   )}
-                  <Link to={`/property/${p.id}`}>
+                  <Link to={generatePropertyUrl(p)}>
                     <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
                   </Link>
                   <Button

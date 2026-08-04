@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { UserPlus, Trash2, Ban, CheckCircle2, Edit3, Plus, FileText, Upload, ExternalLink } from 'lucide-react';
+import { UserPlus, Trash2, Ban, CheckCircle2, Edit3, Plus, FileText, Upload, ExternalLink, XCircle, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
@@ -239,7 +239,7 @@ export function AdminAgents() {
     last_name: '',
     email: '',
     phone: '',
-    password: '',
+    role: 'agent' as 'agent' | 'builder',
     license_number: '',
     company: '',
     specialization: '',
@@ -264,6 +264,7 @@ export function AdminAgents() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const realtimeTick = useRealtimeCount('profiles');
+  const requestsRealtimeTick = useRealtimeCount('agent_requests');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-agents', realtimeTick],
@@ -271,12 +272,62 @@ export function AdminAgents() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('role', 'agent')
+        .in('role', ['agent', 'builder'])
         .order('created_at', { ascending: false });
       if (error) console.error('Error fetching agents:', error);
       return (data ?? []) as Profile[];
     },
   });
+
+  const { data: pendingRequests } = useQuery({
+    queryKey: ['agent-requests-pending', requestsRealtimeTick],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_requests')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+      if (error) console.error('Error fetching agent requests:', error);
+      return (data ?? []) as {
+        id: string;
+        mobile: string;
+        full_name: string | null;
+        requested_role: 'agent' | 'builder';
+        created_at: string;
+      }[];
+    },
+  });
+
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+
+  const approveRequest = (req: { id: string; mobile: string; full_name: string | null; requested_role: 'agent' | 'builder' }) => {
+    const [first, ...rest] = (req.full_name ?? '').trim().split(/\s+/).filter(Boolean);
+    setForm((f) => ({
+      ...f,
+      phone: req.mobile,
+      first_name: first ?? '',
+      last_name: rest.join(' '),
+      role: req.requested_role,
+    }));
+    setShowCreate(true);
+  };
+
+  const rejectRequest = async (requestId: string) => {
+    setReviewingId(requestId);
+    try {
+      const { error: reviewError } = await supabase.functions.invoke('otp-auth', {
+        body: { requestId, decision: 'rejected' },
+        headers: { 'x-action': 'review-agent-request' },
+      });
+      if (reviewError) throw reviewError;
+      queryClient.invalidateQueries({ queryKey: ['agent-requests-pending'] });
+      toast.addToast('success', 'Request rejected');
+    } catch (err) {
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to reject request');
+    } finally {
+      setReviewingId(null);
+    }
+  };
 
   const handleAvatarUpload = async (file: File, isEdit: boolean) => {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
@@ -304,53 +355,34 @@ export function AdminAgents() {
   };
 
   const createAgent = async () => {
-    if (!form.email || !form.password) {
-      toast.addToast('error', 'Email and password are required');
+    if (!form.phone) {
+      toast.addToast('error', 'Mobile number is required');
       return;
     }
     setCreating(true);
     try {
-      let agentId: string | null = null;
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: { data: { role: 'agent', first_name: form.first_name, last_name: form.last_name, phone: form.phone } },
+      const { data: provisionData, error: provisionError } = await supabase.functions.invoke('otp-auth', {
+        body: { phone: form.phone, role: form.role, first_name: form.first_name, last_name: form.last_name },
+        headers: { 'x-action': 'admin-provision' },
       });
+      if (provisionError) throw provisionError;
+      const agentId = provisionData?.user_id as string | undefined;
+      if (!agentId) throw new Error(provisionData?.error ?? 'Could not provision account');
 
-      if (authData?.user) {
-        agentId = authData.user.id;
-      } else {
-        // Lookup if profile already exists or get existing user ID
-        const { data: existing } = await supabase.from('profiles').select('id').eq('email', form.email).maybeSingle();
-        if (existing) {
-          agentId = existing.id;
-        } else if (authError) {
-          throw authError;
-        }
-      }
-
-      if (!agentId) {
-        agentId = crypto.randomUUID();
-      }
-
-      const { error: profileError } = await supabase.from('profiles').upsert(
-        {
-          id: agentId,
-          email: form.email,
-          first_name: form.first_name,
-          last_name: form.last_name,
-          phone: form.phone,
-          role: 'agent',
+      // Fill in the remaining profile details the admin-provision action
+      // doesn't set (it only creates the auth user + role/name).
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          email: form.email || null,
           license_number: form.license_number,
           company: form.company,
           specialization: form.specialization,
           avatar_url: form.avatar_url || null,
           profile_image_url: form.avatar_url || null,
-          status: 'active',
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' },
-      );
+        })
+        .eq('id', agentId);
 
       if (profileError) {
         console.error('Error saving agent profile:', profileError);
@@ -359,19 +391,23 @@ export function AdminAgents() {
 
       queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
       queryClient.invalidateQueries({ queryKey: ['agents'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-requests-pending'] });
       setShowCreate(false);
       setForm({
         first_name: '',
         last_name: '',
         email: '',
         phone: '',
-        password: '',
+        role: 'agent',
         license_number: '',
         company: '',
         specialization: '',
         avatar_url: '',
       });
-      toast.addToast('success', 'Agent account created & saved successfully');
+      toast.addToast(
+        'success',
+        `${form.role === 'builder' ? 'Builder' : 'Agent'} account created — they can now sign in with OTP using this mobile number.`,
+      );
     } catch (err) {
       console.error('Failed to create agent:', err);
       toast.addToast('error', err instanceof Error ? err.message : 'Failed to create agent');
@@ -442,6 +478,11 @@ export function AdminAgents() {
       ),
     },
     { key: 'phone', header: 'Phone', render: (p) => p.phone ?? '—' },
+    {
+      key: 'role',
+      header: 'Type',
+      render: (p) => <Badge variant={p.role === 'builder' ? 'info' : 'default'}>{p.role}</Badge>,
+    },
     { key: 'license_number', header: 'License', render: (p) => p.license_number ?? '—' },
     { key: 'company', header: 'Company', render: (p) => p.company ?? '—' },
     {
@@ -500,14 +541,55 @@ export function AdminAgents() {
   return (
     <DashboardLayout sections={adminSections} title={t('dashboard:agents', 'Agents')}>
       <PageHeader
-        title="Agents"
-        subtitle="Create and manage agent accounts."
+        title="Agents & Builders"
+        subtitle="Create and manage agent/builder accounts."
         action={
           <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
-            Create agent
+            Create account
           </Button>
         }
       />
+
+      {!!pendingRequests?.length && (
+        <Card className="mb-4 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-warning-600" />
+            <h3 className="font-bold text-navy-900">Pending access requests</h3>
+            <Badge variant="warning">{pendingRequests.length}</Badge>
+          </div>
+          <div className="space-y-2">
+            {pendingRequests.map((req) => (
+              <div
+                key={req.id}
+                className="flex flex-col gap-2 rounded-xl border border-navy-100 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-bold text-navy-900">{req.full_name || 'Unnamed'}</p>
+                  <p className="text-xs text-navy-500">
+                    {req.mobile} · requested as {req.requested_role} · {formatDate(req.created_at)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" icon={<CheckCircle2 className="h-4 w-4" />} onClick={() => approveRequest(req)}>
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-error-600"
+                    icon={<XCircle className="h-4 w-4" />}
+                    loading={reviewingId === req.id}
+                    onClick={() => rejectRequest(req.id)}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
       <DataTable
         columns={columns}
@@ -595,6 +677,14 @@ export function AdminAgents() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            <Select
+              label="Account type"
+              value={form.role}
+              onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as 'agent' | 'builder' }))}
+            >
+              <option value="agent">Agent</option>
+              <option value="builder">Builder</option>
+            </Select>
             <Input
               label="First name"
               value={form.first_name}
@@ -606,21 +696,17 @@ export function AdminAgents() {
               onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
             />
             <Input
-              label="Email"
+              label="Email (optional)"
               type="email"
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             />
             <Input
-              label="Phone"
+              label="Mobile number"
+              placeholder="+91 98765 43210"
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              hint="They'll sign in via OTP using this number."
             />
             <Input
               label="License number"

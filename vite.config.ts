@@ -10,7 +10,6 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
   },
 });
-
-// Forced restart to clear Vite 504 Outdated Optimize Dep

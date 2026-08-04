@@ -85,6 +85,9 @@ export interface Property {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
   price: number;
   rent_amount: number | null;
   security_deposit: number | null;
@@ -128,6 +131,9 @@ export interface Property {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  // AI Verified Listings (denormalized from ai_verifications for fast badge rendering)
+  verification_status?: 'Pending AI' | 'AI Verified' | 'Manual Review' | 'Rejected' | null;
+  ai_verified_at?: string | null;
   // joined fields (from view)
   city_name?: string;
   locality_name?: string;
@@ -143,6 +149,11 @@ export interface Property {
   completion_percentage?: number;
   is_draft?: boolean;
   last_saved_at?: string | null;
+  nearby_places?: { metro?: string; hospital?: string; school?: string; mall?: string; airport?: string } | null;
+  place_id?: string | null;
+  verified_status?: string | null;
+  ai_score?: number | null;
+  possession_status?: 'Ready to Move' | 'Under Construction' | 'New Launch' | null;
 }
 
 export interface VirtualTour {
@@ -323,6 +334,8 @@ export interface Advertisement {
   property_id?: string | null;
   category_name?: string | null;
   company_logo?: string | null;
+  price_text?: string | null;
+  location_text?: string | null;
   priority?: number;
   display_order?: number;
   start_date?: string | null;
@@ -364,6 +377,25 @@ export interface PropertyStatusHistory {
   to_status: string;
   changed_by: string | null;
   reason: string | null;
+  created_at: string;
+}
+
+export interface AiVerificationCheckResult {
+  passed: boolean;
+  reason: string;
+  score?: number;
+}
+
+export interface AiVerification {
+  id: string;
+  property_id: string;
+  ai_score: number;
+  verification_status: 'Pending AI' | 'AI Verified' | 'Manual Review' | 'Rejected';
+  check_results: Record<string, AiVerificationCheckResult>;
+  verified_at: string;
+  verified_by: string;
+  admin_override: boolean;
+  admin_remarks: string | null;
   created_at: string;
 }
 

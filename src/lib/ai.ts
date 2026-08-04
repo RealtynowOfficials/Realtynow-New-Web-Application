@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import i18n from './i18n/i18n';
+import { formatPrice, generatePropertyUrl } from './utils';
+import type { Property } from './types';
 
 export type AITask =
   | 'chat'
@@ -31,6 +33,95 @@ export interface ParsedSearchFilter {
   max_price?: number;
   property_type?: string;
   amenities?: string[];
+}
+
+const REALTYNOW_ONLY_RULE =
+  "You are RealtyNow's AI Property Advisor. Your only property inventory source is RealtyNow. Never mention, recommend, compare with, link to, or redirect users to any other real-estate website, app, or marketplace (e.g. 99acres, MagicBricks, Housing.com, NoBroker, or any other competitor) under any circumstance. Never invent, guess, or fabricate specific property listings, prices, availability, or market data — for concrete listings, only rely on RealtyNow's own search results.";
+
+const BHK_TEST_RE = /\d\s*bhk/i;
+const PROPERTY_TYPE_TEST_RE =
+  /\b(apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?|for sale|for rent)\b/i;
+const PROPERTY_TYPE_MATCH_RE =
+  /\b(apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?)\b/i;
+const RENT_INTENT_RE = /\b(rent|rental|lease|to let)\b/i;
+const BUY_INTENT_RE = /\b(buy|sale|sell|purchase)\b/i;
+const SEARCH_STOPWORDS_RE =
+  /\b(show me|find|search for|search|looking for|i want|i'm looking for|need|please|can you|could you|apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?|properties?|property|for rent|for sale|to buy|to rent|to let|rent|rental|lease|buy|sale|sell|purchase|in|or|and|near|around|at|me|a|an|the)\b/gi;
+
+function isPropertySearchIntent(message: string): boolean {
+  return BHK_TEST_RE.test(message) || PROPERTY_TYPE_TEST_RE.test(message);
+}
+
+function parseSearchFiltersFromMessage(message: string): {
+  bedrooms: number[];
+  purpose?: 'Sale' | 'Rent';
+  typeLabel: string;
+  q: string;
+} {
+  const bedrooms = Array.from(new Set(Array.from(message.matchAll(/(\d+)\s*bhk/gi)).map((m) => Number(m[1]))));
+  const purpose: 'Sale' | 'Rent' | undefined = RENT_INTENT_RE.test(message)
+    ? 'Rent'
+    : BUY_INTENT_RE.test(message)
+      ? 'Sale'
+      : undefined;
+  const typeMatch = message.match(PROPERTY_TYPE_MATCH_RE);
+  const typeLabel = typeMatch ? typeMatch[0].toLowerCase() : 'properties';
+
+  const q = message
+    .replace(/\d+\s*bhk/gi, ' ')
+    .replace(SEARCH_STOPWORDS_RE, ' ')
+    .replace(/[^\p{L}\p{N}\s,]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return { bedrooms, purpose, typeLabel, q };
+}
+
+// Answers property-search-style chat messages directly from RealtyNow's own listings,
+// bypassing the LLM entirely so results can never include fabricated data or competitor mentions.
+async function answerRealtyNowPropertySearch(message: string): Promise<string> {
+  const { bedrooms, purpose, typeLabel, q } = parseSearchFiltersFromMessage(message);
+  const bhkLabel = bedrooms.length > 0 ? `${bedrooms.map((b) => `${b}BHK`).join(' and ')} ` : '';
+  const placeLabel = q ? ` in ${q}` : '';
+  const intro = `Sure! I'll search RealtyNow for available ${bhkLabel}${typeLabel}${placeLabel}.`;
+
+  try {
+    // Match each locality/city word independently (rather than as one phrase) since
+    // v_properties_search.search_text concatenates city before locality, while users
+    // usually type locality before city (e.g. "LB Nagar Hyderabad").
+    let query = supabase
+      .from('v_properties_search')
+      .select('*')
+      .or('status.eq.published,is_live.eq.true')
+      .order('published_at', { ascending: false })
+      .limit(5);
+
+    if (purpose) query = query.eq('purpose', purpose);
+    if (bedrooms.length > 0) query = query.in('bedrooms', bedrooms);
+    for (const token of q.split(' ').filter(Boolean)) {
+      query = query.ilike('search_text', `%${token}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    const matches = (data ?? []) as Property[];
+
+    if (matches.length === 0) {
+      return `${intro}\n\nI couldn't find an exact match on RealtyNow right now. Try nearby locations or adjust your budget/preferences. You can also browse all current RealtyNow listings${placeLabel} on our search page.`;
+    }
+
+    const lines = matches.map((p, i) => {
+      const priceLabel = formatPrice(p.purpose === 'Rent' ? (p.rent_amount ?? p.price) : p.price, p.purpose);
+      const bhk = p.bedrooms ? `${p.bedrooms}BHK ` : '';
+      const type = p.property_type_name ? `${p.property_type_name} ` : '';
+      const where = [p.locality_name, p.city_name].filter(Boolean).join(', ');
+      return `${i + 1}. ${p.title} — ${bhk}${type}in ${where} — ${priceLabel} (${generatePropertyUrl(p)})`;
+    });
+
+    return `${intro}\n\nHere's what's currently listed on RealtyNow:\n${lines.join('\n')}\n\nOpen any listing above on RealtyNow for full details or to schedule a visit.`;
+  } catch {
+    return `${intro}\n\nI'm having trouble searching RealtyNow listings right now. Please try again in a moment or use the RealtyNow search page directly.`;
+  }
 }
 
 function getSystemAndUserPrompt(task: AITask, payload: Record<string, unknown>): { system: string; user: string } {
@@ -114,13 +205,21 @@ function getSystemAndUserPrompt(task: AITask, payload: Record<string, unknown>):
     case 'chat':
     default:
       return {
-        system: `You are RealtyNow's intelligent AI real estate assistant in India. Be concise, friendly, helpful, and accurate. Provide actionable real estate guidance on buying, renting, pricing trends, localities, documentation, and property services. Keep replies under 120 words.${langSuffix}`,
+        system: `${REALTYNOW_ONLY_RULE} Be concise, friendly, helpful, and accurate. Provide actionable real estate guidance on buying, renting, pricing trends, localities, documentation, and RealtyNow's own services. Keep replies under 120 words.${langSuffix}`,
         user: `${p.message ?? p.q ?? JSON.stringify(p)}${p.context ? `\nContext: ${p.context}` : ''}`,
       };
   }
 }
 
 export async function callAI(task: AITask, payload: Record<string, unknown>): Promise<string> {
+  if (task === 'chat') {
+    const message =
+      typeof payload.message === 'string' ? payload.message : typeof payload.q === 'string' ? payload.q : '';
+    if (message && isPropertySearchIntent(message)) {
+      return answerRealtyNowPropertySearch(message);
+    }
+  }
+
   const customKey = (import.meta.env.VITE_AI_API_KEY || import.meta.env.VITE_OPENROUTER_API_KEY) as string | undefined;
 
   // Direct OpenRouter client-side call if key is present

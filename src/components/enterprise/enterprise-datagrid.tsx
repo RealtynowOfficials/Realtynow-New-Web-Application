@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useLanguageContext } from '../../lib/i18n/language-context';
+import { exportToCsv } from '../../lib/utils';
 
 export interface ColumnDef<T> {
   field: keyof T | string;
@@ -49,6 +50,7 @@ export function EnterpriseDataGrid<T extends { id: string | number }>({
   onAdd,
   onEdit,
   onDelete,
+  onExportCsv,
 }: EnterpriseDataGridProps<T>) {
   const { t } = useLanguageContext();
   const [searchQuery, setSearchQuery] = useState('');
@@ -130,19 +132,12 @@ export function EnterpriseDataGrid<T extends { id: string | number }>({
 
   // CSV Export
   const exportCSV = () => {
-    if (!data.length) return;
-    const headers = columns.map((c) => c.headerName).join(',');
-    const rows = data.map((row) =>
-      columns.map((c) => `"${String((row as Record<string, unknown>)[c.field as string] ?? '').replace(/"/g, '""')}"`).join(','),
-    );
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${title || 'export'}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (onExportCsv) {
+      onExportCsv();
+      return;
+    }
+    const csvColumns = columns.map((c) => ({ key: String(c.field), label: c.headerName }));
+    exportToCsv(title || 'export', data as Record<string, unknown>[], csvColumns);
   };
 
   return (

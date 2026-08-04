@@ -92,3 +92,16 @@ export function exportToCsv(
   link.click();
   URL.revokeObjectURL(url);
 }
+
+export function generatePropertyUrl(p?: { id?: string | null; title?: string | null } | null): string {
+  if (!p || !p.id) return '#';
+  if (!p.title) return `/property/${p.id}`;
+  const slug = p.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .substring(0, 60)
+    .replace(/-$/, '');
+  
+  return `/property/${slug}-${p.id}`;
+}

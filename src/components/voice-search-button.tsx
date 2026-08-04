@@ -71,9 +71,7 @@ export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, 
     }
   };
 
-  if (!supported) return null;
-
-  return (
+  return supported ? (
     <button
       type="button"
       onClick={handleToggleListen}
@@ -91,7 +89,7 @@ export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, 
         <Mic className="w-4 h-4 text-red-400 hover:text-red-300" />
       )}
     </button>
-  );
+  ) : null;
 };
 
 // Global Ambient Declarations for SpeechRecognition

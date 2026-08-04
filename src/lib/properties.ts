@@ -196,6 +196,45 @@ export async function resubmitProperty(propertyId: string) {
     p_property_id: propertyId,
   });
   if (error) throw error;
+  triggerAiVerification(propertyId);
+  return data;
+}
+
+// ─── AI Verified Listings ───────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget trigger for the `verifyProperty` edge function. Called after a property
+ * is submitted/resubmitted so verification runs in the background without blocking the
+ * customer's submit flow. Failures are swallowed (best-effort) — the property still ends
+ * up in the admin queue with status 'Pending AI' if verification couldn't run.
+ */
+export function triggerAiVerification(propertyId: string) {
+  supabase.functions.invoke('verifyProperty', { body: { property_id: propertyId } }).catch((err) => {
+    console.error('AI verification trigger failed:', err);
+  });
+}
+
+export async function getPropertyVerification(propertyId: string) {
+  const { data, error } = await supabase.functions.invoke('getVerificationStatus', {
+    body: { property_id: propertyId },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function adminApproveWithAi(propertyId: string, remarks?: string) {
+  const { data, error } = await supabase.functions.invoke('approveProperty', {
+    body: { property_id: propertyId, remarks },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function adminRejectWithAi(propertyId: string, reason: string, remarks?: string) {
+  const { data, error } = await supabase.functions.invoke('rejectProperty', {
+    body: { property_id: propertyId, reason, remarks },
+  });
+  if (error) throw error;
   return data;
 }
 

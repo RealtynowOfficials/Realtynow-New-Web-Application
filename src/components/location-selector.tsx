@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useLocationContext } from '../contexts/location-context';
 import { MapPin, Search, Crosshair, ChevronDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,8 +20,29 @@ export function LocationSelector({ isTransparent }: { isTransparent: boolean }) 
   const { city, isLocating, error, detectLocation, setCity } = useLocationContext();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const filteredCities = topCities.filter((c) => c.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
 
   const handleSelect = (selectedCity: string) => {
     setCity(selectedCity);
@@ -29,7 +50,7 @@ export function LocationSelector({ isTransparent }: { isTransparent: boolean }) 
   };
 
   return (
-    <div className="relative z-50">
+    <div ref={containerRef} className="relative z-50">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border ${

@@ -6,7 +6,7 @@ export function Logo({ to = '/', className = '', size = 165, src = '/1.png' }: {
       <img
         src={src}
         alt="RealtyNow"
-        style={{ width: size, height: 'auto', maxHeight: '42px', objectFit: 'contain' }}
+        style={{ width: size, height: 'auto', maxHeight: '54px', objectFit: 'contain' }}
       />
     </Link>
   );
@@ -28,7 +28,7 @@ export function LogoLight({
       <img
         src={src}
         alt="RealtyNow"
-        style={{ width: size, height: 'auto', maxHeight: '42px', objectFit: 'contain' }}
+        style={{ width: size, height: 'auto', maxHeight: '54px', objectFit: 'contain' }}
       />
     </Link>
   );

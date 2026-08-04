@@ -17,6 +17,7 @@ import {
   ScrollText,
   ShieldCheck,
   Calendar,
+  LayoutTemplate,
 } from 'lucide-react';
 import type { NavSection } from '../../components/dashboard-layout';
 
@@ -97,6 +98,7 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
     items: [
       { to: '/admin/master', label: t('dashboard:masterData', 'Master Data'), icon: Settings },
       { to: '/admin/audit', label: t('dashboard:auditLogs', 'Audit Logs'), icon: ScrollText },
+      { to: '/admin/property-page-settings', label: t('dashboard:propertyPageSettings', 'Property Page Settings'), icon: LayoutTemplate },
       { to: '/admin/settings', label: t('dashboard:settings', 'Settings'), icon: ShieldCheck },
     ],
   },

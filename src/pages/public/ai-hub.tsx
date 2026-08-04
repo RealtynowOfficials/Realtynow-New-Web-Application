@@ -41,7 +41,7 @@ export const AIHubPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>(
     'Looking for a 3 BHK luxury apartment in Worli Mumbai under 2.5 Cr with swimming pool',
   );
-  const [parsedFilter, setParsedFilter] = useState<Record<string, unknown> | null>(null);
+  const [smartSearchAnswer, setSmartSearchAnswer] = useState<string>('');
 
   // Generator State
   const [genTitle, setGenTitle] = useState<string>('Luxury 3BHK Apartment');
@@ -96,16 +96,15 @@ export const AIHubPage: React.FC = () => {
   };
 
   const handleSmartSearch = async () => {
+    if (!searchQuery.trim() || loading) return;
+
     setLoading(true);
+    setSmartSearchAnswer('');
     try {
-      const res = await callAI('parse_search', { query: searchQuery });
-      try {
-        setParsedFilter(JSON.parse(res));
-      } catch {
-        setParsedFilter({ raw: res });
-      }
+      const res = await callAI('chat', { message: searchQuery });
+      setSmartSearchAnswer(res);
     } catch {
-      setParsedFilter({ error: 'Failed to parse query.' });
+      setSmartSearchAnswer('Sorry, I could not search for properties right now. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -298,20 +297,20 @@ export const AIHubPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: AI Smart Search Filter Extractor */}
+        {/* TAB 2: AI Property Search */}
         {activeTab === 'smart-search' && (
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-3xl mx-auto space-y-6">
             <div className="space-y-1">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Search className="w-5 h-5 text-red-500" /> AI Natural Language Search Extractor
+                <Search className="w-5 h-5 text-red-500" /> AI Property Search
               </h3>
               <p className="text-xs text-slate-400">
-                Type freeform natural text to automatically parse city, BHK, budget, and property types.
+                Describe the property you need and the AI will search RealtyNow listings and give you a clear answer.
               </p>
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-semibold text-slate-300">Natural Language Search Query:</label>
+              <label className="text-xs font-semibold text-slate-300">What property are you looking for?</label>
               <div className="flex gap-2">
                 <textarea
                   rows={3}
@@ -326,18 +325,18 @@ export const AIHubPage: React.FC = () => {
                 disabled={loading}
                 className="bg-gradient-to-r from-red-600 to-rose-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm hover:from-red-500 hover:to-rose-500 transition-all flex items-center gap-2"
               >
-                <Sparkles className="w-4 h-4" /> Extract Search Filters
+                <Sparkles className="w-4 h-4" /> Find Properties
               </button>
             </div>
 
-            {parsedFilter && (
+            {smartSearchAnswer && (
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
                 <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                  Parsed Filter Output (JSON):
+                  AI Property Answer
                 </h4>
-                <pre className="text-xs text-slate-200 overflow-x-auto bg-slate-900 p-3 rounded-lg border border-slate-800">
-                  {JSON.stringify(parsedFilter, null, 2)}
-                </pre>
+                <p className="text-sm text-slate-200 whitespace-pre-line leading-relaxed bg-slate-900 p-4 rounded-lg border border-slate-800">
+                  {smartSearchAnswer}
+                </p>
               </div>
             )}
           </div>

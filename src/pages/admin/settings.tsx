@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, CheckCircle2, KeyRound, Bell, Upload, Monitor, Globe, Building2, Smartphone } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ShieldCheck, CheckCircle2, Bell, Upload, Monitor, Globe, Building2, Smartphone } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
@@ -27,11 +27,8 @@ export function AdminSettings() {
     email: profile?.email ?? '',
     phone: profile?.phone ?? '',
   });
-  const [pwForm, setPwForm] = useState({ password: '', confirm: '' });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [pwError, setPwError] = useState('');
-  const [pwSuccess, setPwSuccess] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url ?? '');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [platform, setPlatform] = useState<PlatformSettings>({
@@ -97,20 +94,6 @@ export function AdminSettings() {
     alert('Notification preferences saved');
   };
 
-  const changePw = useMutation({
-    mutationFn: async () => {
-      if (pwForm.password.length < 8) throw new Error('Password must be at least 8 characters');
-      if (pwForm.password !== pwForm.confirm) throw new Error('Passwords do not match');
-      const { error } = await supabase.auth.updateUser({ password: pwForm.password });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      setPwSuccess(true);
-      setPwForm({ password: '', confirm: '' });
-      setTimeout(() => setPwSuccess(false), 3000);
-    },
-    onError: (err: Error) => setPwError(err.message),
-  });
 
   const handleAvatarUpload = async (file: File) => {
     setUploadingAvatar(true);
@@ -203,35 +186,6 @@ export function AdminSettings() {
                 </span>
               )}
             </div>
-          </section>
-
-          <section className="border-t border-navy-100 pt-6">
-            <h3 className="font-display font-semibold text-navy-900 flex items-center gap-2">
-              <KeyRound className="h-5 w-5" /> Change password
-            </h3>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Input
-                label="New password"
-                type="password"
-                value={pwForm.password}
-                onChange={(e) => setPwForm((f) => ({ ...f, password: e.target.value }))}
-              />
-              <Input
-                label="Confirm password"
-                type="password"
-                value={pwForm.confirm}
-                onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
-              />
-            </div>
-            {pwError && <p className="mt-2 text-sm text-error-600">{pwError}</p>}
-            {pwSuccess && (
-              <p className="mt-2 text-sm text-success-600 flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" /> Password updated!
-              </p>
-            )}
-            <Button className="mt-4" variant="secondary" onClick={() => changePw.mutate()} loading={changePw.isPending}>
-              Update password
-            </Button>
           </section>
 
           <section className="border-t border-navy-100 pt-6">

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'realtynow-pwa-v2';
+const CACHE_NAME = 'realtynow-pwa-v3';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -71,7 +71,38 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. Static Assets (JS, CSS, Images, Fonts) -> Cache First, Fallback to Network
+  // B. JS / CSS -> Network First, Fallback to Cache.
+  // Cache-first is unsafe here: Vite hot-reload/dep-optimization and every new
+  // deploy can change what a given script URL should return (including, in
+  // dev, plain /src/*.tsx paths with no content hash at all). Serving a stale
+  // cached module while a fresh HTML/other chunk expects the new one loads
+  // two different copies of the same module (most dangerously React itself)
+  // into the page — the exact cause of "Cannot read properties of null
+  // (reading 'useX')" crashes. Falling back to cache only covers offline use.
+  const isScriptOrStyle =
+    event.request.destination === 'script' ||
+    event.request.destination === 'worker' ||
+    event.request.destination === 'style' ||
+    /\.(m?js|css)(\?|$)/.test(url.pathname);
+
+  if (isScriptOrStyle) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && url.origin === location.origin) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
+
+  // C. Everything else (images, fonts, icons) -> Cache First, Fallback to Network.
+  // Safe to cache-first: these are non-executable assets where brief
+  // staleness is harmless, unlike code.
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {

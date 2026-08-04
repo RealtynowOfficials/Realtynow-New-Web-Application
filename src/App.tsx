@@ -31,11 +31,18 @@ const AboutUsPage = lazy(() => import('./pages/public/about').then((m) => ({ def
 const ComparePage = lazy(() => import('./pages/public/compare').then((m) => ({ default: m.ComparePage })));
 const AIHubPage = lazy(() => import('./pages/public/ai-hub').then((m) => ({ default: m.AIHubPage })));
 const AgentsPage = lazy(() => import('./pages/public/agents').then((m) => ({ default: m.AgentsPage })));
+const EMICalculatorPage = lazy(() =>
+  import('./pages/public/emi-calculator').then((m) => ({ default: m.EMICalculatorPage })),
+);
+const HyderabadLocalitiesPage = lazy(() =>
+  import('./pages/public/hyderabad-localities').then((m) => ({ default: m.HyderabadLocalitiesPage })),
+);
+const BorewellServicesPage = lazy(() =>
+  import('./pages/public/borewell-services').then((m) => ({ default: m.BorewellServicesPage })),
+);
+const HomeLoansPage = lazy(() => import('./pages/public/home-loans').then((m) => ({ default: m.HomeLoansPage })));
 
-const AuthPage = lazy(() => import('./pages/auth-page').then((m) => ({ default: m.AuthPage })));
-const ForgotPasswordPage = lazy(() => import('./pages/auth-page').then((m) => ({ default: m.ForgotPasswordPage })));
-const StaffLoginPage = lazy(() => import('./pages/auth-page').then((m) => ({ default: m.StaffLoginPage })));
-const VerifyEmailPage = lazy(() => import('./pages/auth/verify-email').then((m) => ({ default: m.VerifyEmailPage })));
+const OtpLoginPage = lazy(() => import('./pages/auth/otp-login').then((m) => ({ default: m.OtpLoginPage })));
 const AgentRegisterPage = lazy(() =>
   import('./pages/auth/agent-register').then((m) => ({ default: m.AgentRegisterPage })),
 );
@@ -88,6 +95,9 @@ const AdminAdvertisements = lazy(() =>
 );
 const AdminAuditLogs = lazy(() => import('./pages/admin/audit').then((m) => ({ default: m.AdminAuditLogs })));
 const AdminSettings = lazy(() => import('./pages/admin/settings').then((m) => ({ default: m.AdminSettings })));
+const AdminPropertyPageSettings = lazy(() =>
+  import('./pages/admin/property-page-settings').then((m) => ({ default: m.AdminPropertyPageSettings })),
+);
 const AdminLanguages = lazy(() => import('./pages/admin/languages').then((m) => ({ default: m.AdminLanguagesPage })));
 const AdminHomepageCMS = lazy(() => import('./pages/admin/cms').then((m) => ({ default: m.AdminHomepageCMS })));
 const AdminCRMDashboard = lazy(() => import('./pages/admin/crm').then((m) => ({ default: m.default })));
@@ -131,25 +141,59 @@ function PublicRoute() {
   );
 }
 
+const ADMIN_IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 hours of inactivity
+
 function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   const { user, profile, loading, signOut } = useAuth();
   const location = useLocation();
 
+  // Admin sessions auto-logout after 3h of *inactivity* (not just time since login).
+  // Previously this only checked once on mount, so an admin left on one page for
+  // hours never got logged out; now activity resets the timer and a periodic
+  // check catches idle sessions even without navigation.
   useEffect(() => {
-    if (profile?.role === 'admin') {
-      const loginTime = localStorage.getItem('adminSessionStart');
-      if (!loginTime) {
-        localStorage.setItem('adminSessionStart', Date.now().toString());
-      } else if (Date.now() - parseInt(loginTime, 10) > 3 * 60 * 60 * 1000) {
-        // 3 hours expired
-        signOut().then(() => {
-          localStorage.removeItem('adminSessionStart');
-          window.location.href = '/login?expired=true';
-        });
-      }
-    } else {
-      localStorage.removeItem('adminSessionStart');
+    if (profile?.role !== 'admin') {
+      localStorage.removeItem('adminSessionActivity');
+      return;
     }
+
+    const forceLogout = () => {
+      localStorage.removeItem('adminSessionActivity');
+      signOut().then(() => {
+        window.location.href = '/login?expired=true';
+      });
+    };
+
+    const touch = () => {
+      const now = Date.now();
+      const last = localStorage.getItem('adminSessionActivity');
+      if (!last || now - parseInt(last, 10) > 30_000) {
+        localStorage.setItem('adminSessionActivity', now.toString());
+      }
+    };
+
+    const lastActivity = localStorage.getItem('adminSessionActivity');
+    if (!lastActivity) {
+      touch();
+    } else if (Date.now() - parseInt(lastActivity, 10) > ADMIN_IDLE_TIMEOUT_MS) {
+      forceLogout();
+      return;
+    }
+
+    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    activityEvents.forEach((evt) => window.addEventListener(evt, touch, { passive: true }));
+
+    const interval = setInterval(() => {
+      const last = localStorage.getItem('adminSessionActivity');
+      if (last && Date.now() - parseInt(last, 10) > ADMIN_IDLE_TIMEOUT_MS) {
+        forceLogout();
+      }
+    }, 60_000);
+
+    return () => {
+      activityEvents.forEach((evt) => window.removeEventListener(evt, touch));
+      clearInterval(interval);
+    };
   }, [profile, signOut]);
   if (loading) return <PageLoader />;
   if (!user) return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
@@ -207,6 +251,10 @@ function AppRoutes() {
                 { path: '/ai_property_advisor', element: <AIHubPage /> },
                 { path: '/ai-hub', element: <AIHubPage /> },
                 { path: '/agents', element: <AgentsPage /> },
+                { path: '/hyderabad-localities', element: <HyderabadLocalitiesPage /> },
+                { path: '/emi-calculator', element: <EMICalculatorPage /> },
+                { path: '/borewell-services', element: <BorewellServicesPage /> },
+                { path: '/home-loans', element: <HomeLoansPage /> },
                 // Common aliases and redirects to prevent 404s
                 { path: '/post-property', element: <Navigate to="/portal/list-property" replace /> },
                 { path: '/properties', element: <Navigate to="/search" replace /> },
@@ -214,29 +262,22 @@ function AppRoutes() {
               ],
             },
             {
+              // Same OTP login page for every role — role is whatever the
+              // matched/created profile already has, never chosen at login.
+              // ProtectedRoute's allowRoles still gates dashboard access.
               path: '/login',
               element: (
                 <Suspense fallback={<PageLoader />}>
-                  <AuthPage mode="login" />
+                  <OtpLoginPage />
                 </Suspense>
               ),
             },
-            {
-              path: '/signup',
-              element: (
-                <Suspense fallback={<PageLoader />}>
-                  <AuthPage mode="signup" />
-                </Suspense>
-              ),
-            },
-            {
-              path: '/verify-email',
-              element: (
-                <Suspense fallback={<PageLoader />}>
-                  <VerifyEmailPage />
-                </Suspense>
-              ),
-            },
+            { path: '/signup', element: <Navigate to="/login" replace /> },
+            { path: '/forgot-password', element: <Navigate to="/login" replace /> },
+            { path: '/verify-email', element: <Navigate to="/login" replace /> },
+            { path: '/agent/login', element: <Navigate to="/login" replace /> },
+            { path: '/builder/login', element: <Navigate to="/login" replace /> },
+            { path: '/admin/login', element: <Navigate to="/login" replace /> },
             {
               path: '/agent/register',
               element: (
@@ -250,38 +291,6 @@ function AppRoutes() {
               element: (
                 <Suspense fallback={<PageLoader />}>
                   <BuilderRegisterPage />
-                </Suspense>
-              ),
-            },
-            {
-              path: '/forgot-password',
-              element: (
-                <Suspense fallback={<PageLoader />}>
-                  <ForgotPasswordPage />
-                </Suspense>
-              ),
-            },
-            {
-              path: '/agent/login',
-              element: (
-                <Suspense fallback={<PageLoader />}>
-                  <StaffLoginPage role="agent" />
-                </Suspense>
-              ),
-            },
-            {
-              path: '/builder/login',
-              element: (
-                <Suspense fallback={<PageLoader />}>
-                  <StaffLoginPage role="builder" />
-                </Suspense>
-              ),
-            },
-            {
-              path: '/admin/login',
-              element: (
-                <Suspense fallback={<PageLoader />}>
-                  <StaffLoginPage role="admin" />
                 </Suspense>
               ),
             },
@@ -344,6 +353,7 @@ function AppRoutes() {
                 { path: '/admin/sponsored', element: <AdminSponsoredPage /> },
                 { path: '/admin/invoices', element: <AdminInvoicesPage /> },
                 { path: '/admin/settings', element: <AdminSettings /> },
+                { path: '/admin/property-page-settings', element: <AdminPropertyPageSettings /> },
               ],
             },
             {

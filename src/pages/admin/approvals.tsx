@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Check, X, Eye, Send, FileText, Search, Download } from 'lucide-react';
+import { Check, X, Eye, Send, FileText, Search, Download, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { queryClient } from '../../lib/queryClient';
@@ -10,15 +10,42 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Card, Button, Modal, Badge, Input, Textarea, EmptyState, Select } from '../../components/ui';
 import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
-import { updatePropertyStatus } from '../../lib/properties';
+import { updatePropertyStatus, adminApproveWithAi, adminRejectWithAi } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate, cn, exportToCsv } from '../../lib/utils';
+import { formatPrice, formatDate, cn, exportToCsv , generatePropertyUrl} from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
-import type { Property } from '../../lib/types';
+import type { Property, AiVerification } from '../../lib/types';
 
 interface PendingProperty extends Property {
   owner?: { first_name: string | null; last_name: string | null; email: string } | null;
+  ai_verification?: AiVerification | null;
+}
+
+// AI Confidence Score / Verification Status pill for the admin queue — surfaces the AI
+// Verified Listings result inline without restructuring the existing table/card layout.
+function AiVerificationPill({ property }: { property: PendingProperty }) {
+  const status = property.ai_verification?.verification_status ?? property.verification_status ?? 'Pending AI';
+  const score = property.ai_verification?.ai_score ?? property.ai_score;
+  const styles: Record<string, string> = {
+    'AI Verified': 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    'Manual Review': 'bg-amber-100 text-amber-800 border-amber-300',
+    Rejected: 'bg-error-100 text-error-700 border-error-300',
+    'Pending AI': 'bg-navy-100 text-navy-600 border-navy-200',
+  };
+  const Icon = status === 'AI Verified' ? ShieldCheck : status === 'Rejected' ? ShieldAlert : ShieldQuestion;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-bold whitespace-nowrap',
+        styles[status] ?? styles['Pending AI'],
+      )}
+      title={score != null ? `AI Score: ${score}/100` : undefined}
+    >
+      <Icon className="h-3 w-3" /> {status}
+      {score != null && <span className="font-normal opacity-75">· {score}</span>}
+    </span>
+  );
 }
 
 function PropertyReviewCard({ property, onReview }: { property: PendingProperty; onReview: () => void }) {
@@ -66,12 +93,15 @@ function PropertyReviewCard({ property, onReview }: { property: PendingProperty;
 
 export function AdminApprovals() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [selected, setSelected] = useState<PendingProperty | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [showRequestChanges, setShowRequestChanges] = useState(false);
   const [rejectError, setRejectError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showOverride, setShowOverride] = useState(false);
+  const [overrideRemarks, setOverrideRemarks] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-approvals'],
@@ -111,10 +141,26 @@ export function AdminApprovals() {
         }
       }
 
+      // Latest AI verification per property (admin has full read via RLS on ai_verifications).
+      const propertyIds = properties.map((p: any) => p.id);
+      const verificationMap: Record<string, AiVerification> = {};
+      if (propertyIds.length > 0) {
+        const { data: verifications } = await supabase
+          .from('ai_verifications')
+          .select('*')
+          .in('property_id', propertyIds)
+          .order('created_at', { ascending: false });
+        if (verifications) {
+          for (const v of verifications as AiVerification[]) {
+            if (!verificationMap[v.property_id]) verificationMap[v.property_id] = v; // first = latest (desc order)
+          }
+        }
+      }
+
       return properties.map((p: any) => {
         const mapped = mapJoined(p as unknown as Record<string, unknown>);
         const owner = profilesMap[p.owner_id] || null;
-        return { ...mapped, owner } as unknown as PendingProperty;
+        return { ...mapped, owner, ai_verification: verificationMap[p.id] ?? null } as unknown as PendingProperty;
       });
     },
   });
@@ -143,7 +189,7 @@ export function AdminApprovals() {
             type: 'property_status',
             title: `Property ${status}`,
             body: `Your property "${property.title}" status is now ${status}.${reason ? ` Reason: ${reason}` : ''}`,
-            link: `/property/${id}`,
+            link: generatePropertyUrl({ id: id }),
           });
         }
       }
@@ -168,6 +214,30 @@ export function AdminApprovals() {
     },
   });
 
+  // Admin override of the AI verification decision (via the verifyProperty/approveProperty/
+  // rejectProperty edge functions, which call the existing admin_approve_property /
+  // admin_reject_property RPCs and additionally write an audited ai_verifications row with
+  // admin_override=true + the remarks entered below).
+  const overrideMutation = useMutation({
+    mutationFn: async ({ id, decision, remarks }: { id: string; decision: 'approve' | 'reject'; remarks: string }) => {
+      if (decision === 'approve') {
+        return adminApproveWithAi(id, remarks || undefined);
+      }
+      return adminRejectWithAi(id, remarks || 'Overridden by admin.', remarks || undefined);
+    },
+    onSuccess: () => {
+      toast.addToast('success', 'AI decision overridden.');
+      setShowOverride(false);
+      setOverrideRemarks('');
+      setSelected(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+    onError: (err: unknown) => {
+      toast.addToast('error', err instanceof Error ? err.message : 'Override failed');
+    },
+  });
+
   const columns: Column<PendingProperty>[] = [
     {
       key: 'id',
@@ -186,7 +256,7 @@ export function AdminApprovals() {
             className="h-10 w-14 rounded object-cover"
           />
           <div>
-            <Link to={`/property/${p.id}`} className="font-medium text-navy-900 hover:underline line-clamp-1">
+            <Link to={generatePropertyUrl(p)} className="font-medium text-navy-900 hover:underline line-clamp-1">
               {p.title}
             </Link>
             <p className="text-xs text-navy-500">{p.property_type_name}</p>
@@ -215,6 +285,7 @@ export function AdminApprovals() {
     },
     { key: 'purpose', header: 'Listing Type', render: (p) => <Badge variant="default">{p.purpose}</Badge> },
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
+    { key: 'ai_verification', header: 'AI Verification', render: (p) => <AiVerificationPill property={p} /> },
     { key: 'created_at', header: 'Submitted Date', sortable: true, render: (p) => formatDate(p.created_at) },
     {
       key: 'actions',
@@ -314,6 +385,9 @@ export function AdminApprovals() {
                 <p className="text-xs text-navy-500 mt-0.5">
                   {p.locality_name ?? '—'}, {p.city_name ?? '—'}
                 </p>
+                <div className="mt-1.5">
+                  <AiVerificationPill property={p} />
+                </div>
                 <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(p.price, p.purpose)}</p>
                 <p className="text-xs text-navy-400 mt-1">Owner: {p.owner?.email ?? 'Unknown'}</p>
                 <p className="text-xs text-navy-400">Date: {formatDate(p.created_at)}</p>
@@ -402,7 +476,17 @@ export function AdminApprovals() {
               >
                 Reject
               </Button>
-              <Link to={`/property/${selected.id}`} target="_blank">
+              <Button
+                variant="secondary"
+                icon={<ShieldQuestion className="h-4 w-4" />}
+                onClick={() => {
+                  setOverrideRemarks('');
+                  setShowOverride(true);
+                }}
+              >
+                Override AI Decision
+              </Button>
+              <Link to={generatePropertyUrl({ id: selected.id })} target="_blank">
                 <Button variant="secondary" icon={<Eye className="h-4 w-4" />}>
                   Open Listing
                 </Button>
@@ -416,6 +500,55 @@ export function AdminApprovals() {
             {selected.images?.[0] && (
               <img src={selected.images[0]} alt="" className="mb-4 aspect-video w-full rounded-lg object-cover" />
             )}
+
+            <div className="mb-4 rounded-xl border border-navy-100 bg-navy-50/60 p-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h3 className="font-display text-lg font-bold text-navy-900">AI Verification</h3>
+                <AiVerificationPill property={selected} />
+              </div>
+              {selected.ai_verification ? (
+                <div className="mt-3 space-y-2 text-sm">
+                  <p className="text-navy-500">
+                    Verified by <span className="font-medium text-navy-800">{selected.ai_verification.verified_by}</span> on{' '}
+                    {formatDate(selected.ai_verification.verified_at)}
+                    {selected.ai_verification.admin_override && (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                        Overridden
+                      </span>
+                    )}
+                  </p>
+                  {selected.ai_verification.admin_remarks && (
+                    <p className="text-navy-600">
+                      <span className="text-navy-500">Admin remarks:</span> {selected.ai_verification.admin_remarks}
+                    </p>
+                  )}
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {Object.entries(selected.ai_verification.check_results ?? {}).map(([key, result]) => (
+                      <div
+                        key={key}
+                        className={cn(
+                          'flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-xs',
+                          result.passed ? 'bg-emerald-50 text-emerald-800' : 'bg-error-50 text-error-700',
+                        )}
+                      >
+                        {result.passed ? (
+                          <Check className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        ) : (
+                          <X className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        )}
+                        <span>
+                          <span className="font-semibold capitalize">{key.replace(/_/g, ' ')}:</span> {result.reason}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-navy-500">
+                  No AI verification has run for this property yet (status: {selected.verification_status ?? 'Pending AI'}).
+                </p>
+              )}
+            </div>
 
             <div className="grid gap-6 md:grid-cols-2">
               <div>
@@ -613,6 +746,47 @@ export function AdminApprovals() {
           error={rejectError}
         />
       </Modal>
+
+      {/* Override AI Decision modal */}
+      <Modal
+        open={showOverride}
+        onClose={() => setShowOverride(false)}
+        title="Override AI Decision"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowOverride(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              icon={<X className="h-4 w-4" />}
+              onClick={() => selected && overrideMutation.mutate({ id: selected.id, decision: 'reject', remarks: overrideRemarks })}
+              loading={overrideMutation.isPending}
+            >
+              Override → Reject
+            </Button>
+            <Button
+              variant="gold"
+              icon={<ShieldCheck className="h-4 w-4" />}
+              onClick={() => selected && overrideMutation.mutate({ id: selected.id, decision: 'approve', remarks: overrideRemarks })}
+              loading={overrideMutation.isPending}
+            >
+              Override → AI Verified
+            </Button>
+          </>
+        }
+      >
+        <p className="mb-3 text-sm text-navy-600">
+          Manually override the AI verification result for <span className="font-semibold">{selected?.title}</span>. This
+          is recorded in the audit trail (verification_logs) and notifies the property owner.
+        </p>
+        <Textarea
+          label="Remarks (optional but recommended)"
+          value={overrideRemarks}
+          onChange={(e) => setOverrideRemarks(e.target.value)}
+          placeholder="e.g. Manually verified ownership documents; AI flagged images incorrectly."
+        />
+      </Modal>
     </DashboardLayout>
   );
 }
@@ -624,6 +798,8 @@ export function AdminProperties() {
   const [search, setSearch] = useState('');
   const [toDelete, setToDelete] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [visibleRows, setVisibleRows] = useState<PendingProperty[]>([]);
+  const handleVisibleRowsChange = useCallback((rows: PendingProperty[]) => setVisibleRows(rows), []);
   const [editing, setEditing] = useState<PendingProperty | null>(null);
   const [editForm, setEditForm] = useState({
     title: '',
@@ -794,7 +970,7 @@ export function AdminProperties() {
             className="h-10 w-14 rounded object-cover"
           />
           <div>
-            <Link to={`/property/${p.id}`} className="font-medium text-navy-900 hover:underline line-clamp-1">
+            <Link to={generatePropertyUrl(p)} className="font-medium text-navy-900 hover:underline line-clamp-1">
               {p.title}
             </Link>
             <p className="text-xs text-navy-500">
@@ -823,7 +999,7 @@ export function AdminProperties() {
             size="sm"
             variant="ghost"
             title="View Property"
-            onClick={() => window.open(`/property/${p.id}`, '_blank')}
+            onClick={() => window.open(generatePropertyUrl(p), '_blank')}
             icon={<Eye className="h-4 w-4" />}
           />
           {(p.status === 'submitted' || p.status === 'pending_verification') && (
@@ -937,15 +1113,17 @@ export function AdminProperties() {
   };
 
   const handleExport = () => {
-    if (!data) return;
-    exportToCsv('admin-properties', data as unknown as Record<string, unknown>[], [
+    // Export exactly what's on screen: same filters/search/sort/pagination the table applies.
+    if (!visibleRows.length) return;
+    exportToCsv('admin-properties', visibleRows as unknown as Record<string, unknown>[], [
       { key: 'id', label: 'ID' },
-      { key: 'title', label: 'Title' },
-      { key: 'status', label: 'Status' },
+      { key: 'title', label: 'Property' },
+      { key: 'locality_name', label: 'Locality' },
+      { key: 'city_name', label: 'City' },
       { key: 'price', label: 'Price' },
       { key: 'purpose', label: 'Purpose' },
-      { key: 'city_name', label: 'City' },
-      { key: 'locality_name', label: 'Locality' },
+      { key: 'status', label: 'Status' },
+      { key: 'view_count', label: 'Views' },
       { key: 'created_at', label: 'Created' },
     ]);
   };
@@ -1155,6 +1333,7 @@ export function AdminProperties() {
               return n;
             })
           }
+          onVisibleRowsChange={handleVisibleRowsChange}
         />
       )}
 

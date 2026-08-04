@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Calendar,
   ArrowLeft,
   Search as SearchIcon,
-  User,
   ChevronRight,
   MapPin,
   Phone,
@@ -443,7 +442,15 @@ export function FaqPage() {
 
 export function ContactPage() {
   const { t } = useLanguageContext();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
+  const [searchParams] = useSearchParams();
+  const service = searchParams.get('service');
+
+  const [form, setForm] = useState({ 
+    name: '', 
+    email: '', 
+    phone: '', 
+    message: service ? `I am interested in ${service}. Please contact me.` : '' 
+  });
   const [sent, setSent] = useState(false);
 
   const submit = async (e: React.FormEvent) => {

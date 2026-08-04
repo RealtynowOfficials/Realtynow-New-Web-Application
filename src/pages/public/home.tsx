@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
 import { Link, useNavigate } from 'react-router-dom';
@@ -7,7 +7,6 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
-  ChevronDown,
   Mic,
   Camera,
   MapPin,
@@ -19,7 +18,6 @@ import {
   Store,
   Warehouse,
   Users,
-  User,
   Star,
   Phone,
   MessageCircle,
@@ -35,21 +33,10 @@ import {
   Briefcase,
   Heart,
   GitCompare,
-  Eye,
-  CheckCircle2,
-  AppWindow,
-  Smartphone,
-  QrCode,
   Quote,
-  ArrowUpRight,
   BarChart3,
-  MapPinned,
   Layers,
   Award,
-  Clock,
-  Newspaper,
-  Mail,
-  PhoneCall,
   Scale,
   Hammer,
   Sun,
@@ -60,21 +47,162 @@ import {
   LandPlot,
   ChevronLeft,
   ChevronRight,
+  ChevronsRight,
   Droplets,
   PieChart,
-  HeartHandshake,
-  Check,
-  ZapIcon,
+  Bed,
+  Share2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
-import { formatCompactPrice, formatPrice, formatNumber, cn } from '../../lib/utils';
-import { PropertyCard } from '../../components/property-card';
+import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl } from '../../lib/utils';
 import { useLanguageContext } from '../../lib/i18n/language-context';
+import { useToast } from '../../components/toast';
 import { AppShowcase } from '../../components/app-showcase';
-import { Card, Button, Badge } from '../../components/ui';
-import { DETAILED_BLOGS } from './static';
-import type { Advertisement } from '../../lib/types';
+import type { Advertisement, Property } from '../../lib/types';
+
+// Lightweight, localStorage-backed favorites — same minimal pattern as
+// components/property-card.tsx, kept local to this file (no new data-layer files).
+const HOME_FAVORITES_KEY = 'realtynow_favorite_ids';
+function readHomeFavoriteIds(): string[] {
+  try {
+    const raw = localStorage.getItem(HOME_FAVORITES_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+function writeHomeFavoriteIds(ids: string[]) {
+  try {
+    localStorage.setItem(HOME_FAVORITES_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+}
+
+type HomeCardProperty = Property & {
+  city_name?: string | null;
+  locality_name?: string | null;
+  property_type_name?: string | null;
+  builder_name?: string | null;
+};
+
+/* ============================================================
+   Compact premium property card — shared by the homepage carousels
+============================================================ */
+function HomePropertyCard({
+  property: p,
+  badge,
+}: {
+  property: HomeCardProperty;
+  badge?: { label: string; className: string; icon?: React.ReactNode };
+}) {
+  const { addToast } = useToast();
+  const [favorited, setFavorited] = useState(() => readHomeFavoriteIds().includes(p.id));
+  const reraNumber = (p as { rera_number?: string | null }).rera_number ?? null;
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = readHomeFavoriteIds();
+    const isNowFavorited = !ids.includes(p.id);
+    writeHomeFavoriteIds(isNowFavorited ? [...ids, p.id] : ids.filter((id) => id !== p.id));
+    setFavorited(isNowFavorited);
+  };
+
+  const handleShareClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const url = `${window.location.origin}${generatePropertyUrl(p)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: p.title, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      addToast('success', 'Link copied to clipboard');
+    } catch {
+      /* user cancelled share sheet — no-op */
+    }
+  };
+
+  return (
+    <Link
+      to={generatePropertyUrl(p)}
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-shadow duration-300 hover:shadow-[0_16px_36px_rgba(0,0,0,0.12)]"
+    >
+      <div className="relative aspect-video w-full overflow-hidden bg-slate-100">
+        <img
+          src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+          alt={p.title}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+        />
+        {badge && (
+          <span
+            className={cn(
+              'absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-white shadow',
+              badge.className,
+            )}
+          >
+            {badge.icon} {badge.label}
+          </span>
+        )}
+        <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
+          <button
+            onClick={handleFavoriteClick}
+            aria-label={favorited ? 'Remove from favorites' : 'Add to favorites'}
+            className={cn(
+              'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110',
+              favorited ? 'bg-white text-red-500' : 'bg-white/90 text-slate-600 hover:bg-white',
+            )}
+          >
+            <Heart className={cn('h-3.5 w-3.5', favorited && 'fill-red-500')} />
+          </button>
+          <button
+            onClick={handleShareClick}
+            aria-label="Share this property"
+            className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-white"
+          >
+            <Share2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {p.possession_status && (
+          <span className="absolute bottom-2.5 left-2.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">
+            {p.possession_status}
+          </span>
+        )}
+        {reraNumber && (
+          <span className="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[9px] font-bold text-slate-700 shadow-sm backdrop-blur">
+            <ShieldCheck className="h-3 w-3 text-emerald-600" /> RERA
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col p-3.5">
+        <p className="font-display text-base font-extrabold text-slate-900">
+          {formatCompactPrice(p.price)}
+          {p.purpose === 'Rent' && <span className="text-[10px] font-medium text-slate-400">/mo</span>}
+        </p>
+        <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
+          {p.title}
+        </h3>
+        <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+          <MapPin className="h-3 w-3 shrink-0" />
+          <span className="line-clamp-1">
+            {p.locality_name ? `${p.locality_name}, ` : ''}
+            {p.city_name ?? 'India'}
+          </span>
+        </p>
+        {p.bedrooms != null && (
+          <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+            <Bed className="h-3 w-3 text-slate-400" /> {p.bedrooms} BHK
+          </span>
+        )}
+      </div>
+    </Link>
+  );
+}
 
 /* ============================================================
    Animated Counter
@@ -114,81 +242,276 @@ function Counter({ to, suffix = '', duration = 2000 }: { to: number; suffix?: st
 }
 
 /* ============================================================
-   AI Smart Search
-/* ============================================================
    Hero Section
 ============================================================ */
+type HeroSlide = {
+  id: string;
+  title: string;
+  subtitle: string;
+  companyLogo?: string | null;
+  priceText?: string | null;
+  locationText?: string | null;
+  imageDesktop: string;
+  imageMobile?: string | null;
+  ctaText: string;
+  ctaLink: string;
+};
+
+// Static fallback slides — shown only when no admin-configured Hero-placement
+// advertisements are currently live, so the homepage never looks empty.
+const HERO_SLIDES: HeroSlide[] = [
+  {
+    id: 'fallback-1',
+    title: 'Find Your Perfect Place to Call Home',
+    subtitle: 'Search thousands of verified properties across India with AI recommendations & instant site visit booking.',
+    priceText: undefined,
+    locationText: 'Pan India',
+    imageDesktop: '/hero-bg.jpg',
+    imageMobile: '/hero-bg.jpg',
+    ctaText: 'Explore Now',
+    ctaLink: '/search',
+  },
+  {
+    id: 'fallback-2',
+    title: 'Premium Homes, Verified & Ready',
+    subtitle: 'RERA-approved projects with zero brokerage and instant AI-powered shortlisting.',
+    priceText: undefined,
+    locationText: 'Top Cities, India',
+    imageDesktop: '/hero_bg_user.jpg',
+    imageMobile: '/hero_bg_user.jpg',
+    ctaText: 'Explore Now',
+    ctaLink: '/search?purpose=Buy',
+  },
+  {
+    id: 'fallback-3',
+    title: 'Luxury Living, Redefined',
+    subtitle: 'Handpicked luxury apartments and villas with world-class amenities.',
+    priceText: undefined,
+    locationText: 'Metro Cities, India',
+    imageDesktop: '/hero_luxury_bg.png',
+    imageMobile: '/hero_luxury_bg.png',
+    ctaText: 'Explore Now',
+    ctaLink: '/search?type=Villa',
+  },
+];
+
+const HERO_SLIDE_INTERVAL_MS = 5000;
+
+function mapAdToHeroSlide(ad: Advertisement): HeroSlide {
+  // Mirrors the redirect_type resolution already baked into cta_link by the
+  // admin form (src/pages/admin/content.tsx), with the same property/category
+  // fallbacks used by AIAdBannerSection lower on this page.
+  const targetLink = ad.property_id
+    ? `/property/${ad.property_id}`
+    : ad.category_name
+      ? `/search?purpose=${ad.category_name}`
+      : ad.cta_link || ad.link_url || '/search';
+
+  return {
+    id: ad.id,
+    title: ad.title,
+    subtitle: (ad.subtitle && ad.subtitle.trim()) || ad.description || '',
+    companyLogo: ad.company_logo,
+    priceText: ad.price_text,
+    locationText: ad.location_text,
+    imageDesktop: ad.image_desktop || ad.image_url || '',
+    imageMobile: ad.image_mobile || ad.image_desktop || ad.image_url || '',
+    ctaText: ad.cta_text || 'Explore Now',
+    ctaLink: targetLink,
+  };
+}
+
 function HeroSection() {
-  const { t } = useLanguageContext();
+  const realtimeTick = useRealtimeCount('advertisements');
+  const [slideIndex, setSlideIndex] = useState(0);
+
+  const { data: heroAds } = useQuery({
+    queryKey: ['home-hero-slides', realtimeTick],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('advertisements')
+        .select('*')
+        .eq('placement', 'Hero')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+      if (error) return [];
+      return (data ?? []) as Advertisement[];
+    },
+  });
+
+  const slides = useMemo(() => {
+    const now = Date.now();
+    const live = (heroAds ?? []).filter((a) => {
+      const start = a.start_date
+        ? new Date(a.start_date).getTime()
+        : a.starts_at
+          ? new Date(a.starts_at).getTime()
+          : null;
+      if (start && start > now) return false;
+      const end = a.end_date ? new Date(a.end_date).getTime() : a.ends_at ? new Date(a.ends_at).getTime() : null;
+      if (end && end < now) return false;
+      return true;
+    });
+    return live.length > 0 ? live.map(mapAdToHeroSlide) : HERO_SLIDES;
+  }, [heroAds]);
+
+  // Keep slideIndex in range if the live slide list shrinks/refreshes.
+  useEffect(() => {
+    if (slideIndex >= slides.length) setSlideIndex(0);
+  }, [slides.length, slideIndex]);
+
+  // Autoplay every 5s.
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const timer = setInterval(() => {
+      setSlideIndex((i) => (i + 1) % slides.length);
+    }, HERO_SLIDE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [slides.length]);
+
+  const prevSlide = () => setSlideIndex((i) => (i - 1 + slides.length) % slides.length);
+  const nextSlide = () => setSlideIndex((i) => (i + 1) % slides.length);
+
+  const activeSlide = slides[slideIndex] ?? slides[0];
+  const isFirstSlide = slideIndex === 0;
+
   return (
-    <section className="relative overflow-hidden bg-white pt-6 pb-12 lg:pt-8 lg:pb-14">
-      {/* Background image & gradient mesh overlays */}
-      <div className="absolute inset-0 z-0">
-        <img
-          src="/hero-bg.jpg"
-          alt="RealtyNow Hero Backdrop"
-          className="h-full w-full object-cover object-center"
-          style={{ objectPosition: '60% center' }}
-        />
-        {/* Left white fade — keeps text readable */}
-        <div className="absolute inset-0 bg-gradient-to-r from-white via-white/85 to-transparent lg:w-[65%] w-full" />
-        {/* Subtle top & bottom edge fade */}
-        <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-white/60" />
-
-        {/* Ambient radial glows */}
-        <div className="absolute top-1/4 left-10 h-80 w-80 rounded-full bg-rose-400/8 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-10 left-1/4 h-56 w-56 rounded-full bg-amber-300/10 blur-3xl pointer-events-none" />
-      </div>
-
-      <div className="container-wide relative z-10">
-        <div className="grid items-center gap-8">
-          {/* FULL WIDTH HERO TEXT */}
+    <section className="relative overflow-hidden bg-white">
+      <div className="relative h-[380px] sm:h-[430px] lg:h-[470px] max-h-[470px] w-full">
+        {/* Full-bleed banner image — no tint/gradient over it */}
+        <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="max-w-2xl text-left"
+            key={activeSlide.id}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.7, ease: 'easeInOut' }}
+            className="absolute inset-0"
           >
-            {/* Small Badge */}
-            <div className="inline-flex items-center gap-2 rounded-full border border-red-200/80 bg-red-50/90 px-3.5 py-1 shadow-sm backdrop-blur-md">
-              <Sparkles className="h-3.5 w-3.5 text-red-600 animate-pulse" />
-              <span className="text-[11px] font-bold uppercase tracking-wider text-red-600">
-                ✨ {t('common.tagline', 'AI-Powered Real Estate Platform')}
-              </span>
-            </div>
-
-            {/* Main Heading */}
-            <h1 className="mt-3 font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
-              {t('home.heroTitle', 'Find Your Perfect Place to Call Home')}
-            </h1>
-
-            {/* Sub Heading */}
-            <p className="mt-2.5 text-slate-600 text-xs sm:text-sm leading-relaxed max-w-xl">
-              {t(
-                'home.heroSubtitle',
-                'Search thousands of verified properties across India with AI recommendations & instant site visit booking.',
+            <picture>
+              {activeSlide.imageMobile && activeSlide.imageMobile !== activeSlide.imageDesktop && (
+                <source media="(max-width: 640px)" srcSet={activeSlide.imageMobile} />
               )}
-            </p>
-
-            {/* CTA Buttons */}
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Link
-                to="/search"
-                className="group rounded-full bg-gradient-to-r from-red-600 via-red-500 to-rose-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-red-500/25 hover:shadow-red-500/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
-              >
-                <span>{t('common.search', 'Explore Properties')}</span>
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Link>
-
-              <button
-                onClick={() => window.dispatchEvent(new CustomEvent('open-ai-assistant'))}
-                className="group rounded-full border border-slate-200/90 bg-white/90 hover:bg-white px-6 py-3 text-sm font-bold text-slate-800 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex items-center gap-2 backdrop-blur-md"
-              >
-                <Bot className="h-4.5 w-4.5 text-red-600 transition-transform group-hover:scale-110" />
-                <span>{t('home.aiAdvisor', 'AI Property Advisor')}</span>
-              </button>
-            </div>
+              <img
+                src={activeSlide.imageDesktop}
+                alt={activeSlide.title}
+                className="h-full w-full object-cover object-center"
+                loading={isFirstSlide ? 'eager' : 'lazy'}
+                fetchPriority={isFirstSlide ? 'high' : 'low'}
+              />
+            </picture>
           </motion.div>
+        </AnimatePresence>
+
+        {/* Left/right navigation arrows */}
+        {slides.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={prevSlide}
+              aria-label="Previous slide"
+              className="absolute left-3 sm:left-5 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={nextSlide}
+              aria-label="Next slide"
+              className="absolute right-3 sm:right-5 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+
+        {/* Pagination dots */}
+        {slides.length > 1 && (
+          <div className="absolute bottom-4 right-4 z-20 flex gap-2 sm:right-6">
+            {slides.map((s, idx) => (
+              <button
+                type="button"
+                key={s.id}
+                onClick={() => setSlideIndex(idx)}
+                aria-label={`Go to slide ${idx + 1}`}
+                className={cn(
+                  'h-2 rounded-full transition-all',
+                  idx === slideIndex ? 'w-6 bg-red-600' : 'w-2 bg-white/80 hover:bg-white',
+                )}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Slide info panel — its own solid card, left-aligned, image stays fully clear */}
+        <div className="absolute inset-y-0 left-0 z-10 flex items-center">
+          <div className="container-wide w-full">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`panel-${activeSlide.id}`}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.45, ease: 'easeOut' }}
+                className="w-[calc(100vw-2rem)] max-w-sm rounded-2xl bg-slate-900/95 p-4 shadow-2xl shadow-black/30 backdrop-blur-md sm:w-[420px] sm:p-5 lg:w-[460px] lg:p-6"
+              >
+                <div className="flex items-start gap-3">
+                  {activeSlide.companyLogo && (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1 sm:h-12 sm:w-12">
+                      <img
+                        src={activeSlide.companyLogo}
+                        alt=""
+                        className="max-h-full max-w-full object-contain"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h2 className="font-display text-lg font-extrabold leading-tight text-white line-clamp-2 sm:text-xl lg:text-2xl">
+                      {activeSlide.title}
+                    </h2>
+                    {activeSlide.locationText && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-slate-300 sm:text-sm">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                        <span className="truncate">{activeSlide.locationText}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {activeSlide.subtitle && (
+                  <p className="mt-3 text-xs leading-relaxed text-slate-300 line-clamp-2 sm:text-sm">
+                    {activeSlide.subtitle}
+                  </p>
+                )}
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  {activeSlide.priceText && (
+                    <span className="truncate text-sm font-bold text-white sm:text-base">{activeSlide.priceText}</span>
+                  )}
+                  {activeSlide.ctaLink.startsWith('http') ? (
+                    <a
+                      href={activeSlide.ctaLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-red-900/30 transition-all hover:shadow-red-900/50 sm:px-5 sm:text-sm"
+                    >
+                      {activeSlide.ctaText}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </a>
+                  ) : (
+                    <Link
+                      to={activeSlide.ctaLink}
+                      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-red-900/30 transition-all hover:shadow-red-900/50 sm:px-5 sm:text-sm"
+                    >
+                      {activeSlide.ctaText}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     </section>
@@ -200,6 +523,46 @@ function HeroSection() {
 ============================================================ */
 const SEARCH_TABS = ['Buy', 'Rent', 'Commercial', 'Plots', 'Projects'] as const;
 
+const SEARCH_PLACEHOLDERS = [
+  'Search Apartments in Hyderabad...',
+  'Search Villas in Bangalore...',
+  'Search Commercial Properties...',
+  'Search Plots Near ORR...',
+  'Search Projects in Gachibowli...',
+];
+
+function useTypingPlaceholder(phrases: string[], active: boolean) {
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [charCount, setCharCount] = useState(0);
+  const [phase, setPhase] = useState<'typing' | 'pausing' | 'deleting'>('typing');
+
+  useEffect(() => {
+    if (!active) return;
+    const current = phrases[phraseIndex % phrases.length];
+    let timeout: number;
+
+    if (phase === 'typing') {
+      timeout = window.setTimeout(() => {
+        if (charCount < current.length) setCharCount((c) => c + 1);
+        else setPhase('pausing');
+      }, 45);
+    } else if (phase === 'pausing') {
+      timeout = window.setTimeout(() => setPhase('deleting'), 700);
+    } else {
+      timeout = window.setTimeout(() => {
+        if (charCount > 0) setCharCount((c) => c - 1);
+        else {
+          setPhase('typing');
+          setPhraseIndex((i) => (i + 1) % phrases.length);
+        }
+      }, 22);
+    }
+    return () => window.clearTimeout(timeout);
+  }, [active, charCount, phase, phraseIndex, phrases]);
+
+  return phrases[phraseIndex % phrases.length].slice(0, charCount);
+}
+
 function AISmartSearch() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof SEARCH_TABS)[number]>('Buy');
@@ -207,14 +570,7 @@ function AISmartSearch() {
   const [listening, setListening] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
 
-  const examples = [
-    '3BHK under 80 Lakhs in Hyderabad',
-    'Luxury Villa in Hyderabad',
-    'Commercial Office Near Metro',
-    'Best Investment Property under 50L',
-    'Ready To Move',
-    'New Projects',
-  ];
+  const typedPlaceholder = useTypingPlaceholder(SEARCH_PLACEHOLDERS, !query);
 
   const handleVoice = () => {
     const SR = (window as unknown as { webkitSpeechRecognition?: new () => { start: () => void; stop: () => void; onresult: (e: { results: { 0: { 0: { transcript: string } } } }) => void; onerror: () => void; onend: () => void; lang: string; continuous: boolean; interimResults: boolean } }).webkitSpeechRecognition;
@@ -244,13 +600,13 @@ function AISmartSearch() {
   };
 
   return (
-    <div className="container-wide relative z-30 -mt-6 sm:-mt-8">
-      <div className="relative flex items-end gap-0">
+    <div className="container-wide relative z-30 -mt-16 sm:-mt-20">
+      <div className="relative mx-auto w-[92%] sm:w-[85%] lg:w-[78%] max-w-5xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15, duration: 0.5 }}
-          className="w-full max-w-4xl rounded-[2rem] border border-slate-200/90 bg-white/95 p-3 sm:p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl"
+          className="w-full rounded-[2rem] border border-slate-200/90 bg-white/95 p-3 sm:p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl"
         >
           {/* Tabs */}
           <div className="flex flex-wrap items-center gap-1 sm:gap-2 pb-2.5 border-b border-slate-100 px-1">
@@ -283,9 +639,15 @@ function AISmartSearch() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAISearch()}
-                placeholder={`Search by city, locality, project or landmark...`}
+                aria-label="Search properties"
                 className="w-full rounded-2xl border border-slate-200/80 bg-slate-50/70 py-3.5 pl-12 pr-32 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-all"
               />
+              {!query && (
+                <div className="pointer-events-none absolute left-12 top-1/2 -translate-y-1/2 text-sm sm:text-base text-slate-400">
+                  {typedPlaceholder}
+                  <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse bg-red-500 align-middle" />
+                </div>
+              )}
               <div className="absolute right-3 top-1/2 flex -translate-y-1/2 gap-1">
                 <button
                   onClick={handleVoice}
@@ -313,34 +675,18 @@ function AISmartSearch() {
               <span>{aiThinking ? 'AI Analyzing…' : 'Search'}</span>
             </button>
           </div>
-
-          {/* AI Suggestion Chips */}
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 px-1 pt-1 border-t border-slate-100/60">
-            <span className="text-[11px] font-bold text-red-600 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="h-3 w-3" /> POPULAR SEARCHES:
-            </span>
-            {examples.map((ex) => (
-              <button
-                key={ex}
-                onClick={() => setQuery(ex)}
-                className="rounded-full border border-slate-200/80 bg-slate-50/80 px-3 py-0.5 text-xs font-medium text-slate-700 transition-all hover:border-red-300 hover:bg-red-50/80 hover:text-red-700"
-              >
-                {ex}
-              </button>
-            ))}
-          </div>
         </motion.div>
 
-        {/* AI Robot */}
+        {/* AI Robot — sits outside the (now centered) search panel, offset to its right */}
         <motion.div
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-          className="hidden lg:flex items-end justify-center shrink-0 self-end -mb-2 ml-2"
+          className="hidden lg:flex absolute -right-20 xl:-right-28 bottom-0 items-end justify-center shrink-0"
         >
           <img
             src="/robot.png"
             alt="AI Assistant Robot"
-            className="h-52 xl:h-60 w-auto object-contain drop-shadow-2xl hover:scale-105 transition-transform cursor-pointer mix-blend-multiply"
+            className="h-44 xl:h-52 w-auto object-contain drop-shadow-2xl hover:scale-105 transition-transform cursor-pointer mix-blend-multiply"
             onClick={() => window.dispatchEvent(new CustomEvent('open-ai-assistant'))}
             title="Chat with AI Assistant"
           />
@@ -385,329 +731,6 @@ function TrustSection() {
 /* ============================================================
    Dynamic AI Advertisement Banner Section (Home Page)
 ============================================================ */
-function AIAdBannerSection() {
-  const { t } = useLanguageContext();
-  const realtimeTick = useRealtimeCount('advertisements');
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [direction, setDirection] = useState(1); // 1 = next, -1 = prev
-  const [isPaused, setIsPaused] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  const { data: ads } = useQuery({
-    queryKey: ['home-ad-banners', realtimeTick],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('advertisements')
-        .select('*')
-        .eq('is_active', true)
-        .order('priority', { ascending: false })
-        .order('display_order', { ascending: true });
-
-      const filtered = (data ?? []).filter((a) => {
-        if (a.end_date && new Date(a.end_date) < new Date()) return false;
-        if (a.ends_at && new Date(a.ends_at) < new Date()) return false;
-        return true;
-      });
-
-      return filtered as (Advertisement & {
-        banner_tags?: string[];
-        property_id?: string;
-        category_name?: string;
-        link_url?: string;
-        seo_alt_text?: string;
-        image_caption?: string;
-      })[];
-    },
-  });
-
-  const defaultBanners = [
-    {
-      id: 'demo-banner-1',
-      title: 'Monsoon Mega Property Fest 2026',
-      subtitle: 'Zero Brokerage on Verified Luxury Apartments & Villas',
-      description: 'Get up to 5% instant cashback, free modular kitchen, and zero processing fee on home loans.',
-      cta_text: 'Claim Exclusive Offer',
-      cta_link: '/search?purpose=Buy',
-      image_desktop: 'https://images.pexels.com/photos/1732414/pexels-photo-1732414.jpeg?auto=compress&cs=tinysrgb&w=1600',
-      banner_tags: ['Zero Brokerage', '5% Cashback', 'RERA Approved'],
-    },
-    {
-      id: 'demo-banner-2',
-      title: 'Premium Smart Luxury Villas',
-      subtitle: 'Exclusive Gated Community with 24/7 AI Security',
-      description: 'Enjoy private swimming pool, home automation, and 0% down payment options.',
-      cta_text: 'View Luxury Villas',
-      cta_link: '/search?type=Villa',
-      image_desktop: 'https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg?auto=compress&cs=tinysrgb&w=1600',
-      banner_tags: ['Smart Automation', 'Private Pool', 'Zero Down Payment'],
-    },
-    {
-      id: 'demo-banner-3',
-      title: 'Sea-View Penthouses in Mumbai',
-      subtitle: 'Iconic Skyline Views | Starts at ₹3.2 Cr',
-      description: 'Breathtaking Arabian Sea views, world-class concierge, and smart home features in every unit.',
-      cta_text: 'Explore Penthouses',
-      cta_link: '/search?type=Penthouse',
-      image_desktop: 'https://images.pexels.com/photos/2581922/pexels-photo-2581922.jpeg?auto=compress&cs=tinysrgb&w=1600',
-      banner_tags: ['Sea View', 'Premium Amenities', 'Luxury Living'],
-    },
-    {
-      id: 'demo-banner-4',
-      title: 'Commercial Workspaces & Tech Parks',
-      subtitle: 'Prime Business Locations with High Rental Yields',
-      description: 'Invest in GRADE-A commercial spaces with guaranteed 10% annual rental return.',
-      cta_text: 'Explore Commercial',
-      cta_link: '/search?purpose=Commercial',
-      image_desktop: 'https://images.pexels.com/photos/380769/pexels-photo-380769.jpeg?auto=compress&cs=tinysrgb&w=1600',
-      banner_tags: ['Grade-A Space', '10% Rental Yield', 'High ROI'],
-    },
-    {
-      id: 'demo-banner-5',
-      title: 'Serene Farmhouse Estates in Hyderabad',
-      subtitle: 'Escape the City | Private Green Living',
-      description: 'Sprawling 2-acre farmhouse plots with landscaped gardens, organic farm, and clubhouse.',
-      cta_text: 'Discover Estates',
-      cta_link: '/search?type=Farmhouse',
-      image_desktop: 'https://images.pexels.com/photos/259950/pexels-photo-259950.jpeg?auto=compress&cs=tinysrgb&w=1600',
-      banner_tags: ['2-Acre Plots', 'Green Living', 'Gated Community'],
-    },
-  ];
-
-  const bannerItems = ads && ads.length > 0 ? [...ads, ...defaultBanners] : defaultBanners;
-  const SLIDE_DURATION = 5000;
-
-  // Progress bar + auto-play
-  useEffect(() => {
-    if (isPaused) return;
-    setProgress(0);
-    const startTime = Date.now();
-    const tick = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      setProgress(Math.min((elapsed / SLIDE_DURATION) * 100, 100));
-    }, 50);
-    const slide = setTimeout(() => {
-      setDirection(1);
-      setCurrentIndex((prev) => (prev + 1) % bannerItems.length);
-    }, SLIDE_DURATION);
-    return () => { clearInterval(tick); clearTimeout(slide); };
-  }, [currentIndex, isPaused, bannerItems.length]);
-
-  const goTo = (idx: number) => {
-    setDirection(idx > currentIndex ? 1 : -1);
-    setCurrentIndex(idx);
-  };
-
-  const handlePrev = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDirection(-1);
-    setCurrentIndex((prev) => (prev === 0 ? bannerItems.length - 1 : prev - 1));
-  };
-
-  const handleNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDirection(1);
-    setCurrentIndex((prev) => (prev + 1) % bannerItems.length);
-  };
-
-  const handleBannerClick = async (ad: any) => {
-    if (ad.id && typeof ad.id === 'string' && !ad.id.startsWith('demo-')) {
-      try {
-        await supabase.rpc('increment_ad_click', { p_ad_id: ad.id });
-      } catch {
-        await supabase
-          .from('advertisements')
-          .update({ clicks: ((ad.clicks as number) ?? 0) + 1 })
-          .eq('id', ad.id);
-      }
-    }
-  };
-
-  const activeAd = (bannerItems[currentIndex % bannerItems.length] || defaultBanners[0]) as any;
-  const targetLink = activeAd.property_id
-    ? `/property/${activeAd.property_id}`
-    : activeAd.category_name
-      ? `/search?purpose=${activeAd.category_name}`
-      : activeAd.cta_link || (activeAd as any).link_url || '/search';
-
-  const slideVariants: any = {
-    enter: (dir: number) => ({ x: dir > 0 ? '100%' : '-100%', opacity: 0, scale: 1.05 }),
-    center: { x: 0, opacity: 1, scale: 1 },
-    exit: (dir: number) => ({ x: dir > 0 ? '-100%' : '100%', opacity: 0, scale: 0.95 }),
-  };
-
-  const textVariants: any = {
-    hidden: { opacity: 0, y: 30 },
-    visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.12, duration: 0.5, ease: 'easeOut' } }),
-  };
-
-  return (
-    <section
-      className="py-8 bg-slate-50/50"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-    >
-      <div className="container-wide">
-        <div className="relative overflow-hidden rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-800 h-[300px] sm:h-[350px] lg:h-[400px] group bg-slate-900 flex">
-
-          {/* Slides */}
-          <AnimatePresence initial={false} custom={direction} mode="popLayout">
-            <motion.div
-              key={activeAd.id || currentIndex}
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ duration: 0.65, ease: [0.32, 0.72, 0, 1] }}
-              className="absolute inset-0 flex"
-            >
-              <div className="relative w-full h-full">
-                {/* Dark gradient overlay for text readability */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent z-10 pointer-events-none" />
-                <motion.img
-                  src={activeAd.image_desktop || defaultBanners[0].image_desktop}
-                  alt={(activeAd as any).seo_alt_text || activeAd.title}
-                  className="absolute inset-0 h-full w-full object-cover object-center"
-                  initial={{ scale: 1.05 }}
-                  animate={{ scale: 1 }}
-                  transition={{ duration: 6, ease: 'easeOut' }}
-                />
-              </div>
-            </motion.div>
-          </AnimatePresence>
-
-          {/* Content */}
-          <div className="relative z-10 flex flex-col justify-center h-full p-6 sm:p-10 lg:px-14 w-full lg:w-[55%] pointer-events-none">
-            <motion.div
-              key={`badge-${currentIndex}`}
-              custom={0}
-              variants={textVariants}
-              initial="hidden"
-              animate="visible"
-              className="mb-4"
-            >
-              <span className="inline-flex items-center gap-1.5 bg-red-500 text-white text-[11px] font-bold px-3 py-1 rounded-md shadow-sm pointer-events-auto">
-                <Star className="h-3.5 w-3.5 fill-current text-yellow-300" />
-                Featured
-              </span>
-            </motion.div>
-
-            {/* Title */}
-            <motion.h2
-              key={`title-${currentIndex}`}
-              custom={1}
-              variants={textVariants}
-              initial="hidden"
-              animate="visible"
-              className="font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-[1.1] pointer-events-auto"
-            >
-              {(() => {
-                const titleStr = activeAd.title || '';
-                const words = titleStr.split(' ');
-                if (words.length > 1) {
-                  const last = words.pop();
-                  return (
-                    <>
-                      {words.join(' ')} <br className="hidden sm:block" />
-                      <span className="text-red-500">{last}</span>
-                    </>
-                  );
-                }
-                return titleStr;
-              })()}
-            </motion.h2>
-
-            {/* Subtitle / Description */}
-            {(activeAd.subtitle || activeAd.description) && (
-              <motion.p
-                key={`desc-${currentIndex}`}
-                custom={2}
-                variants={textVariants}
-                initial="hidden"
-                animate="visible"
-                className="mt-4 text-sm sm:text-base text-slate-200 font-medium leading-relaxed max-w-sm pointer-events-auto line-clamp-2"
-              >
-                {activeAd.subtitle || activeAd.description}
-              </motion.p>
-            )}
-
-            {/* CTA & Logo */}
-            <motion.div
-              key={`cta-${currentIndex}`}
-              custom={3}
-              variants={textVariants}
-              initial="hidden"
-              animate="visible"
-              className="mt-6 pointer-events-auto flex items-center gap-6"
-            >
-              {targetLink.startsWith('http') ? (
-                <a
-                  href={targetLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => handleBannerClick(activeAd)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#E60000] px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-red-700 hover:shadow-lg hover:shadow-red-600/30"
-                >
-                  {activeAd.cta_text || 'Explore Now'}
-                  <ArrowRight className="h-4 w-4" />
-                </a>
-              ) : (
-                <Link
-                  to={targetLink}
-                  onClick={() => handleBannerClick(activeAd)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#E60000] px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-red-700 hover:shadow-lg hover:shadow-red-600/30"
-                >
-                  {activeAd.cta_text || 'Explore Now'}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              )}
-              
-              {/* Property Logo */}
-              {(activeAd as any).company_logo && (
-                <div className="h-12 w-auto max-w-[120px] rounded-md overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20 p-1.5 flex items-center justify-center">
-                  <img 
-                    src={(activeAd as any).company_logo} 
-                    alt="Property Logo" 
-                    className="max-h-full max-w-full object-contain" 
-                  />
-                </div>
-              )}
-            </motion.div>
-          </div>
-
-          {/* Dots Indicator */}
-          {bannerItems.length > 1 && (
-            <div className="absolute bottom-6 left-1/2 sm:left-[65%] -translate-x-1/2 z-30 flex gap-2">
-              {bannerItems.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setDirection(idx > currentIndex ? 1 : -1);
-                    setCurrentIndex(idx);
-                    setProgress(0);
-                  }}
-                  className={`h-2 transition-all rounded-full ${idx === currentIndex ? 'w-6 bg-red-600' : 'w-2 bg-white/70 hover:bg-white border border-slate-200'}`}
-                  aria-label={`Go to slide ${idx + 1}`}
-                />
-              ))}
-            </div>
-          )}
-          
-          {/* Slide Counter (Top Right) */}
-          {bannerItems.length > 1 && (
-            <div className="absolute top-6 right-6 z-20 flex items-center gap-1.5 bg-white/10 backdrop-blur-md rounded-full px-3 py-1.5 text-white text-xs font-semibold border border-white/20 shadow-sm pointer-events-auto">
-              <span className="text-white font-bold">{String(currentIndex + 1).padStart(2, '0')}</span>
-              <span className="text-white/60">/</span>
-              <span className="text-white/60">{String(bannerItems.length).padStart(2, '0')}</span>
-            </div>
-          )}
-
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ============================================================
    Property Categories
 ============================================================ */
@@ -777,197 +800,231 @@ function CategoriesSection() {
 /* ============================================================
    Featured Properties
 ============================================================ */
-function FeaturedProperties() {
+function SponsoredPropertiesCarousel() {
   const { t } = useLanguageContext();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  
-  const { data, isLoading } = useQuery({
-    queryKey: ['home-featured'],
+
+  const { data } = useQuery({
+    queryKey: ['home-sponsored-properties'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('properties')
-        .select('*, cities(name), localities(name), property_types(name)')
-        .eq('status', 'published')
-        .order('is_featured', { ascending: false })
-        .order('view_count', { ascending: false })
-        .limit(8);
-      return (data ?? []).map((p) => {
-        const r = p as unknown as {
-          cities?: { name: string };
-          localities?: { name: string };
-          property_types?: { name: string };
-        };
-        return {
-          ...p,
-          city_name: r.cities?.name ?? null,
-          locality_name: r.localities?.name ?? null,
-          property_type_name: r.property_types?.name ?? null,
-        };
-      });
+      const { data: campaignRows } = await supabase.rpc('fn_get_active_sponsored_property_ids', { p_limit: 6 });
+      const ids = ((campaignRows ?? []) as { property_id: string }[]).map((r) => r.property_id);
+
+      if (ids.length > 0) {
+        const { data: propertyRows } = await supabase.from('v_properties_search').select('*').in('id', ids);
+        const byId = new Map((propertyRows ?? []).map((p) => [p.id, p]));
+        return ids
+          .map((id) => byId.get(id))
+          .filter((p): p is NonNullable<typeof p> => Boolean(p))
+          .map((p) => ({ ...p, _isPaidCampaign: true }));
+      }
+
+      // No active paid campaigns — fall back to admin-marked Featured properties
+      const { data: featuredRows } = await supabase
+        .from('v_properties_search')
+        .select('*')
+        .or('status.eq.published,is_live.eq.true')
+        .eq('is_featured', true)
+        .order('created_at', { ascending: false })
+        .limit(6);
+      return (featuredRows ?? []).map((p) => ({ ...p, _isPaidCampaign: false }));
     },
   });
 
-  // Auto scroll effect
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (!scrollRef.current) return;
-      const el = scrollRef.current;
-      
-      let itemWidth = el.clientWidth;
-      if (window.innerWidth >= 1024) itemWidth = el.clientWidth / 4;
-      else if (window.innerWidth >= 640) itemWidth = el.clientWidth / 2;
-      
-      const maxScroll = el.scrollWidth - el.clientWidth;
-      let targetScroll = el.scrollLeft + itemWidth;
-      
-      if (targetScroll > maxScroll + 10) {
-        targetScroll = 0;
-      }
-      
-      el.scrollTo({ left: targetScroll, behavior: 'smooth' });
-    }, 4000);
-    return () => clearInterval(timer);
-  }, []);
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    { align: 'start', loop: true, containScroll: 'trimSnaps' },
+    [Autoplay({ delay: 4500, stopOnInteraction: true, stopOnMouseEnter: true })],
+  );
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const handleNext = () => {
-    if (!scrollRef.current) return;
-    const el = scrollRef.current;
-    let itemWidth = el.clientWidth;
-    if (window.innerWidth >= 1024) itemWidth = el.clientWidth / 4;
-    else if (window.innerWidth >= 640) itemWidth = el.clientWidth / 2;
-    el.scrollBy({ left: itemWidth, behavior: 'smooth' });
-  };
-  
-  const handlePrev = () => {
-    if (!scrollRef.current) return;
-    const el = scrollRef.current;
-    let itemWidth = el.clientWidth;
-    if (window.innerWidth >= 1024) itemWidth = el.clientWidth / 4;
-    else if (window.innerWidth >= 640) itemWidth = el.clientWidth / 2;
-    el.scrollBy({ left: -itemWidth, behavior: 'smooth' });
-  };
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.on('select', () => setSelectedIndex(emblaApi.selectedScrollSnap()));
+  }, [emblaApi]);
+
+  const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
+
+  if (!data || data.length === 0) return null;
 
   return (
-    <SectionShell
-      title={t('home.featuredProperties', 'Featured Properties')}
-      subtitle={t('home.featuredSubtitle', 'Handpicked premium listings with AI-verified details')}
-      id="featured"
-      action={
-        <Link
-          to="/search"
-          className="flex items-center gap-1 text-sm font-semibold text-primary-600 hover:text-primary-700"
-        >
-          {t('common.viewAll', 'View all')} <ArrowRight className="h-4 w-4" />
-        </Link>
-      }
-    >
-      <div className="relative group/carousel -mx-2 px-2 sm:mx-0 sm:px-0">
-        {data && data.length > 0 && (
-          <>
-            <button
-              onClick={handlePrev}
-              className="absolute -left-4 sm:-left-6 top-1/2 -translate-y-1/2 z-20 grid h-10 w-10 sm:h-12 sm:w-12 place-items-center rounded-full bg-white text-slate-800 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.15)] border border-slate-100 hover:bg-red-600 hover:text-white transition-all opacity-0 group-hover/carousel:opacity-100 scale-90 group-hover/carousel:scale-100 cursor-pointer hidden sm:grid"
-            >
-              <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
-            </button>
-            <button
-              onClick={handleNext}
-              className="absolute -right-4 sm:-right-6 top-1/2 -translate-y-1/2 z-20 grid h-10 w-10 sm:h-12 sm:w-12 place-items-center rounded-full bg-white text-slate-800 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.15)] border border-slate-100 hover:bg-red-600 hover:text-white transition-all opacity-0 group-hover/carousel:opacity-100 scale-90 group-hover/carousel:scale-100 cursor-pointer hidden sm:grid"
-            >
-              <ChevronRight className="h-5 w-5 sm:h-6 sm:w-6" />
-            </button>
-          </>
-        )}
-
-        {isLoading ? (
-          <div className="flex gap-6 overflow-hidden">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="skeleton h-80 rounded-2xl shrink-0 w-[calc(100%-8px)] sm:w-[calc(50%-12px)] lg:w-[calc(25%-18px)]" />
-            ))}
+    <section className="py-12 sm:py-16 bg-white" id="sponsored-properties">
+      <div className="container-wide">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+              {t('home.sponsoredTitle', 'Featured Properties')}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {t('home.sponsoredSubtitle', 'Handpicked listings for maximum visibility')}
+            </p>
           </div>
-        ) : data && data.length > 0 ? (
-          <div 
-            ref={scrollRef}
-            className="flex gap-6 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-4 pt-2 px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          <Link
+            to="/search"
+            className="inline-flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
           >
-            {data.map((p) => (
-              <div key={p.id} className="shrink-0 w-full sm:w-[calc(50%-12px)] lg:w-[calc(25%-18px)] snap-start">
-                <PropertyCard property={p as unknown as Parameters<typeof PropertyCard>[0]['property']} />
-              </div>
+            {t('common.viewAll', 'View All')} <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="relative">
+          <div className="overflow-hidden" ref={emblaRef}>
+            <div className="flex gap-4">
+              {data.slice(0, 6).map((p, i) => (
+                <motion.div
+                  key={p.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.05 }}
+                  whileHover={{ y: -5 }}
+                  className="relative min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] xl:flex-[0_0_calc(20%-13px)]"
+                >
+                  <HomePropertyCard
+                    property={p}
+                    badge={{
+                      label: p._isPaidCampaign ? 'Sponsored' : 'Featured',
+                      className: p._isPaidCampaign ? 'bg-amber-500' : 'bg-red-600',
+                      icon: <Zap className="h-2.5 w-2.5" />,
+                    }}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          {data.length > 4 && (
+            <>
+              <button
+                onClick={scrollPrev}
+                className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                aria-label="Previous slide"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                onClick={scrollNext}
+                className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                aria-label="Next slide"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+
+          <div className="mt-6 flex items-center justify-center gap-2">
+            {data.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => emblaApi && emblaApi.scrollTo(i)}
+                className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-red-600' : 'w-1.5 bg-slate-300 hover:bg-slate-400'}`}
+                aria-label={`Go to slide ${i + 1}`}
+              />
             ))}
           </div>
-        ) : (
-          <p className="text-center text-sm text-navy-400">
-            {t('home.noFeaturedProperties', 'No featured properties available.')}
-          </p>
-        )}
+        </div>
       </div>
-    </SectionShell>
+    </section>
   );
 }
 
 /* ============================================================
-   Top Cities
+   Top Localities in Hyderabad
 ============================================================ */
+const PREFERRED_HYDERABAD_LOCALITIES = [
+  'Gachibowli', 'Hitech City', 'Kondapur', 'Madhapur', 'Kukatpally',
+  'Jubilee Hills', 'Banjara Hills', 'Miyapur', 'Kompally', 'LB Nagar',
+];
+
+const LOCALITY_CARD_IMAGES = [
+  'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg',
+  'https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg',
+  'https://images.pexels.com/photos/2581922/pexels-photo-2581922.jpeg',
+  'https://images.pexels.com/photos/380769/pexels-photo-380769.jpeg',
+  'https://images.pexels.com/photos/259950/pexels-photo-259950.jpeg',
+  'https://images.pexels.com/photos/269077/pexels-photo-269077.jpeg',
+  'https://images.pexels.com/photos/2104152/pexels-photo-2104152.jpeg',
+  'https://images.pexels.com/photos/208736/pexels-photo-208736.jpeg',
+  'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg',
+  'https://images.pexels.com/photos/1732414/pexels-photo-1732414.jpeg',
+];
+
 function TopCities() {
   const { t } = useLanguageContext();
-  const { data: cities } = useQuery({
-    queryKey: ['home-cities'],
+  const { data: localities } = useQuery({
+    queryKey: ['home-hyderabad-localities'],
     queryFn: async () => {
-      const { data: cityRows } = await supabase.from('cities').select('id, name, state').order('name').limit(10);
-      if (!cityRows) return [];
+      const { data: city } = await supabase.from('cities').select('id').ilike('name', 'Hyderabad').maybeSingle();
+      if (!city) return [];
+      const { data: localityRows } = await supabase
+        .from('localities')
+        .select('id, name')
+        .eq('city_id', city.id)
+        .order('name');
+      if (!localityRows) return [];
+
       const enriched = await Promise.all(
-        cityRows.map(async (c) => {
+        localityRows.map(async (l) => {
           const { count } = await supabase
             .from('properties')
             .select('id', { count: 'exact', head: true })
-            .eq('status', 'published')
-            .eq('city_id', c.id);
-          return { ...c, count: count ?? 0 };
+            .or('status.eq.published,is_live.eq.true')
+            .eq('locality_id', l.id);
+          return { ...l, count: count ?? 0 };
         }),
       );
-      return enriched.sort((a, b) => b.count - a.count);
+
+      const preferred = PREFERRED_HYDERABAD_LOCALITIES
+        .map((name) => enriched.find((l) => l.name.toLowerCase() === name.toLowerCase()))
+        .filter((l): l is NonNullable<typeof l> => Boolean(l));
+
+      if (preferred.length >= 8) return preferred;
+
+      // Fall back to top-by-count if the preferred names aren't all present in the DB yet.
+      return enriched.sort((a, b) => b.count - a.count).slice(0, 10);
     },
   });
 
-  const cityImages: Record<string, string> = {
-    Hyderabad: 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg',
-    Mumbai: 'https://images.pexels.com/photos/2255935/pexels-photo-2255935.jpeg',
-    Bengaluru: 'https://images.pexels.com/photos/207891/pexels-photo-207891.jpeg',
-    Pune: 'https://images.pexels.com/photos/2487317/pexels-photo-2487317.jpeg',
-    Delhi: 'https://images.pexels.com/photos/2884866/pexels-photo-2884866.jpeg',
-    Chennai: 'https://images.pexels.com/photos/2901214/pexels-photo-2901214.jpeg',
-  };
-
   return (
     <SectionShell
-      title={t('home.topCities', 'Top Cities')}
-      subtitle={t('home.topCitiesSubtitle', "Explore properties in India's prime real estate markets")}
+      title={t('home.topCities', 'Explore Hyderabad')}
+      subtitle={t('home.topCitiesSubtitle', "Discover properties across Hyderabad's top localities")}
       id="cities"
     >
+      <div className="flex items-center justify-end -mt-10 mb-4 sm:-mt-12">
+        <Link
+          to="/hyderabad-localities"
+          className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
+        >
+          {t('common.viewAll', 'View All')} <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {(cities ?? []).slice(0, 10).map((city, i) => (
+        {(localities ?? []).slice(0, 10).map((locality, i) => (
           <motion.div
-            key={city.id}
+            key={locality.id}
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.05 }}
             whileHover={{ y: -5 }}
           >
-            <Link to={`/search?city=${city.id}`} className="group relative block overflow-hidden rounded-2xl">
-              <div className="aspect-[4/5] w-full overflow-hidden">
+            <Link
+              to={`/search?city=Hyderabad&locality=${encodeURIComponent(locality.name)}`}
+              className="group relative block overflow-hidden rounded-2xl"
+            >
+              <div className="aspect-[4/3] w-full overflow-hidden">
                 <img
-                  src={cityImages[city.name] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
-                  alt={city.name}
+                  src={LOCALITY_CARD_IMAGES[i % LOCALITY_CARD_IMAGES.length]}
+                  alt={locality.name}
+                  loading="lazy"
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
                 />
               </div>
               <div className="absolute inset-0 bg-gradient-to-t from-navy-950/80 via-navy-950/20 to-transparent" />
               <div className="absolute bottom-0 left-0 p-4">
-                <p className="font-display text-lg font-bold text-white">{city.name}</p>
+                <p className="font-display text-lg font-bold text-white">{locality.name}</p>
                 <p className="text-xs text-white/70">
-                  {city.count} {t('property.propertiesCount', 'properties')}
+                  {locality.count} {t('property.propertiesCount', 'properties')}
                 </p>
               </div>
             </Link>
@@ -1149,35 +1206,6 @@ function AIFeaturesSection() {
   ];
 
   const categories = [
-    {
-      category: t('home.aiDiscoveryCategory', 'Property Discovery'),
-      subtitle: t('home.aiDiscoverySubtitle', 'Find the right property with AI in seconds'),
-      headerIcon: Search,
-      headerColor: 'bg-rose-50 text-rose-500',
-      items: [
-        {
-          title: t('home.aiSearchTitle', 'AI Property Search'),
-          desc: t('home.aiSearchDesc', 'Search properties naturally using everyday language.'),
-          icon: Search,
-          bg: 'bg-rose-50 text-rose-500',
-          tab: 'smart-search',
-        },
-        {
-          title: t('home.aiRecommendationsTitle', 'AI Recommendations'),
-          desc: t('home.aiRecommendationsDesc', 'Personalized property suggestions just for you.'),
-          icon: Sparkles,
-          bg: 'bg-purple-50 text-purple-600',
-          tab: 'recommendations',
-        },
-        {
-          title: t('home.aiComparisonTitle', 'AI Property Comparison'),
-          desc: t('home.aiComparisonDesc', 'Compare multiple properties side by side instantly.'),
-          icon: GitCompare,
-          bg: 'bg-sky-50 text-sky-600',
-          tab: 'assistant',
-        },
-      ],
-    },
     {
       category: t('home.smartServicesCategory', 'Smart Services'),
       subtitle: t('home.smartServicesSubtitle', 'AI tools to make your journey effortless'),
@@ -1442,103 +1470,44 @@ function SignatureCollection() {
         >
           {/* Embla Viewport */}
           <div className="overflow-hidden" ref={emblaRef}>
-            <div className="flex gap-[28px]">
+            <div className="flex gap-4">
               {data.map((p, i) => (
-                <motion.div 
+                <motion.div
                   key={p.id}
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.1 + 0.3, duration: 0.5 }}
-                  className="relative min-w-0 flex-[0_0_100%] sm:flex-[0_0_calc(50%-14px)] lg:flex-[0_0_calc(33.333%-18.66px)] max-w-[420px]"
+                  whileHover={{ y: -5 }}
+                  className="relative min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] xl:flex-[0_0_calc(20%-13px)]"
                 >
-                  <Link 
-                    to={`/property/${p.id}`}
-                    className="group block h-[480px] lg:h-[520px] w-full rounded-[24px] bg-white border border-[#ECECEC] shadow-[0_15px_45px_rgba(0,0,0,0.12)] overflow-hidden transition-all duration-500 hover:-translate-y-[10px] hover:shadow-[0_25px_60px_rgba(0,0,0,0.18)]"
-                  >
-                    
-                    {/* Top Image Box */}
-                    <div className="relative h-[280px] w-full overflow-hidden bg-slate-100 rounded-t-[24px]">
-                      <img
-                        src={p.images?.[0] ?? 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80'}
-                        alt={p.title}
-                        loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.08]"
-                      />
-                      
-                      {/* Signature Badge */}
-                      <div className="absolute top-4 left-4 z-10 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] rounded-full">
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-black/40 backdrop-blur-md px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white">
-                          <Sparkles className="h-3 w-3" /> SIGNATURE
-                        </span>
-                      </div>
-
-                      {/* Wishlist Glass Icon */}
-                      <button 
-                        className="absolute top-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white transition-all hover:bg-white/40 hover:scale-110 active:scale-95 focus:outline-none"
-                        onClick={(e) => { e.preventDefault(); /* Wishlist handler logic */ }}
-                      >
-                        <Heart className="h-5 w-5" />
-                      </button>
-
-                      {/* Image Bottom Overlay Fade */}
-                      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white to-transparent" />
-                    </div>
-
-                    {/* Bottom Details Content */}
-                    <div className="relative flex flex-col justify-between h-[calc(100%-280px)] p-6 bg-gradient-to-b from-white to-[#FAFAFA]">
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                            {p.property_type_name || 'Ultra Luxury'}
-                          </span>
-                          <span className="text-xs font-bold text-slate-400">
-                            {p.builder_name || 'Premium Builder'}
-                          </span>
-                        </div>
-                        
-                        <h3 className="font-display text-xl sm:text-2xl font-extrabold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
-                          {p.title}
-                        </h3>
-                        
-                        <div className="mt-2 flex items-center gap-1.5 text-slate-500">
-                          <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
-                          <span className="text-sm font-medium line-clamp-1">
-                            {p.locality_name}, {p.city_name}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-100">
-                        <p className="font-display text-2xl font-black text-slate-900 tracking-tight">
-                          {formatCompactPrice(p.price)}
-                        </p>
-                        <span className="flex items-center gap-1 text-sm font-bold text-red-600 group-hover:gap-2 transition-all">
-                          View Details <ArrowRight className="h-4 w-4" />
-                        </span>
-                      </div>
-                    </div>
-
-                  </Link>
+                  <HomePropertyCard
+                    property={p}
+                    badge={{
+                      label: 'Signature',
+                      className: 'bg-black/60',
+                      icon: <Sparkles className="h-2.5 w-2.5" />,
+                    }}
+                  />
                 </motion.div>
               ))}
             </div>
           </div>
 
           {/* Navigation Controls */}
-          {data.length > 3 && (
+          {data.length > 4 && (
             <>
               <button
                 onClick={scrollPrev}
-                className="absolute left-[-24px] top-[240px] -translate-y-1/2 z-20 hidden lg:flex h-14 w-14 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_10px_30px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:bg-slate-50 hover:text-red-600 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-100"
+                className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_10px_30px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:bg-slate-50 hover:text-red-600 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-100"
                 aria-label="Previous slide"
               >
-                <ChevronLeft className="h-6 w-6" />
+                <ChevronLeft className="h-5 w-5" />
               </button>
-              
+
               <button
                 onClick={scrollNext}
-                className="absolute right-[-24px] top-[240px] -translate-y-1/2 z-20 hidden lg:flex h-14 w-14 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_10px_30px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:bg-slate-50 hover:text-red-600 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-100"
+                className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_10px_30px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:bg-slate-50 hover:text-red-600 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-100"
                 aria-label="Next slide"
               >
                 <ChevronRight className="h-6 w-6" />
@@ -2187,93 +2156,157 @@ const SERVICES = [
 ];
 
 /* ============================================================
-   Enhanced Services — 4 Column Grid (Home, Interiors, Borewell, Loans)
+   Enhanced Services — 4 Premium Cards (Home, Interiors, Borewell, Loans)
 ============================================================ */
 const ENHANCED_SERVICES = [
   {
     id: 'home-services',
-    badge: 'VERIFIED PARTNERS',
-    badgeBg: 'bg-amber-100 text-amber-700',
-    badgeIcon: Hammer,
     title: 'Home Services',
-    subtitle: 'Trusted experts for all your home repair, maintenance & improvement needs.',
-    description: 'Reliable, background-verified professionals — available same day across all major cities',
-    features: [
-      'Skilled Professionals',
-      'Verified & Background Checked',
-      'On-time Service',
-      'Affordable Pricing',
-    ],
+    description: 'Professional care for your home, every day.',
     icon: Hammer,
-    iconGradient: 'from-amber-500 to-orange-500',
-    iconBg: 'bg-amber-50',
-    link: '/contact?service=Kam+Kaka+Home+Services',
-    cta: 'Book a Service',
-    stats: '50,000+ Jobs Completed',
+    accent: 'blue',
+    image: '/services/home-services.webp',
+    link: 'https://kamkaka.in',
+    cta: 'Explore Now',
   },
   {
-    id: 'interior-design',
-    badge: 'PREMIUM PARTNER',
-    badgeBg: 'bg-violet-100 text-violet-700',
-    badgeIcon: PaintBucket,
-    title: 'Interior Design',
-    subtitle: 'Elegant designs that reflect your style and elevate your living space.',
-    description:
-      'From concept to completion — modular kitchens, custom furniture, 3D visualization and complete home makeovers starting ₹3 Lakhs.',
-    features: ['Custom Designs', 'Premium Materials', 'End-to-End Execution', '3D Design Preview'],
+    id: 'interior-services',
+    title: 'Interior Services',
+    description: 'Designing beautiful spaces that reflect you.',
     icon: PaintBucket,
-    iconGradient: 'from-violet-500 to-purple-600',
-    iconBg: 'bg-violet-50',
-    link: '/contact?service=Born+Interiors+Design',
-    cta: 'Explore Interior Services',
-    stats: 'Award-Winning Designers',
+    accent: 'gold',
+    image: '/services/interior-services.webp',
+    link: 'https://borninteriors.in',
+    cta: 'Explore Now',
   },
   {
     id: 'borewell-services',
-    badge: 'PROFESSIONAL SERVICE',
-    badgeBg: 'bg-teal-100 text-teal-700',
-    badgeIcon: Droplets,
     title: 'Borewell Services',
-    subtitle: 'Professional borewell drilling solutions with high success rate.',
-    description:
-      'Expert borewell drilling, maintenance, and repairs for residential and commercial properties',
-    features: [
-      'Hydro Survey',
-      'High Success Rate',
-      'Expert Team',
-      'Pump Installation',
-    ],
+    description: 'Deep expertise. Reliable water solutions.',
     icon: Droplets,
-    iconGradient: 'from-teal-500 to-cyan-600',
-    iconBg: 'bg-teal-50',
-    link: '/contact?service=Borewell+Services',
-    cta: 'Explore Borewell Services',
-    stats: '10+ Years Experience',
+    accent: 'green',
+    image: '/services/borewell-services.webp',
+    link: '/borewell-services',
+    cta: 'Explore Now',
   },
   {
-    id: 'home-loan',
-    badge: 'FINANCIAL SERVICE',
-    badgeBg: 'bg-blue-100 text-blue-700',
-    badgeIcon: PieChart,
-    title: 'Home Loan Services',
-    subtitle: 'Easy home loans with lowest interest rates & quick approvals.',
-    description:
-      'Get competitive home loans with flexible tenure, minimal documentation, and dedicated support',
-    features: ['Low Interest Rates', 'Quick Approval', 'Minimal Documents', 'Top Bank Partners'],
+    id: 'home-loans',
+    title: 'Home Loans',
+    description: 'Easy financing for your dream home.',
     icon: PieChart,
-    iconGradient: 'from-blue-600 to-indigo-700',
-    iconBg: 'bg-blue-50',
-    link: '/contact?service=Home+Loan+Services',
-    cta: 'Explore Home Loan Services',
-    stats: 'Lowest Interest Rates',
+    accent: 'blue',
+    image: '/services/home-loans.webp',
+    link: '/home-loans',
+    cta: 'Explore Now',
   },
-];
+] as const;
+
+const SERVICE_ACCENTS = {
+  blue: {
+    icon: 'bg-gradient-to-br from-blue-400 to-blue-600 shadow-[0_0_24px_rgba(59,130,246,0.65)]',
+    pill: 'bg-blue-600 group-hover:bg-blue-500',
+    pillGlow: 'group-hover:shadow-[0_10px_28px_-6px_rgba(59,130,246,0.75)]',
+    text: 'text-blue-400',
+    dot: 'bg-blue-400',
+    glow: 'group-hover:shadow-[0_20px_45px_-15px_rgba(59,130,246,0.55)]',
+  },
+  gold: {
+    icon: 'bg-gradient-to-br from-amber-300 to-amber-600 shadow-[0_0_24px_rgba(245,158,11,0.65)]',
+    pill: 'bg-amber-500 group-hover:bg-amber-400',
+    pillGlow: 'group-hover:shadow-[0_10px_28px_-6px_rgba(245,158,11,0.75)]',
+    text: 'text-amber-400',
+    dot: 'bg-amber-400',
+    glow: 'group-hover:shadow-[0_20px_45px_-15px_rgba(245,158,11,0.55)]',
+  },
+  green: {
+    icon: 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_0_24px_rgba(16,185,129,0.65)]',
+    pill: 'bg-emerald-600 group-hover:bg-emerald-500',
+    pillGlow: 'group-hover:shadow-[0_10px_28px_-6px_rgba(16,185,129,0.75)]',
+    text: 'text-emerald-400',
+    dot: 'bg-emerald-400',
+    glow: 'group-hover:shadow-[0_20px_45px_-15px_rgba(16,185,129,0.55)]',
+  },
+} as const;
+
+function ServiceCard({ service }: { service: (typeof ENHANCED_SERVICES)[number] }) {
+  const Icon = service.icon;
+  const accent = SERVICE_ACCENTS[service.accent];
+  const isExternal = /^https?:\/\//.test(service.link);
+  const [firstWord, ...restWords] = service.title.split(' ');
+  const restTitle = restWords.join(' ');
+
+  const content = (
+    <div
+      className={`group relative flex h-[440px] flex-col overflow-hidden rounded-[20px] border border-white/10 bg-slate-950 shadow-lg transition-all duration-300 hover:-translate-y-2 ${accent.glow}`}
+    >
+      {/* Image, fully covering the top portion */}
+      <div className="relative h-[230px] shrink-0 overflow-hidden">
+        <img
+          src={service.image}
+          alt={service.title}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+      </div>
+
+      {/* Circular icon, overlapping image and content, centered */}
+      <div className="absolute left-1/2 top-[230px] -translate-x-1/2 -translate-y-1/2">
+        <div className={`grid h-16 w-16 place-items-center rounded-full ring-4 ring-slate-950 ${accent.icon}`}>
+          <Icon className="h-7 w-7 text-white" />
+        </div>
+      </div>
+
+      {/* Content, centered */}
+      <div className="flex flex-1 flex-col items-center px-6 pb-7 pt-9 text-center">
+        <h3 className="font-display text-xl font-extrabold text-white">
+          {firstWord} <span className={accent.text}>{restTitle}</span>
+        </h3>
+        <div className="my-2.5 flex items-center justify-center gap-2">
+          <span className="h-px w-5 bg-white/20" />
+          <span className={`h-1.5 w-1.5 rounded-full ${accent.dot}`} />
+          <span className="h-px w-5 bg-white/20" />
+        </div>
+        <p className="flex-grow text-sm text-slate-300">{service.description}</p>
+        <span
+          className={`mt-5 inline-flex w-fit items-center gap-1.5 rounded-full px-6 py-2.5 text-sm font-bold text-white transition-all duration-300 group-hover:scale-105 ${accent.pill} ${accent.pillGlow}`}
+        >
+          {service.cta} <ChevronsRight className="h-4 w-4" />
+        </span>
+      </div>
+    </div>
+  );
+
+  return isExternal ? (
+    <a href={service.link} target="_blank" rel="noopener noreferrer" className="block h-full">
+      {content}
+    </a>
+  ) : (
+    <Link to={service.link} className="block h-full">
+      {content}
+    </Link>
+  );
+}
 
 function ServicesSection() {
   const { t } = useLanguageContext();
   return (
-    <section className="py-12 sm:py-16 bg-gradient-to-b from-white to-slate-50" id="services">
-      <div className="container-wide space-y-8">
+    <section className="relative overflow-hidden py-12 sm:py-16 bg-gradient-to-b from-white to-slate-50" id="services">
+      {/* Decorative background — soft brand-color glows + faint dot grid, no external image */}
+      <div className="pointer-events-none absolute inset-0 -z-0">
+        <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-red-100/60 blur-3xl" />
+        <div className="absolute top-1/3 -right-24 h-80 w-80 rounded-full bg-amber-100/50 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-slate-200/40 blur-3xl" />
+        <div
+          className="absolute inset-0 opacity-[0.35]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(15,23,42,0.08) 1px, transparent 1px)',
+            backgroundSize: '22px 22px',
+          }}
+        />
+      </div>
+
+      <div className="container-wide relative z-10 space-y-8">
         {/* Header */}
         <div className="text-center mb-8">
           <span className="inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider px-4 py-1.5 mb-4">
@@ -2292,62 +2325,18 @@ function ServicesSection() {
         </div>
 
         {/* 4 Column Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {ENHANCED_SERVICES.map((service, i) => (
             <motion.div
               key={service.id}
+              id={service.id}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
+              className="h-full"
             >
-              <Link to={service.link}>
-                <div className={`flex flex-col h-full rounded-3xl border border-slate-200 overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 group ${service.iconBg}`}>
-                  {/* Header with Badge */}
-                  <div className="relative p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-                    <div className="flex items-start justify-between mb-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full ${service.badgeBg} text-[10px] font-extrabold uppercase tracking-wider px-3 py-1`}
-                      >
-                        <service.badgeIcon className="h-3 w-3" /> {service.badge}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br ${service.iconGradient} shadow-lg`}
-                      >
-                        <service.icon className="h-7 w-7 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-display text-lg font-extrabold">{service.title}</h3>
-                        <p className="text-xs text-white/70 mt-0.5">{service.stats}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex flex-col flex-grow p-6">
-                    <p className="font-semibold text-slate-900 text-sm mb-2">{service.subtitle}</p>
-                    <p className="text-slate-600 text-sm mb-5 flex-grow">{service.description}</p>
-
-                    {/* Features */}
-                    <div className="grid grid-cols-2 gap-2.5 mb-5">
-                      {service.features.map((feature) => (
-                        <div key={feature} className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-red-500 to-orange-500 flex-shrink-0" />
-                          <span className="text-xs font-medium text-slate-700">{feature}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* CTA Button */}
-                    <button className="w-full mt-auto py-3 px-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white font-bold text-sm hover:shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2 group/btn">
-                      <span>{service.cta}</span>
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
-                    </button>
-                  </div>
-                </div>
-              </Link>
+              <ServiceCard service={service} />
             </motion.div>
           ))}
         </div>
@@ -2840,20 +2829,19 @@ export function HomePage() {
       <AISmartSearch />
       <TrustSection />
       <CategoriesSection />
-      <AIAdBannerSection />
-      <FeaturedProperties />
+      <SponsoredPropertiesCarousel />
       <LuxuryAdBannersSection />
       <ThreeColumnAdBannersSection />
+      <ServicesSection />
+      <TopCities />
       <TopAgents />
       <PostPropertyBanner />
       <AIFeaturesSection />
       <SignatureCollection />
-      <TopCities />
       <TopBuilders />
       <EMIAndTestimonialsSection />
-      <ServicesSection />
-      <InteriorAndHomeServicesSection />
       <LatestBlogs />
+      <InteriorAndHomeServicesSection />
       <AppCTA />
       <PartnersSection />
       <FinalCTA />

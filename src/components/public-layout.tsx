@@ -23,23 +23,26 @@ import {
   LogIn,
   UserPlus,
   Home,
-  Building,
   Building2,
   Store,
   Landmark,
   Compass,
-  Award,
   Calculator,
   TrendingUp,
   Users,
-  Key,
   Hammer,
-  Sun,
   Star,
   FileText,
   Truck,
   Briefcase,
   ShieldCheck,
+  PaintBucket,
+  Droplets,
+  PieChart,
+  Bug,
+  Paintbrush,
+  Sparkles,
+  Bot,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useLanguageContext } from '../lib/i18n/language-context';
@@ -56,12 +59,18 @@ const XTwitterIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string }) => 
   </svg>
 );
 
+function isRouteActive(to: string, pathname: string): boolean {
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
 /* ─── Nav data ──────────────────────────────────────────────── */
 type MegaItem = {
   label: string;
   desc: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** If set, show a confirmation popup with this message before navigating (e.g. hand-off to RealtyNow's team). */
+  confirmMessage?: string;
 };
 
 type MegaColumn = {
@@ -132,7 +141,7 @@ const getMegaMenuConfig = (t: (key: string, fallback?: string) => string): Recor
           {
             label: t('menu.emiCalculator', 'Home Loan EMI Calculator'),
             desc: t('menu.emiDesc', 'Calculate monthly payments'),
-            to: '/contact?service=Home+Loan+Assistance',
+            to: '/emi-calculator',
             icon: Calculator,
           },
           {
@@ -209,6 +218,10 @@ const getMegaMenuConfig = (t: (key: string, fallback?: string) => string): Recor
             desc: t('menu.relocationDesc', 'Stress-free home relocation'),
             to: '/contact?service=Packers+and+Movers',
             icon: Truck,
+            confirmMessage: t(
+              'menu.packersConfirmMessage',
+              "You'll be taken to our Contact page — our RealtyNow team will personally assist you with packers & movers.",
+            ),
           },
         ],
       },
@@ -260,150 +273,132 @@ const getMegaMenuConfig = (t: (key: string, fallback?: string) => string): Recor
       },
     ],
   },
-  Projects: {
-    title: t('menu.projectsTitle', 'New Projects & Builders'),
-    badge: t('menu.exclusiveBadge', 'Exclusive'),
-    columns: [
-      {
-        title: t('menu.projectStatus', 'Project Status'),
-        items: [
-          {
-            label: t('menu.newlyLaunched', 'Newly Launched'),
-            desc: t('menu.discountPricingDesc', 'Pre-launch discount pricing'),
-            to: '/search?status=Pre-Launch',
-            icon: Compass,
-          },
-          {
-            label: t('menu.underConstruction', 'Under Construction'),
-            desc: t('menu.possessionDesc', 'Possession in 1-2 years'),
-            to: '/search?status=Under+Construction',
-            icon: Hammer,
-          },
-          {
-            label: t('menu.readyToMoveIn', 'Ready To Move In'),
-            desc: t('menu.ocReceivedDesc', 'Immediate OC received flats'),
-            to: '/search?status=Ready+To+Move',
-            icon: Key,
-          },
-        ],
-      },
-      {
-        title: t('menu.featuredBuilders', 'Featured Builders'),
-        items: [
-          {
-            label: 'Prestige Group',
-            desc: t('menu.townshipsDesc', 'Luxury gated townships'),
-            to: '/search?q=Prestige',
-            icon: Landmark,
-          },
-          {
-            label: 'DLF India',
-            desc: t('menu.towersDesc', 'Premium high-rise towers'),
-            to: '/search?q=DLF',
-            icon: Building,
-          },
-          {
-            label: 'Sobha Developers',
-            desc: t('menu.precisionDesc', 'German precision quality'),
-            to: '/search?q=Sobha',
-            icon: Award,
-          },
-        ],
-      },
-    ],
-  },
-  Plots: {
-    title: t('menu.plotsTitle', 'Plots & Land'),
-    badge: t('menu.plotsBadge', 'HMDA / RERA'),
-    columns: [
-      {
-        title: t('menu.plotCategories', 'Plot Categories'),
-        items: [
-          {
-            label: t('menu.hmdaPlots', 'HMDA Approved Plots'),
-            desc: t('menu.clearTitleDesc', 'Clear title layout plots'),
-            to: '/search?type=Plots&q=HMDA',
-            icon: ShieldCheck,
-          },
-          {
-            label: t('menu.gatedPlots', 'Gated Layout Plots'),
-            desc: t('menu.cablingDesc', 'Underground cabling & clubhouse'),
-            to: '/search?type=Plots&q=Gated',
-            icon: Landmark,
-          },
-          {
-            label: t('menu.agriculturalLand', 'Agricultural Land'),
-            desc: t('menu.farmhouseDesc', 'Farmhouse & plantation land'),
-            to: '/search?type=Plots&q=Farm',
-            icon: Sun,
-          },
-        ],
-      },
-      {
-        title: t('menu.investmentSpecial', 'Investment Special'),
-        items: [
-          {
-            label: t('menu.highwayLand', 'Highway Facing Land'),
-            desc: t('menu.potentialDesc', 'High commercial potential'),
-            to: '/search?type=Plots&q=Highway',
-            icon: TrendingUp,
-          },
-          {
-            label: t('menu.villaPlots', 'Villa Layout Plots'),
-            desc: t('menu.customVillaDesc', 'Build your custom villa'),
-            to: '/search?type=Plots&q=Villa+Plot',
-            icon: Home,
-          },
-        ],
-      },
-    ],
-  },
 });
 
-/* ─── Topbar ────────────────────────────────────────────────── */
-function Topbar({ isTransparent, onOpenLanguageModal }: { isTransparent: boolean; onOpenLanguageModal: () => void }) {
+/* ─── Services dropdown (simple glassmorphism flyout, not a full mega menu) ── */
+type ServiceLink = {
+  label: string;
+  desc: string;
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+  confirmMessage?: string;
+};
+
+const getServicesMenu = (t: (key: string, fallback?: string) => string): ServiceLink[] => [
+  {
+    label: t('menu.homeServices', 'Home Services'),
+    desc: t('menu.homeServicesDesc', 'Professional care for your home'),
+    to: 'https://kamkaka.com',
+    icon: Hammer,
+  },
+  {
+    label: t('menu.interiorServices', 'Interior Services'),
+    desc: t('menu.interiorServicesDesc', 'Design beautiful spaces'),
+    to: 'https://borninteriors.in',
+    icon: PaintBucket,
+  },
+  {
+    label: t('menu.borewellServices', 'Borewell Services'),
+    desc: t('menu.borewellServicesDesc', 'Reliable water solutions'),
+    to: '/borewell-services',
+    icon: Droplets,
+  },
+  {
+    label: t('menu.homeLoans', 'Home Loans'),
+    desc: t('menu.homeLoansDesc', 'Easy financing for your dream home'),
+    to: '/home-loans',
+    icon: PieChart,
+  },
+  {
+    label: t('menu.legalServices', 'Legal Services'),
+    desc: t('menu.legalServicesDesc', 'Agreements & documentation'),
+    to: '/contact?service=Legal+Services',
+    icon: FileText,
+    confirmMessage: t(
+      'menu.legalConfirmMessage',
+      "You'll be taken to our Contact page — our RealtyNow team will personally assist you with legal services.",
+    ),
+  },
+  {
+    label: t('menu.packersMovers', 'Packers & Movers'),
+    desc: t('menu.packersMoversDesc', 'Stress-free home relocation'),
+    to: '/contact?service=Packers+and+Movers',
+    icon: Truck,
+    confirmMessage: t(
+      'menu.packersConfirmMessage',
+      "You'll be taken to our Contact page — our RealtyNow team will personally assist you with packers & movers.",
+    ),
+  },
+  {
+    label: t('menu.pestControl', 'Pest Control'),
+    desc: t('menu.pestControlDesc', 'Safe, effective treatments'),
+    to: '/contact?service=Pest+Control',
+    icon: Bug,
+    confirmMessage: t(
+      'menu.pestConfirmMessage',
+      "You'll be taken to our Contact page — our RealtyNow team will personally assist you with pest control.",
+    ),
+  },
+  {
+    label: t('menu.painting', 'Painting'),
+    desc: t('menu.paintingDesc', 'Interior & exterior painting'),
+    to: '/contact?service=Painting',
+    icon: Paintbrush,
+    confirmMessage: t(
+      'menu.paintingConfirmMessage',
+      "You'll be taken to our Contact page — our RealtyNow team will personally assist you with painting.",
+    ),
+  },
+  {
+    label: t('menu.cleaning', 'Cleaning'),
+    desc: t('menu.cleaningDesc', 'Deep cleaning for move-in/out'),
+    to: '/contact?service=Cleaning',
+    icon: Sparkles,
+    confirmMessage: t(
+      'menu.cleaningConfirmMessage',
+      "You'll be taken to our Contact page — our RealtyNow team will personally assist you with cleaning.",
+    ),
+  },
+];
+
+/* ─── Topbar (42px) ─────────────────────────────────────────── */
+function Topbar({ onOpenLanguageModal }: { onOpenLanguageModal: () => void }) {
   const { currentLanguage, t } = useLanguageContext();
 
   return (
-    <div
-      className={cn(
-        'hidden text-xs transition-colors border-b lg:block py-1.5',
-        isTransparent ? 'bg-navy-950/80 text-white/80 border-white/10' : 'bg-navy-900 text-navy-200 border-navy-800',
-      )}
-    >
-      <div className="container-wide flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <LocationSelector isTransparent={isTransparent} />
-        </div>
+    <div className="hidden h-[42px] border-b border-navy-800 bg-navy-900 text-navy-200 lg:block">
+      <div className="container-wide flex h-full items-center justify-between text-xs">
+        <LocationSelector isTransparent={false} />
 
         <div className="flex items-center gap-4">
           <button
             onClick={onOpenLanguageModal}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-600/90 hover:bg-red-600 text-white font-bold text-xs shadow-sm transition-all transform active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-navy-200 transition-colors hover:bg-white/10 hover:text-white"
             title={t('common.selectLanguage', 'Change Language')}
+            aria-label={t('common.selectLanguage', 'Change Language')}
           >
             <Globe className="h-3.5 w-3.5" />
-            <span>🌐 {currentLanguage.code.toUpperCase()}</span>
-            <span className="text-[10px] opacity-80">({currentLanguage.nativeName})</span>
+            <span>{currentLanguage.code.toUpperCase()}</span>
+            <span className="text-navy-400">· {currentLanguage.nativeName}</span>
           </button>
 
-          <div className="flex items-center gap-2 text-inherit/70 pl-2 border-l border-white/20">
-            <span className="opacity-60 text-[11px]">{t('common.follow', 'Follow:')}</span>
-            <a href="#" className="hover:text-white transition">
-              <Facebook className="h-3.5 w-3.5" />
-            </a>
-            <a href="#" className="hover:text-white transition">
-              <XTwitterIcon className="h-3.5 w-3.5" />
-            </a>
-            <a href="#" className="hover:text-white transition">
-              <Instagram className="h-3.5 w-3.5" />
-            </a>
-            <a href="#" className="hover:text-white transition">
-              <Linkedin className="h-3.5 w-3.5" />
-            </a>
-            <a href="#" className="hover:text-white transition">
-              <Youtube className="h-3.5 w-3.5" />
-            </a>
+          <div className="flex items-center gap-3 border-l border-white/10 pl-4">
+            {[
+              { Icon: Facebook, label: 'Facebook' },
+              { Icon: XTwitterIcon, label: 'X (Twitter)' },
+              { Icon: Instagram, label: 'Instagram' },
+              { Icon: Linkedin, label: 'LinkedIn' },
+              { Icon: Youtube, label: 'YouTube' },
+            ].map(({ Icon, label }) => (
+              <a
+                key={label}
+                href="#"
+                aria-label={label}
+                className="text-navy-400 transition-colors hover:text-white"
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </a>
+            ))}
           </div>
         </div>
       </div>
@@ -419,10 +414,13 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileAccordion, setMobileAccordion] = useState<string | null>(null);
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
   const [userMenu, setUserMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
+  const [pendingHandoff, setPendingHandoff] = useState<{ to: string; message: string } | null>(null);
 
   useEffect(() => {
     const onScroll = () => setMobileOpen(false);
@@ -432,6 +430,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setMobileOpen(false);
+    setMobileAccordion(null);
     setHoveredMenu(null);
     setUserMenu(false);
   }, [location.pathname]);
@@ -445,52 +444,146 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           ? '/builder'
           : '/portal';
 
-  const isTransparent = false;
   const megaMenuConfig = getMegaMenuConfig(t);
+  const servicesMenu = getServicesMenu(t);
 
   const dynamicNavLinks = [
     { key: 'Buy', label: t('common.sale', 'Buy'), to: '/buy', hasMega: true },
     { key: 'Rent', label: t('common.rent', 'Rent'), to: '/rent', hasMega: true },
     { key: 'Commercial', label: t('common.commercial', 'Commercial'), to: '/commercial', hasMega: true },
-    { key: 'Projects', label: t('common.projects', 'Projects'), to: '/projects', hasMega: true },
-    { key: 'Plots', label: t('common.plots', 'Plots'), to: '/plots', hasMega: true },
-    { key: 'AI Advisor', label: t('home.aiAdvisor', 'AI Advisor'), to: '/ai-property-advisor' },
-    // { key: 'Builders', label: t('common.builders', 'Builders'), to: '/builders' },
-    // { key: 'Agents', label: t('common.agents', 'Agents'), to: '/agents' },
-
-    { key: 'Blogs', label: t('common.blog', 'Blogs'), to: '/blog' },
-    { key: 'Contact', label: t('common.contactUs', 'Contact'), to: '/contact' },
-    { key: 'About', label: t('common.aboutUs', 'About Us'), to: '/about-us' },
+    { key: 'Projects', label: t('common.projects', 'Projects'), to: '/projects' },
+    { key: 'Plots', label: t('common.plots', 'Plots'), to: '/plots' },
   ];
 
   return (
     <div className="flex min-h-screen flex-col">
-      <Topbar isTransparent={isTransparent} onOpenLanguageModal={() => setLanguageModalOpen(true)} />
+      <Topbar onOpenLanguageModal={() => setLanguageModalOpen(true)} />
       <LanguageSelectorModal isOpen={languageModalOpen} onClose={() => setLanguageModalOpen(false)} />
 
-      {/* ── Main header ── */}
-      <header
-        className={cn(
-          'sticky top-0 z-50 transition-all duration-300',
-          isTransparent
-            ? 'bg-transparent text-white border-b border-white/10'
-            : 'bg-white text-navy-900 border-b border-navy-100',
+      {/* Search overlay — only navigates to /search once a query is submitted */}
+      <AnimatePresence>
+        {searchOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-navy-950/60 backdrop-blur-sm"
+              onClick={() => setSearchOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: -12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.97 }}
+              className="fixed left-1/2 top-24 z-50 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-navy-100 bg-white p-4 shadow-2xl"
+            >
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!searchQuery.trim()) return;
+                  setSearchOpen(false);
+                  navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                  setSearchQuery('');
+                }}
+                className="flex items-center gap-2"
+              >
+                <Search className="h-5 w-5 shrink-0 text-navy-400" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('search.placeholder', 'Search city, locality, project or landmark...')}
+                  className="flex-1 border-none bg-transparent text-sm text-navy-900 outline-none placeholder:text-navy-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSearchOpen(false)}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-navy-400 hover:bg-navy-50 hover:text-navy-700"
+                  aria-label={t('common.close', 'Close')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-xl bg-primary-600 px-4 py-2 text-sm font-bold text-white hover:bg-primary-700"
+                >
+                  {t('common.search', 'Search')}
+                </button>
+              </form>
+            </motion.div>
+          </>
         )}
-      >
-        <div className="container-wide">
-          <div className="flex py-2 items-center justify-between gap-2.5 flex-nowrap">
-            {/* Compact Logo */}
-            {isTransparent ? (
-              <LogoLight to="/" size={165} className="shrink-0" />
-            ) : (
-              <Logo to="/" size={165} className="shrink-0" />
-            )}
+      </AnimatePresence>
 
-            {/* Desktop nav */}
-            <nav className="hidden items-center xl:flex gap-0.5 whitespace-nowrap shrink-0">
+      {/* Hand-off confirmation — shown before routing a mega-menu item to the Contact page */}
+      <AnimatePresence>
+        {pendingHandoff && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-navy-950/60 backdrop-blur-sm"
+              onClick={() => setPendingHandoff(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-navy-100 bg-white p-5 shadow-2xl"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-navy-900">
+                    {t('common.realtynowTeamAssist', 'RealtyNow team will assist you')}
+                  </p>
+                  <p className="mt-1 text-xs text-navy-500">{pendingHandoff.message}</p>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setPendingHandoff(null)}
+                  className="rounded-lg px-3.5 py-2 text-xs font-semibold text-navy-600 hover:bg-navy-50"
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+                <button
+                  onClick={() => {
+                    const to = pendingHandoff.to;
+                    setPendingHandoff(null);
+                    navigate(to);
+                  }}
+                  className="rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-primary-700"
+                >
+                  {t('common.continue', 'Continue')}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Main header (68px) ── */}
+      <header className="sticky top-0 z-50 border-b border-navy-100 bg-white text-navy-900">
+        <div className="container-wide">
+          <div className="grid h-[68px] grid-cols-[auto_1fr_auto] items-center gap-3">
+            {/* Logo */}
+            <Logo to="/" size={175} className="shrink-0" />
+
+            {/* Desktop / tablet nav — centered, compact on lg, spacious on xl */}
+            <nav
+              className="hidden min-w-0 items-center justify-center gap-0.5 whitespace-nowrap lg:flex xl:gap-1"
+              aria-label={t('common.mainNavigation', 'Main navigation')}
+            >
               {dynamicNavLinks.map((item) => {
                 const configKey = item.key || item.label;
                 const config = megaMenuConfig[configKey];
+                const isActive = isRouteActive(item.to, location.pathname);
+
                 if (config) {
                   const isOpen = hoveredMenu === configKey;
                   return (
@@ -499,58 +592,60 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                       className="relative"
                       onMouseEnter={() => setHoveredMenu(configKey)}
                       onMouseLeave={() => setHoveredMenu(null)}
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoveredMenu(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') setHoveredMenu(null);
+                      }}
                     >
                       <Link
                         to={item.to}
+                        onFocus={() => setHoveredMenu(configKey)}
+                        aria-haspopup="true"
+                        aria-expanded={isOpen}
                         className={cn(
-                          'nav-link flex items-center gap-1 py-1.5 px-2.5 rounded-lg text-xs font-bold sm:text-sm transition-all duration-200',
-                          isOpen
-                            ? 'text-primary-600 bg-primary-50/80 font-semibold'
-                            : 'text-navy-700 hover:text-primary-600 hover:bg-navy-50/60',
+                          'nav-link flex items-center gap-1 rounded-xl py-2 text-base font-medium transition-all duration-200 lg:px-3 xl:px-5',
+                          isOpen || isActive
+                            ? 'bg-[#D8232A]/5 text-[#D8232A]'
+                            : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
                         )}
                       >
                         {item.label}
                         <ChevronDown
-                          className={cn(
-                            'h-3.5 w-3.5 transition-transform duration-200 text-navy-400',
-                            isOpen && 'rotate-180 text-primary-600',
-                          )}
+                          className={cn('h-4 w-4 text-navy-400 transition-transform duration-200', isOpen && 'rotate-180 text-[#D8232A]')}
                         />
                       </Link>
 
                       <AnimatePresence>
                         {isOpen && (
                           <motion.div
+                            role="menu"
                             initial={{ opacity: 0, y: 8, scale: 0.98 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: 6, scale: 0.98 }}
                             transition={{ duration: 0.18, ease: 'easeOut' }}
-                            className="absolute left-0 top-full pt-2 z-50"
+                            className="absolute left-0 top-full z-50 pt-2"
                           >
-                            <div className="w-[680px] rounded-2xl border border-navy-100 bg-white p-6 shadow-2xl backdrop-blur-md">
+                            <div className="w-[min(680px,90vw)] rounded-2xl border border-navy-100 bg-white/95 p-6 shadow-2xl backdrop-blur-xl">
                               {/* Header Title & Badge */}
-                              <div className="flex items-center justify-between border-b border-navy-100 pb-3 mb-4">
+                              <div className="mb-4 flex items-center justify-between border-b border-navy-100 pb-3">
                                 <div className="flex items-center gap-2">
                                   <span className="font-display text-base font-bold text-navy-900">{config.title}</span>
-                                  <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
+                                  <span className="rounded-full bg-[#D8232A]/10 px-2.5 py-0.5 text-xs font-semibold text-[#D8232A]">
                                     {config.badge}
                                   </span>
                                 </div>
-                                <span className="text-xs text-navy-400 font-medium">
+                                <span className="text-xs font-medium text-navy-400">
                                   {t('menu.exploreCurated', 'Explore curated categories')}
                                 </span>
                               </div>
 
                               {/* Columns Grid */}
-                              <div
-                                className={cn(
-                                  'grid gap-6',
-                                  config.columns.length === 3 ? 'grid-cols-3' : 'grid-cols-2',
-                                )}
-                              >
+                              <div className={cn('grid gap-6', config.columns.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
                                 {config.columns.map((col) => (
                                   <div key={col.title} className="space-y-3">
-                                    <p className="text-[11px] font-bold uppercase tracking-wider text-navy-400 border-b border-navy-50 pb-1">
+                                    <p className="border-b border-navy-50 pb-1 text-[11px] font-bold uppercase tracking-wider text-navy-400">
                                       {col.title}
                                     </p>
                                     <ul className="space-y-2">
@@ -560,14 +655,21 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                                           <li key={subItem.label}>
                                             <Link
                                               to={subItem.to}
-                                              onClick={() => setHoveredMenu(null)}
-                                              className="group flex items-start gap-3 rounded-xl p-2 transition-all hover:bg-primary-50/70"
+                                              role="menuitem"
+                                              onClick={(e) => {
+                                                setHoveredMenu(null);
+                                                if (subItem.confirmMessage) {
+                                                  e.preventDefault();
+                                                  setPendingHandoff({ to: subItem.to, message: subItem.confirmMessage });
+                                                }
+                                              }}
+                                              className="group flex items-start gap-3 rounded-xl p-2 transition-all hover:bg-[#D8232A]/5"
                                             >
-                                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-600 transition-colors group-hover:bg-primary-600 group-hover:text-white">
+                                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-600 transition-colors group-hover:bg-[#D8232A] group-hover:text-white">
                                                 <ItemIcon className="h-4 w-4" />
                                               </div>
                                               <div>
-                                                <p className="text-xs font-semibold text-navy-900 group-hover:text-primary-700">
+                                                <p className="text-xs font-semibold text-navy-900 group-hover:text-[#D8232A]">
                                                   {subItem.label}
                                                 </p>
                                                 <p className="text-[11px] text-navy-500 line-clamp-1">{subItem.desc}</p>
@@ -593,51 +695,161 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                     key={item.label}
                     to={item.to}
                     className={cn(
-                      'nav-link py-1.5 px-2.5 rounded-lg text-xs font-bold sm:text-sm transition-colors text-navy-700 hover:text-primary-600 hover:bg-navy-50/60',
-                      location.pathname === item.to && 'text-primary-600 font-semibold',
+                      'nav-link rounded-xl py-2 text-base font-medium transition-colors lg:px-3 xl:px-5',
+                      isActive ? 'bg-[#D8232A]/5 text-[#D8232A]' : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
                     )}
                   >
                     {item.label}
                   </Link>
                 );
               })}
+
+              {/* Services — glassmorphism flyout, not a full mega menu */}
+              <div
+                className="relative"
+                onMouseEnter={() => setHoveredMenu('Services')}
+                onMouseLeave={() => setHoveredMenu(null)}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoveredMenu(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setHoveredMenu(null);
+                }}
+              >
+                <button
+                  type="button"
+                  onFocus={() => setHoveredMenu('Services')}
+                  onClick={() => setHoveredMenu('Services')}
+                  aria-haspopup="true"
+                  aria-expanded={hoveredMenu === 'Services'}
+                  className={cn(
+                    'nav-link flex items-center gap-1 rounded-xl py-2 text-base font-medium transition-all duration-200 lg:px-3 xl:px-5',
+                    hoveredMenu === 'Services'
+                      ? 'bg-[#D8232A]/5 text-[#D8232A]'
+                      : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
+                  )}
+                >
+                  {t('common.services', 'Services')}
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 text-navy-400 transition-transform duration-200',
+                      hoveredMenu === 'Services' && 'rotate-180 text-[#D8232A]',
+                    )}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {hoveredMenu === 'Services' && (
+                    <motion.div
+                      role="menu"
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="absolute left-1/2 top-full z-50 -translate-x-1/2 pt-2"
+                    >
+                      <div className="grid w-[min(420px,90vw)] grid-cols-2 gap-1 rounded-2xl border border-white/60 bg-white/80 p-3 shadow-2xl backdrop-blur-xl">
+                        {servicesMenu.map((svc) => {
+                          const SvcIcon = svc.icon;
+                          const external = /^https?:\/\//.test(svc.to);
+                          const content = (
+                            <>
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-600 transition-colors group-hover:bg-[#D8232A] group-hover:text-white">
+                                <SvcIcon className="h-4 w-4" />
+                              </div>
+                              <span className="text-xs font-semibold text-navy-800 group-hover:text-[#D8232A]">{svc.label}</span>
+                            </>
+                          );
+                          return external ? (
+                            <a
+                              key={svc.label}
+                              href={svc.to}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              role="menuitem"
+                              onClick={() => setHoveredMenu(null)}
+                              className="group flex items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-white"
+                            >
+                              {content}
+                            </a>
+                          ) : (
+                            <Link
+                              key={svc.label}
+                              to={svc.to}
+                              role="menuitem"
+                              onClick={(e) => {
+                                setHoveredMenu(null);
+                                if (svc.confirmMessage) {
+                                  e.preventDefault();
+                                  setPendingHandoff({ to: svc.to, message: svc.confirmMessage });
+                                }
+                              }}
+                              className="group flex items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-white"
+                            >
+                              {content}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* AI Assistant */}
+              <Link
+                to="/ai-hub"
+                className={cn(
+                  'nav-link flex items-center gap-1.5 rounded-xl py-2 text-base font-medium transition-colors lg:px-3 xl:px-5',
+                  isRouteActive('/ai-hub', location.pathname)
+                    ? 'bg-[#D8232A]/5 text-[#D8232A]'
+                    : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
+                )}
+              >
+                <Bot className="h-4 w-4" />
+                {t('common.aiAssistant', 'AI Assistant')}
+                <span className="rounded-full bg-gradient-to-r from-[#D8232A] to-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                  {t('common.aiBadge', 'AI')}
+                </span>
+              </Link>
             </nav>
 
             {/* Right actions */}
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Search toggle */}
+            <div className="flex items-center gap-2 shrink-0 justify-self-end">
+              {/* Search toggle — opens overlay, only navigates once a query is submitted */}
               <button
-                onClick={() => setSearchOpen((v) => !v)}
-                className={cn('icon-btn', isTransparent && '!text-white/90 hover:!text-white hover:!bg-white/10')}
-                aria-label="Search"
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="icon-btn flex items-center justify-center rounded-full"
+                aria-label={t('search.placeholder', 'Search properties')}
               >
                 <Search className="h-[18px] w-[18px]" />
               </button>
 
-              {/* + Post Property Button with Red BG & Yellow FREE Pill */}
+              {/* Post Property — primary CTA */}
               <Link to="/portal/list-property" className="hidden sm:block">
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+                  className="flex items-center gap-1.5 rounded-full bg-[#D8232A] px-4 py-2 text-sm font-bold text-white shadow-md shadow-[#D8232A]/25 transition-all duration-200 hover:scale-105 hover:bg-[#c01e24] hover:shadow-lg hover:shadow-[#D8232A]/35 active:scale-95"
                 >
                   <span>{t('forms.postProperty', 'Post Property')}</span>
-                  <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
+                  <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-950 shadow-xs">
                     FREE
                   </span>
                 </button>
               </Link>
 
-              {/* Animated User Icon Button with Dropdown (Placed AFTER + Post Property Button) */}
+              {/* Login / Profile */}
               <div className="relative">
                 <button
                   onClick={() => setUserMenu((v) => !v)}
-                  className="group relative flex items-center justify-center p-0.5 rounded-full bg-gradient-to-r from-red-600 via-rose-500 to-amber-500 shadow-md shadow-red-500/20 hover:shadow-red-500/40 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
+                  aria-haspopup="true"
+                  aria-expanded={userMenu}
+                  className="group relative flex items-center justify-center rounded-full p-0.5 shadow-md shadow-[#D8232A]/20 transition-all duration-300 hover:scale-105 hover:shadow-[#D8232A]/40 active:scale-95"
+                  style={{ background: 'linear-gradient(90deg,#D8232A,#f43f5e,#f59e0b)' }}
                   title={t('common.accountOptions', 'Account & User Options')}
                 >
-                  {/* Pulsing Glow Ring */}
-                  <span className="absolute -inset-0.5 rounded-full bg-gradient-to-r from-red-600 via-rose-500 to-amber-500 opacity-75 blur-xs group-hover:opacity-100 transition duration-300 animate-pulse" />
-
-                  <div className="relative flex items-center justify-center h-8 w-8 rounded-full bg-white text-navy-900 font-bold text-xs shadow-inner overflow-hidden">
+                  <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-white text-navy-900 shadow-inner">
                     {user ? (
                       <Avatar
                         name={`${profile?.first_name ?? ''} ${profile?.last_name ?? ''}`.trim() || (user.email ?? 'U')}
@@ -645,7 +857,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                         size={30}
                       />
                     ) : (
-                      <User className="h-4 w-4 text-red-600 transition-transform group-hover:scale-110" />
+                      <User className="h-4 w-4 text-[#D8232A] transition-transform group-hover:scale-110" />
                     )}
                   </div>
                 </button>
@@ -658,12 +870,12 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.95 }}
                       transition={{ duration: 0.18 }}
-                      className="absolute right-0 top-full mt-2.5 w-60 rounded-2xl border border-navy-100 bg-white/95 p-2 shadow-2xl backdrop-blur-xl z-50 text-left"
+                      className="absolute right-0 top-full z-50 mt-2.5 w-60 rounded-2xl border border-navy-100 bg-white/95 p-2 text-left shadow-2xl backdrop-blur-xl"
                     >
                       {user ? (
                         <>
-                          <div className="px-3.5 py-2.5 bg-slate-50 rounded-xl mb-1 border border-slate-100">
-                            <p className="text-xs font-bold text-navy-900 leading-tight">
+                          <div className="mb-1 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
+                            <p className="text-xs font-bold leading-tight text-navy-900">
                               {profile?.first_name
                                 ? `${profile.first_name} ${profile.last_name ?? ''}`
                                 : t('common.userAccount', 'User Account')}
@@ -674,23 +886,23 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                           <Link
                             to={dashboardLink}
                             onClick={() => setUserMenu(false)}
-                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-navy-800 hover:bg-red-50 hover:text-red-600 transition"
+                            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold text-navy-800 transition hover:bg-[#D8232A]/5 hover:text-[#D8232A]"
                           >
-                            <LayoutDashboard className="h-4 w-4 text-red-500" /> {t('common.dashboard', 'Dashboard')}
+                            <LayoutDashboard className="h-4 w-4 text-[#D8232A]" /> {t('common.dashboard', 'Dashboard')}
                           </Link>
                           <Link
                             to="/portal/saved"
                             onClick={() => setUserMenu(false)}
-                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-navy-800 hover:bg-red-50 hover:text-red-600 transition"
+                            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold text-navy-800 transition hover:bg-[#D8232A]/5 hover:text-[#D8232A]"
                           >
-                            <Heart className="h-4 w-4 text-red-500" /> {t('common.saved', 'Saved Properties')}
+                            <Heart className="h-4 w-4 text-[#D8232A]" /> {t('common.saved', 'Saved Properties')}
                           </Link>
                           <Link
                             to="/portal/settings"
                             onClick={() => setUserMenu(false)}
-                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-navy-800 hover:bg-red-50 hover:text-red-600 transition"
+                            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold text-navy-800 transition hover:bg-[#D8232A]/5 hover:text-[#D8232A]"
                           >
-                            <User className="h-4 w-4 text-red-500" /> {t('common.edit', 'Settings')}
+                            <User className="h-4 w-4 text-[#D8232A]" /> {t('common.edit', 'Settings')}
                           </Link>
                           <div className="my-1 h-px bg-navy-100" />
                           <button
@@ -699,18 +911,18 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                               navigate('/');
                               setUserMenu(false);
                             }}
-                            className="flex items-center gap-2.5 w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition"
+                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-bold text-[#D8232A] transition hover:bg-[#D8232A]/5"
                           >
                             <LogOut className="h-4 w-4" /> {t('common.logout', 'Sign out')}
                           </button>
                         </>
                       ) : (
                         <>
-                          <div className="px-3.5 py-2.5 bg-slate-50 rounded-xl mb-1.5 border border-slate-100">
+                          <div className="mb-1.5 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
                             <p className="text-xs font-extrabold text-navy-900">
                               {t('common.welcomeHeader', 'Welcome to RealtyNow')}
                             </p>
-                            <p className="text-[10px] text-navy-500 mt-0.5">
+                            <p className="mt-0.5 text-[10px] text-navy-500">
                               {t('common.welcomeSub', 'Sign in to access your properties & saved listings')}
                             </p>
                           </div>
@@ -718,7 +930,8 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                           <Link
                             to="/login"
                             onClick={() => setUserMenu(false)}
-                            className="flex items-center justify-between px-3.5 py-2.5 my-1 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white font-bold text-xs shadow-md shadow-red-500/20 hover:scale-[1.02] active:scale-95 transition-all"
+                            className="my-1 flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-bold text-white shadow-md shadow-[#D8232A]/20 transition-all hover:scale-[1.02] active:scale-95"
+                            style={{ background: 'linear-gradient(90deg,#D8232A,#f43f5e)' }}
                           >
                             <div className="flex items-center gap-2">
                               <LogIn className="h-4 w-4" />
@@ -730,10 +943,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                           <Link
                             to="/signup"
                             onClick={() => setUserMenu(false)}
-                            className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-navy-200 bg-white font-bold text-xs text-navy-800 hover:bg-navy-50 active:scale-95 transition-all"
+                            className="flex items-center justify-between rounded-xl border border-navy-200 bg-white px-3.5 py-2.5 text-xs font-bold text-navy-800 transition-all hover:bg-navy-50 active:scale-95"
                           >
                             <div className="flex items-center gap-2">
-                              <UserPlus className="h-4 w-4 text-red-600" />
+                              <UserPlus className="h-4 w-4 text-[#D8232A]" />
                               <span>{t('common.register', 'Create Account')}</span>
                             </div>
                             <ChevronRight className="h-3.5 w-3.5 text-navy-400" />
@@ -746,51 +959,182 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               </div>
 
               {/* Mobile hamburger */}
-              <button onClick={() => setMobileOpen((v) => !v)} className="icon-btn xl:hidden">
+              <button
+                onClick={() => setMobileOpen((v) => !v)}
+                className="icon-btn rounded-full lg:hidden"
+                aria-label={mobileOpen ? t('common.closeMenu', 'Close menu') : t('common.openMenu', 'Open menu')}
+                aria-expanded={mobileOpen}
+              >
                 {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
             </div>
           </div>
         </div>
 
-        {/* ── Mobile menu drawer ── */}
+        {/* ── Mobile menu drawer (hamburger + accordion) ── */}
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-t border-navy-100 bg-white xl:hidden"
+              className="overflow-hidden border-t border-navy-100 bg-white lg:hidden"
             >
-              <div className="container-wide py-4 space-y-2">
-                {dynamicNavLinks.map((item) => (
-                  <Link
-                    key={item.label}
-                    to={item.to}
-                    className="block py-2 text-sm font-semibold text-navy-800 hover:text-primary-600"
+              <div className="container-wide max-h-[75vh] space-y-1 overflow-y-auto py-4">
+                {dynamicNavLinks.map((item) => {
+                  const configKey = item.key || item.label;
+                  const config = megaMenuConfig[configKey];
+                  if (config) {
+                    const isOpen = mobileAccordion === configKey;
+                    return (
+                      <div key={item.label} className="border-b border-navy-50">
+                        <button
+                          type="button"
+                          onClick={() => setMobileAccordion((v) => (v === configKey ? null : configKey))}
+                          aria-expanded={isOpen}
+                          className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800"
+                        >
+                          {item.label}
+                          <ChevronDown className={cn('h-4 w-4 text-navy-400 transition-transform', isOpen && 'rotate-180 text-[#D8232A]')} />
+                        </button>
+                        <AnimatePresence>
+                          {isOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-3 pb-3 pl-1">
+                                {config.columns.map((col) => (
+                                  <div key={col.title}>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-navy-400">{col.title}</p>
+                                    <div className="mt-1 space-y-0.5">
+                                      {col.items.map((subItem) => (
+                                        <Link
+                                          key={subItem.label}
+                                          to={subItem.to}
+                                          onClick={(e) => {
+                                            if (subItem.confirmMessage) {
+                                              e.preventDefault();
+                                              setPendingHandoff({ to: subItem.to, message: subItem.confirmMessage });
+                                            }
+                                            setMobileOpen(false);
+                                          }}
+                                          className="block py-1.5 text-sm text-navy-600 hover:text-[#D8232A]"
+                                        >
+                                          {subItem.label}
+                                        </Link>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Link
+                      key={item.label}
+                      to={item.to}
+                      onClick={() => setMobileOpen(false)}
+                      className="block border-b border-navy-50 py-3 text-sm font-semibold text-navy-800 hover:text-[#D8232A]"
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+
+                {/* Services accordion */}
+                <div className="border-b border-navy-50">
+                  <button
+                    type="button"
+                    onClick={() => setMobileAccordion((v) => (v === 'Services' ? null : 'Services'))}
+                    aria-expanded={mobileAccordion === 'Services'}
+                    className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800"
                   >
-                    {item.label}
-                  </Link>
-                ))}
-                <div className="pt-2 border-t border-navy-100 flex flex-col gap-2">
+                    {t('common.services', 'Services')}
+                    <ChevronDown
+                      className={cn('h-4 w-4 text-navy-400 transition-transform', mobileAccordion === 'Services' && 'rotate-180 text-[#D8232A]')}
+                    />
+                  </button>
+                  <AnimatePresence>
+                    {mobileAccordion === 'Services' && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="grid grid-cols-2 gap-1 pb-3 pl-1">
+                          {servicesMenu.map((svc) => {
+                            const SvcIcon = svc.icon;
+                            const external = /^https?:\/\//.test(svc.to);
+                            return external ? (
+                              <a
+                                key={svc.label}
+                                href={svc.to}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => setMobileOpen(false)}
+                                className="flex items-center gap-2 py-1.5 text-xs font-medium text-navy-600 hover:text-[#D8232A]"
+                              >
+                                <SvcIcon className="h-3.5 w-3.5 shrink-0" /> {svc.label}
+                              </a>
+                            ) : (
+                              <Link
+                                key={svc.label}
+                                to={svc.to}
+                                onClick={(e) => {
+                                  if (svc.confirmMessage) {
+                                    e.preventDefault();
+                                    setPendingHandoff({ to: svc.to, message: svc.confirmMessage });
+                                  }
+                                  setMobileOpen(false);
+                                }}
+                                className="flex items-center gap-2 py-1.5 text-xs font-medium text-navy-600 hover:text-[#D8232A]"
+                              >
+                                <SvcIcon className="h-3.5 w-3.5 shrink-0" /> {svc.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* AI Assistant */}
+                <Link
+                  to="/ai-hub"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-1.5 border-b border-navy-50 py-3 text-sm font-semibold text-navy-800 hover:text-[#D8232A]"
+                >
+                  <Bot className="h-4 w-4" /> {t('common.aiAssistant', 'AI Assistant')}
+                </Link>
+
+                <div className="flex flex-col gap-2 pt-3">
                   {!user && (
                     <>
-                      <Link to="/login" className="btn btn-outline w-full text-center">
+                      <Link to="/login" className="btn-outline-red w-full text-center">
                         {t('common.login', 'Sign In')}
                       </Link>
-                      <Link to="/signup" className="btn btn-primary w-full text-center">
+                      <Link to="/signup" className="btn-primary w-full text-center">
                         {t('common.register', 'Sign Up')}
                       </Link>
                     </>
                   )}
                   <Link
                     to="/portal/list-property"
-                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2.5 text-sm font-bold text-white shadow-md"
+                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-md"
+                    style={{ background: 'linear-gradient(90deg,#D8232A,#f43f5e)' }}
                   >
                     <span>{t('forms.postProperty', 'Post Property')}</span>
-                    <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase">
-                      FREE
-                    </span>
+                    <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-950">FREE</span>
                   </Link>
                 </div>
               </div>
@@ -903,11 +1247,11 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               </h4>
               <ul className="mt-6 space-y-4 text-sm text-white/50">
                 {[
-                  { label: t('footer.propsJubileeHills', 'Properties in Jubilee Hills'), path: '/search?q=Jubilee+Hills' },
-                  { label: t('footer.propsBanjaraHills', 'Properties in Banjara Hills'), path: '/search?q=Banjara+Hills' },
-                  { label: t('footer.propsHitecCity', 'Properties in HITEC City'), path: '/search?q=HITEC+City' },
-                  { label: t('footer.propsGachibowli', 'Properties in Gachibowli'), path: '/search?q=Gachibowli' },
-                  { label: t('footer.propsKondapur', 'Properties in Kondapur'), path: '/search?q=Kondapur' },
+                  { label: t('footer.propsJubileeHills', 'Properties in Jubilee Hills'), path: '/search?city=Hyderabad&locality=Jubilee+Hills' },
+                  { label: t('footer.propsBanjaraHills', 'Properties in Banjara Hills'), path: '/search?city=Hyderabad&locality=Banjara+Hills' },
+                  { label: t('footer.propsHitecCity', 'Properties in HITEC City'), path: '/search?city=Hyderabad&locality=HITEC+City' },
+                  { label: t('footer.propsGachibowli', 'Properties in Gachibowli'), path: '/search?city=Hyderabad&locality=Gachibowli' },
+                  { label: t('footer.propsKondapur', 'Properties in Kondapur'), path: '/search?city=Hyderabad&locality=Kondapur' },
                 ].map((link, idx) => (
                   <li key={idx}>
                     <Link to={link.path} className="group flex items-center gap-2 hover:text-white transition-colors">
@@ -927,8 +1271,9 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               </h4>
               <ul className="mt-6 space-y-4 text-sm text-white/50">
                 {[
-                  { label: t('common.aboutUs', 'About Us'), path: '/about' },
-                  { label: t('common.blog', 'Blog & News'), path: '/blogs' },
+                  { label: t('home.aiAdvisor', 'AI Property Advisor'), path: '/ai-property-advisor' },
+                  { label: t('common.aboutUs', 'About Us'), path: '/about-us' },
+                  { label: t('common.blog', 'Blog & News'), path: '/blog' },
                   { label: t('common.contactUs', 'Contact Us'), path: '/contact' },
                   { label: t('common.terms', 'Terms of Service'), path: '/terms' },
                   { label: t('common.privacy', 'Privacy Policy'), path: '/privacy' },

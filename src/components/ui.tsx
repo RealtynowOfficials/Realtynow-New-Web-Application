@@ -247,8 +247,32 @@ export function Spinner({ className }: { className?: string }) {
 
 export function PageLoader() {
   return (
-    <div className="flex min-h-[50vh] items-center justify-center">
-      <Spinner className="h-8 w-8" />
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-8 p-4">
+      <div className="relative flex items-center justify-center">
+        {/* Outer ambient glow */}
+        <div className="absolute inset-0 h-32 w-32 -translate-x-4 -translate-y-6 animate-pulse rounded-full bg-red-400/20 blur-2xl" style={{ animationDuration: '3s' }} />
+        
+        {/* Spinner rings */}
+        <div className="absolute h-24 w-24 rounded-full border-[3px] border-slate-100" />
+        <div className="absolute h-24 w-24 animate-spin rounded-full border-[3px] border-transparent border-t-red-600 border-r-red-500" style={{ animationDuration: '1.2s' }} />
+        <div className="absolute h-20 w-20 animate-spin rounded-full border-[3px] border-transparent border-b-rose-500 border-l-rose-400 opacity-70" style={{ animationDuration: '2s', animationDirection: 'reverse' }} />
+        
+        {/* Inner static logo */}
+        <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-xl shadow-red-500/10 p-2">
+          <img src="/1.png" alt="RealtyNow" className="h-full w-full object-contain p-1" />
+        </div>
+      </div>
+      
+      <div className="flex flex-col items-center gap-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-[0.25em] text-slate-400">
+          Loading Experience
+        </h3>
+        <div className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-red-500" style={{ animationDelay: '0ms' }} />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-red-500" style={{ animationDelay: '150ms' }} />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-red-500" style={{ animationDelay: '300ms' }} />
+        </div>
+      </div>
     </div>
   );
 }

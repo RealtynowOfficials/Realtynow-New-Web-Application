@@ -423,3 +423,18 @@ entrypoint = "./functions/get-map-config/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/get-map-config/*.html" ]
+
+[functions.otp-auth]
+enabled = true
+# Must be callable pre-authentication (the "verify" action is how a caller
+# obtains a session in the first place). The "admin-provision" action does
+# its own JWT + role check internally.
+verify_jwt = false
+
+[functions.send-push]
+enabled = true
+# Called from Postgres (fn_dispatch_push, migration 0060) with only the
+# public anon key, not a user JWT — it only ever re-delivers a
+# notification row that a trusted, already-authorized process inserted,
+# so no caller JWT is required or meaningful here.
+verify_jwt = false

@@ -4,22 +4,21 @@ import { supabase } from './supabase';
 import { queryClient } from './queryClient';
 import type { Profile, UserRole } from './types';
 
+type OtpLoginIntent = 'customer' | 'agent';
+
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
   loading: boolean;
   role: UserRole | null;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (
-    email: string,
-    password: string,
-    meta?: Record<string, string>,
-  ) => Promise<{ error: string | null; needsEmailConfirmation?: boolean }>;
+  verifyOtpAndSignIn: (
+    accessToken: string,
+    intent?: OtpLoginIntent,
+  ) => Promise<{ error: string | null; isNewUser?: boolean; code?: string }>;
+  requestAgentAccess: (accessToken: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: string | null }>;
-  updatePassword: (password: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -78,26 +77,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPrevRole(profile?.role ?? null);
   }, [profile?.role, prevRole]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+  const verifyOtpAndSignIn = useCallback(async (accessToken: string, intent: OtpLoginIntent = 'customer') => {
+    const { data, error } = await supabase.functions.invoke('otp-auth', {
+      body: { accessToken, intent },
+      headers: { 'x-action': 'verify' },
+    });
+    if (error) {
+      // supabase-js leaves `data` empty on a non-2xx response and only sets
+      // a generic error.message ("Edge Function returned a non-2xx status
+      // code") — the real reason (and `code`, e.g. AGENT_NOT_FOUND) is in
+      // the response body, on error.context.
+      let message = error.message;
+      let code: string | undefined;
+      const context = (error as { context?: unknown }).context;
+      if (context instanceof Response) {
+        try {
+          const body = await context.clone().json();
+          if (typeof body?.error === 'string') message = body.error;
+          if (typeof body?.code === 'string') code = body.code;
+        } catch {
+          /* response wasn't JSON, keep the generic message */
+        }
+      }
+      console.error('[otp-auth] verify failed:', message);
+      return { error: message, code };
+    }
+    if (!data?.access_token || !data?.refresh_token) {
+      return { error: data?.error ?? 'OTP verification failed', code: data?.code };
+    }
+    const { error: setSessionError } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+    if (setSessionError) return { error: setSessionError.message };
+    return { error: null, isNewUser: Boolean(data.isNewUser) };
   }, []);
 
-  const signUp = useCallback(
-    async (email: string, password: string, meta?: Record<string, string>) => {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { role: 'customer', ...meta } },
-      });
-      if (error) return { error: error.message };
-      if (data.session && data.user) {
-        await loadProfile(data.user.id);
+  const requestAgentAccess = useCallback(async (accessToken: string, fullName: string) => {
+    const { data, error } = await supabase.functions.invoke('otp-auth', {
+      body: { accessToken, full_name: fullName },
+      headers: { 'x-action': 'request-agent-access' },
+    });
+    if (error) {
+      let message = error.message;
+      const context = (error as { context?: unknown }).context;
+      if (context instanceof Response) {
+        try {
+          const body = await context.clone().json();
+          if (typeof body?.error === 'string') message = body.error;
+        } catch {
+          /* response wasn't JSON, keep the generic message */
+        }
       }
-      return { error: null, needsEmailConfirmation: !data.session };
-    },
-    [loadProfile],
-  );
+      return { error: message };
+    }
+    if (!data?.success) return { error: data?.error ?? 'Could not submit request' };
+    return { error: null };
+  }, []);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
@@ -109,30 +145,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (session?.user) await loadProfile(session.user.id);
   }, [session, loadProfile]);
 
-  const resetPassword = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login?mode=reset`,
-    });
-    return { error: error?.message ?? null };
-  }, []);
-
-  const updatePassword = useCallback(async (password: string) => {
-    const { error } = await supabase.auth.updateUser({ password });
-    return { error: error?.message ?? null };
-  }, []);
-
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
     profile,
     loading,
     role: profile?.role ?? null,
-    signIn,
-    signUp,
+    verifyOtpAndSignIn,
+    requestAgentAccess,
     signOut,
     refreshProfile,
-    resetPassword,
-    updatePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

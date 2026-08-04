@@ -19,7 +19,10 @@ import {
   Star,
   Camera,
   Eye,
-  Upload,
+  GripVertical,
+  Loader2,
+  PlayCircle,
+  AlertCircle,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/dashboard-layout';
 import { getPortalSections } from './sections';
@@ -28,7 +31,83 @@ import { Button } from '../../components/ui';
 import { propertyWizardSchema, PropertyWizardForm, WIZARD_STEPS } from './wizard-schema';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../hooks/useToast';
+import { LocationAutocomplete, type SelectedPlace } from '../../components/location-autocomplete';
 import { supabase } from '../../lib/supabase';
+import { triggerAiVerification } from '../../lib/properties';
+import { uploadFile, deleteFile, type StorageBucket } from '../../lib/storage';
+
+export interface MediaItem {
+  id: string;
+  url: string;
+  type: 'image' | 'video';
+  isCover: boolean;
+  order: number;
+  // Present only for items uploaded to Supabase Storage (not pasted URLs) —
+  // needed to delete the underlying file, not just the reference.
+  bucket?: StorageBucket;
+  path?: string;
+  uploading?: boolean;
+  error?: string;
+}
+
+const MAX_MEDIA_FILES = 20;
+const MAX_MEDIA_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ACCEPTED_MEDIA_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'video/mp4',
+  'video/quicktime',
+];
+const COMPRESSIBLE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_DIMENSION = 1920;
+
+/**
+ * Client-side resize + re-encode (canvas → WEBP, quality 0.82) so large phone-camera
+ * photos don't eat the 5MB cap or user bandwidth. Skips HEIC (most browsers' canvas
+ * can't decode it) and anything canvas fails on — caller just uploads the original
+ * in that case rather than blocking the listing on a compression failure.
+ */
+async function compressImage(file: File): Promise<File> {
+  if (!COMPRESSIBLE_IMAGE_TYPES.has(file.type)) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.82));
+    if (!blob || blob.size >= file.size) return file; // compression didn't actually help — keep original
+    const newName = file.name.replace(/\.[^.]+$/, '') + '.webp';
+    return new File([blob], newName, { type: 'image/webp' });
+  } catch {
+    return file; // e.g. HEIC the browser can't decode — fall through to uploading the original
+  }
+}
+
+function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|mov)(\?|$)/i.test(url);
+}
+
+function isValidMediaUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!/^https?:$/.test(parsed.protocol)) return false;
+  } catch {
+    return false;
+  }
+  return /\.(jpe?g|png|webp|gif|mp4|webm|mov)(\?|$)/i.test(url);
+}
 
 const PURPOSE_OPTIONS = [
   { id: 'Sale', label: 'Sale', icon: '/icons/icon_sale_3d.png', desc: 'Sell your property' },
@@ -335,13 +414,112 @@ export function ListPropertyWizard() {
     setSelectedAmenities((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   // Step 6: Media
-  const [mediaUrls, setMediaUrls] = useState<string[]>([]);
-  const [mediaInput, setMediaInput] = useState('');
-  const addMedia = () => {
-    if (mediaInput.trim()) {
-      setMediaUrls((prev) => [...prev, mediaInput.trim()]);
-      setMediaInput('');
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [mediaUrlInput, setMediaUrlInput] = useState('');
+  const [mediaUrlError, setMediaUrlError] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [previewItem, setPreviewItem] = useState<MediaItem | null>(null);
+
+  const reindexMedia = (items: MediaItem[]): MediaItem[] => items.map((m, i) => ({ ...m, order: i }));
+
+  const handleMediaFiles = async (rawFiles: File[]) => {
+    const room = MAX_MEDIA_FILES - mediaItems.length;
+    if (room <= 0) {
+      toast.addToast('error', `Maximum ${MAX_MEDIA_FILES} files allowed`);
+      return;
     }
+    for (const rawFile of rawFiles.slice(0, room)) {
+      if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type)) {
+        toast.addToast('error', `${rawFile.name}: unsupported file type`);
+        continue;
+      }
+      const isVideo = rawFile.type.startsWith('video/');
+      // Images get a shot at compression before the size cap is enforced — phone
+      // camera photos routinely start well above 5MB but shrink under it easily.
+      // Videos can't be compressed client-side, so they're checked as-is.
+      if (isVideo && rawFile.size > MAX_MEDIA_FILE_SIZE) {
+        toast.addToast('error', `${rawFile.name}: exceeds 5MB limit`);
+        continue;
+      }
+      const file = isVideo ? rawFile : await compressImage(rawFile);
+      if (file.size > MAX_MEDIA_FILE_SIZE) {
+        toast.addToast('error', `${rawFile.name}: still exceeds 5MB after compression`);
+        continue;
+      }
+
+      const bucket: StorageBucket = isVideo ? 'property-videos' : 'property-images';
+      const tempId = crypto.randomUUID();
+      const localUrl = URL.createObjectURL(file);
+
+      setMediaItems((prev) =>
+        reindexMedia([
+          ...prev,
+          { id: tempId, url: localUrl, type: isVideo ? 'video' : 'image', isCover: prev.length === 0, order: 0, uploading: true },
+        ]),
+      );
+
+      const { url, path, error } = await uploadFile(bucket, file);
+      if (error) {
+        toast.addToast('error', `${file.name}: ${error}`);
+        setMediaItems((prev) => reindexMedia(prev.filter((m) => m.id !== tempId)));
+        continue;
+      }
+
+      setMediaItems((prev) => {
+        // Dedupe: if this exact URL was already added (e.g. double-drop), drop the new one.
+        if (prev.some((m) => m.id !== tempId && m.url === url)) {
+          return reindexMedia(prev.filter((m) => m.id !== tempId));
+        }
+        return reindexMedia(prev.map((m) => (m.id === tempId ? { ...m, url, path, bucket, uploading: false } : m)));
+      });
+    }
+  };
+
+  const addMediaUrl = () => {
+    const url = mediaUrlInput.trim();
+    if (!url) return;
+    if (!isValidMediaUrl(url)) {
+      setMediaUrlError('Enter a valid image or video URL (jpg, png, webp, mp4)');
+      return;
+    }
+    if (mediaItems.some((m) => m.url === url)) {
+      setMediaUrlError('This media is already added');
+      return;
+    }
+    if (mediaItems.length >= MAX_MEDIA_FILES) {
+      setMediaUrlError(`Maximum ${MAX_MEDIA_FILES} files allowed`);
+      return;
+    }
+    setMediaUrlError(null);
+    setMediaItems((prev) =>
+      reindexMedia([...prev, { id: crypto.randomUUID(), url, type: isVideoUrl(url) ? 'video' : 'image', isCover: prev.length === 0, order: 0 }]),
+    );
+    setMediaUrlInput('');
+  };
+
+  const setCoverMedia = (id: string) => setMediaItems((prev) => prev.map((m) => ({ ...m, isCover: m.id === id })));
+
+  const removeMedia = async (item: MediaItem) => {
+    if (item.bucket && item.path) {
+      deleteFile(item.bucket, item.path).catch(() => {
+        /* best-effort — orphaned storage object is a minor cleanup issue, not a blocking error */
+      });
+    }
+    setMediaItems((prev) => {
+      const next = reindexMedia(prev.filter((m) => m.id !== item.id));
+      if (item.isCover && next.length > 0) next[0] = { ...next[0], isCover: true };
+      return next;
+    });
+  };
+
+  const reorderMedia = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    setMediaItems((prev) => {
+      const arr = [...prev];
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      return reindexMedia(arr);
+    });
   };
 
   // Step 7: Pricing
@@ -386,7 +564,22 @@ export function ListPropertyWizard() {
             setBalconies(draft.balconies || 1);
             setFurnishing(draft.furnishing || '');
             setSelectedAmenities(draft.amenities || []);
-            setMediaUrls(draft.images || []);
+            if (draft.features?.media_items?.length) {
+              setMediaItems(draft.features.media_items);
+            } else if (draft.images?.length) {
+              // Older drafts / existing published properties only have the flat
+              // images[] column — reconstruct structured items from it so
+              // editing still shows every existing photo.
+              setMediaItems(
+                draft.images.map((url: string, i: number) => ({
+                  id: crypto.randomUUID(),
+                  url,
+                  type: isVideoUrl(url) ? 'video' : 'image',
+                  isCover: i === 0,
+                  order: i,
+                })),
+              );
+            }
             if (draft.features?.negotiable !== undefined) {
               setNegotiable(draft.features.negotiable);
             }
@@ -409,9 +602,28 @@ export function ListPropertyWizard() {
       handleSaveDraft();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [JSON.stringify(watch()), activeStep, completedSteps, bedrooms, bathrooms, balconies, furnishing, selectedAmenities, mediaUrls, negotiable]);
+  }, [JSON.stringify(watch()), activeStep, completedSteps, bedrooms, bathrooms, balconies, furnishing, selectedAmenities, mediaItems, negotiable]);
+
+  // Step 4 (Location): fired when the owner picks a Google Places result —
+  // auto-fills every location field and keeps them in sync if they pick a
+  // different place afterward.
+  const handlePlaceSelected = (place: SelectedPlace) => {
+    setValue('address', place.address, { shouldValidate: true, shouldDirty: true });
+    if (place.city) setValue('city_name', place.city, { shouldValidate: true, shouldDirty: true });
+    if (place.locality) setValue('locality_name', place.locality, { shouldValidate: true, shouldDirty: true });
+    if (place.state) setValue('state_name', place.state, { shouldDirty: true });
+    if (place.country) setValue('country', place.country, { shouldDirty: true });
+    if (place.postalCode) setValue('pincode', place.postalCode, { shouldDirty: true });
+    setValue('latitude', String(place.latitude), { shouldDirty: true });
+    setValue('longitude', String(place.longitude), { shouldDirty: true });
+    setValue('place_id', place.placeId, { shouldDirty: true });
+  };
 
   const handleNext = async () => {
+    if (activeStep === 4 && !getValues('place_id')) {
+      toast.addToast('error', 'Please search and select a location from Google Maps before continuing.');
+      return;
+    }
     if (activeStep < WIZARD_STEPS.length - 1) {
       if (!completedSteps.includes(activeStep)) {
         setCompletedSteps(prev => [...prev, activeStep]);
@@ -465,8 +677,12 @@ export function ListPropertyWizard() {
       title: autoTitle,
       description: vals.description || null,
       address: autoAddress,
+      place_id: vals.place_id || null,
       latitude: vals.latitude ? parseFloat(vals.latitude) : null,
       longitude: vals.longitude ? parseFloat(vals.longitude) : null,
+      state: vals.state_name || null,
+      country: vals.country || null,
+      pincode: vals.pincode || null,
       price: vals.price ? parseFloat(vals.price) : 0,
       rent_amount: vals.rent_amount ? parseFloat(vals.rent_amount) : null,
       security_deposit: vals.security_deposit ? parseFloat(vals.security_deposit) : null,
@@ -481,10 +697,14 @@ export function ListPropertyWizard() {
       plot_area: vals.plot_area ? parseFloat(vals.plot_area) : null,
       parking: (parseInt(vals.parking_indoor || '0') + parseInt(vals.parking_outdoor || '0')) || 0,
       amenities: selectedAmenities,
-      images: mediaUrls,
+      images: [...mediaItems]
+        .filter((m) => m.type === 'image' && !m.uploading)
+        .sort((a, b) => (a.isCover === b.isCover ? a.order - b.order : a.isCover ? -1 : 1))
+        .map((m) => m.url),
       ownership_type: vals.ownership_type || null,
       age_of_property: ageInt,
       facing: vals.facing || null,
+      nearby_places: vals.nearby_places || null,
       features: {
         original_purpose: vals.purpose,
         category: vals.category,
@@ -501,6 +721,9 @@ export function ListPropertyWizard() {
         parking_indoor: vals.parking_indoor ? parseInt(vals.parking_indoor) : 0,
         parking_outdoor: vals.parking_outdoor ? parseInt(vals.parking_outdoor) : 0,
         source_urls: vals.source_urls ? vals.source_urls.split(',').map(s => s.trim()).filter(Boolean) : [],
+        media_items: mediaItems
+          .filter((m) => !m.uploading)
+          .map(({ id, url, type, isCover, order, bucket, path }) => ({ id, url, type, isCover, order, bucket, path })),
       },
     };
   };
@@ -542,9 +765,11 @@ export function ListPropertyWizard() {
       if (draftId) {
         const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
         if (error) throw error;
+        triggerAiVerification(draftId);
       } else {
-        const { error } = await supabase.from('properties').insert(payload);
+        const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
         if (error) throw error;
+        if (inserted?.id) triggerAiVerification(inserted.id);
       }
       toast.addToast('success', '🎉 Property submitted for admin review!');
       setTimeout(() => {
@@ -584,7 +809,10 @@ export function ListPropertyWizard() {
           <PreviewModal
             data={formData}
             counters={{ bedrooms, bathrooms, balconies }}
-            mediaUrls={mediaUrls}
+            mediaUrls={[...mediaItems]
+              .filter((m) => m.type === 'image')
+              .sort((a, b) => (a.isCover === b.isCover ? a.order - b.order : a.isCover ? -1 : 1))
+              .map((m) => m.url)}
             furnishing={furnishing}
             onClose={() => setShowPreview(false)}
           />
@@ -979,6 +1207,12 @@ export function ListPropertyWizard() {
                     {activeStep === 4 && (
                       <div className="space-y-5 max-w-3xl mx-auto">
                         <SectionTitle title="Location Details" sub="Where is the property located?" />
+                        <LocationAutocomplete
+                          onSelect={handlePlaceSelected}
+                          initialAddress={watch('address')}
+                          initialLat={watch('latitude') ? parseFloat(watch('latitude') as string) : undefined}
+                          initialLng={watch('longitude') ? parseFloat(watch('longitude') as string) : undefined}
+                        />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <FieldLabel>City *</FieldLabel>
@@ -987,6 +1221,20 @@ export function ListPropertyWizard() {
                           <div>
                             <FieldLabel>Locality *</FieldLabel>
                             <InputField {...register('locality_name')} placeholder="e.g. Bandra West" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <FieldLabel>State</FieldLabel>
+                            <InputField {...register('state_name')} placeholder="Auto-filled from map search" />
+                          </div>
+                          <div>
+                            <FieldLabel>Country</FieldLabel>
+                            <InputField {...register('country')} placeholder="Auto-filled from map search" />
+                          </div>
+                          <div>
+                            <FieldLabel>Postal Code</FieldLabel>
+                            <InputField {...register('pincode')} placeholder="Auto-filled from map search" />
                           </div>
                         </div>
                         <div>
@@ -999,12 +1247,22 @@ export function ListPropertyWizard() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <FieldLabel>Latitude (optional)</FieldLabel>
-                            <InputField {...register('latitude')} placeholder="e.g. 19.0596" />
+                            <FieldLabel>Latitude</FieldLabel>
+                            <InputField
+                              {...register('latitude')}
+                              readOnly
+                              placeholder="Auto-filled from map search"
+                              className="bg-navy-50 text-navy-500 cursor-not-allowed"
+                            />
                           </div>
                           <div>
-                            <FieldLabel>Longitude (optional)</FieldLabel>
-                            <InputField {...register('longitude')} placeholder="e.g. 72.8295" />
+                            <FieldLabel>Longitude</FieldLabel>
+                            <InputField
+                              {...register('longitude')}
+                              readOnly
+                              placeholder="Auto-filled from map search"
+                              className="bg-navy-50 text-navy-500 cursor-not-allowed"
+                            />
                           </div>
                         </div>
                         <div className="bg-navy-50 rounded-2xl p-4 border border-navy-100">
@@ -1082,23 +1340,31 @@ export function ListPropertyWizard() {
                     {activeStep === 6 && (
                       <div className="space-y-5 max-w-3xl mx-auto">
                         <SectionTitle title="Photos & Media" sub="Add photos and videos to showcase the property." />
-                        <div className="border-2 border-dashed border-navy-200 rounded-2xl p-8 text-center bg-navy-50/30 hover:bg-navy-50/50 transition-all">
+
+                        {/* Dropzone — drag & drop or Choose Files */}
+                        <div
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            handleMediaFiles(Array.from(e.dataTransfer.files));
+                          }}
+                          className="border-2 border-dashed border-navy-200 rounded-2xl p-8 text-center bg-navy-50/30 hover:bg-navy-50/50 transition-all"
+                        >
                           <Camera className="h-8 w-8 text-navy-400 mx-auto mb-3" />
-                          <p className="text-sm font-semibold text-navy-700 mb-1">Upload Photos</p>
+                          <p className="text-sm font-semibold text-navy-700 mb-1">Drag & drop or Upload Photos/Videos</p>
                           <p className="text-xs text-navy-400 mb-4">
-                            JPG, PNG or WEBP · Max 5MB each · Up to 20 images
+                            JPG, PNG, WEBP, HEIC, MP4 or MOV · Max 5MB each (images auto-compressed) · Up to {MAX_MEDIA_FILES} files ({mediaItems.length}/{MAX_MEDIA_FILES} added)
                           </p>
                           <label className="cursor-pointer inline-flex items-center gap-2 bg-navy-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-navy-800 transition-all shadow-md">
                             <Camera className="h-4 w-4" /> Choose Files
                             <input
                               type="file"
                               multiple
-                              accept="image/*"
+                              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime"
                               className="hidden"
                               onChange={(e) => {
-                                const files = Array.from(e.target.files || []);
-                                const urls = files.map((f) => URL.createObjectURL(f));
-                                setMediaUrls((prev) => [...prev, ...urls]);
+                                handleMediaFiles(Array.from(e.target.files || []));
+                                e.target.value = '';
                               }}
                             />
                           </label>
@@ -1109,50 +1375,114 @@ export function ListPropertyWizard() {
                           <FieldLabel>Or paste image / video URL</FieldLabel>
                           <div className="flex gap-2">
                             <InputField
-                              value={mediaInput}
-                              onChange={(e) => setMediaInput(e.target.value)}
+                              value={mediaUrlInput}
+                              onChange={(e) => {
+                                setMediaUrlInput(e.target.value);
+                                if (mediaUrlError) setMediaUrlError(null);
+                              }}
                               placeholder="https://..."
                               className="flex-1"
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
-                                  addMedia();
+                                  addMediaUrl();
                                 }
                               }}
                             />
                             <button
                               type="button"
-                              onClick={addMedia}
+                              onClick={addMediaUrl}
                               className="px-4 py-2.5 bg-navy-900 text-white text-sm font-semibold rounded-xl hover:bg-navy-800 transition-all"
                             >
                               Add
                             </button>
                           </div>
+                          {mediaUrlError && (
+                            <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600">
+                              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {mediaUrlError}
+                            </p>
+                          )}
                         </div>
 
-                        {/* Preview grid */}
-                        {mediaUrls.length > 0 && (
+                        {/* Thumbnail grid — drag to reorder, hover for actions */}
+                        {mediaItems.length > 0 && (
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                            {mediaUrls.map((url, i) => (
+                            {mediaItems.map((item, i) => (
                               <div
-                                key={i}
-                                className="relative aspect-square rounded-xl overflow-hidden bg-navy-100 group shadow-sm"
+                                key={item.id}
+                                draggable={!item.uploading}
+                                onDragStart={() => setDragIndex(i)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (dragIndex !== null) reorderMedia(dragIndex, i);
+                                  setDragIndex(null);
+                                }}
+                                className="group relative aspect-square rounded-xl overflow-hidden bg-navy-100 shadow-sm cursor-grab active:cursor-grabbing"
                               >
-                                <img
-                                  src={url}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200';
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setMediaUrls((prev) => prev.filter((_, j) => j !== i))}
-                                  className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-600"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
+                                {item.type === 'video' ? (
+                                  <video src={item.url} className="h-full w-full object-cover" muted />
+                                ) : (
+                                  <img
+                                    src={item.url}
+                                    alt=""
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200';
+                                    }}
+                                  />
+                                )}
+
+                                {item.type === 'video' && (
+                                  <PlayCircle className="pointer-events-none absolute inset-0 m-auto h-8 w-8 text-white drop-shadow" />
+                                )}
+
+                                {item.uploading && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                    <Loader2 className="h-6 w-6 animate-spin text-white" />
+                                  </div>
+                                )}
+
+                                {item.isCover && !item.uploading && (
+                                  <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-bold text-white shadow">
+                                    <Star className="h-2.5 w-2.5 fill-current" /> Cover
+                                  </span>
+                                )}
+
+                                {!item.uploading && (
+                                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/0 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewItem(item)}
+                                      title="Preview"
+                                      className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                    {!item.isCover && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setCoverMedia(item.id)}
+                                        title="Set as cover"
+                                        className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white"
+                                      >
+                                        <Star className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => removeMedia(item)}
+                                      title="Delete"
+                                      className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-red-600 hover:bg-red-600 hover:text-white"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+
+                                {!item.uploading && (
+                                  <GripVertical className="pointer-events-none absolute bottom-1 right-1 h-3.5 w-3.5 text-white/70 drop-shadow" />
+                                )}
                               </div>
                             ))}
                           </div>
@@ -1171,6 +1501,32 @@ export function ListPropertyWizard() {
                             <InputField {...register('media_urls.virtual_tour')} placeholder="https://..." />
                           </div>
                         </div>
+
+                        {/* Lightbox preview */}
+                        {previewItem && (
+                          <div
+                            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6"
+                            onClick={() => setPreviewItem(null)}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setPreviewItem(null)}
+                              className="absolute right-5 top-5 grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                            >
+                              <X className="h-5 w-5" />
+                            </button>
+                            {previewItem.type === 'video' ? (
+                              <video src={previewItem.url} controls autoPlay className="max-h-[85vh] max-w-full rounded-xl" onClick={(e) => e.stopPropagation()} />
+                            ) : (
+                              <img
+                                src={previewItem.url}
+                                alt=""
+                                className="max-h-[85vh] max-w-full rounded-xl object-contain"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 

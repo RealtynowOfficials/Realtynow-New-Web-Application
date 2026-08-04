@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Check, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Bell, Check, Trash2, CheckCircle2, AlertCircle, Send, Search, X, Radio } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useRealtimeNotifications } from '../../lib/realtime';
@@ -10,7 +10,153 @@ import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getPortalSections } from './sections';
 import { getAdminSections } from './sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { Button, Card, EmptyState, Badge } from '../../components/ui';
+import { Button, Card, EmptyState, Badge, Input, Textarea } from '../../components/ui';
+import { useToast } from '../../components/toast';
+
+type ProfileHit = { id: string; first_name: string | null; last_name: string | null; phone: string | null; role: string };
+
+function AdminSendNotificationPanel() {
+  const { t } = useLanguageContext();
+  const toast = useToast();
+  const [mode, setMode] = useState<'user' | 'broadcast'>('user');
+  const [search, setSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<ProfileHit | null>(null);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [link, setLink] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const { data: hits } = useQuery({
+    queryKey: ['admin-notif-user-search', search],
+    queryFn: async () => {
+      if (search.trim().length < 2) return [];
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, phone, role')
+        .or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,phone.ilike.%${search}%`)
+        .limit(8);
+      return (data ?? []) as ProfileHit[];
+    },
+    enabled: mode === 'user' && search.trim().length >= 2 && !selectedUser,
+  });
+
+  const reset = () => {
+    setTitle('');
+    setBody('');
+    setLink('');
+    setSelectedUser(null);
+    setSearch('');
+  };
+
+  const send = async () => {
+    if (!title.trim()) {
+      toast.addToast('error', 'Title is required');
+      return;
+    }
+    if (mode === 'user' && !selectedUser) {
+      toast.addToast('error', 'Select a recipient first');
+      return;
+    }
+    setSending(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_send_notification', {
+        p_title: title.trim(),
+        p_body: body.trim() || null,
+        p_user_id: mode === 'user' ? selectedUser!.id : null,
+        p_broadcast: mode === 'broadcast',
+        p_link: link.trim() || null,
+      });
+      if (error) throw error;
+      toast.addToast('success', mode === 'broadcast' ? `Sent to ${data} users` : 'Notification sent');
+      reset();
+    } catch (err) {
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to send notification');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Card className="mb-6 p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Send className="h-4 w-4 text-red-600" />
+        <h3 className="font-bold text-navy-900">{t('admin.sendNotification', 'Send Notification')}</h3>
+      </div>
+
+      <div className="mb-4 flex rounded-lg bg-navy-100 p-1 w-fit">
+        <button
+          onClick={() => setMode('user')}
+          className={cn('flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium transition', mode === 'user' ? 'bg-white text-navy-900 shadow' : 'text-navy-600')}
+        >
+          <Search className="h-3.5 w-3.5" /> One user
+        </button>
+        <button
+          onClick={() => setMode('broadcast')}
+          className={cn('flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium transition', mode === 'broadcast' ? 'bg-white text-navy-900 shadow' : 'text-navy-600')}
+        >
+          <Radio className="h-3.5 w-3.5" /> Broadcast to all
+        </button>
+      </div>
+
+      {mode === 'user' && (
+        <div className="mb-3">
+          {selectedUser ? (
+            <div className="flex items-center justify-between rounded-xl border border-navy-150 bg-navy-50 px-3 py-2">
+              <span className="text-sm font-semibold text-navy-800">
+                {[selectedUser.first_name, selectedUser.last_name].filter(Boolean).join(' ') || selectedUser.phone || selectedUser.id}
+                <span className="ml-2 text-xs font-normal text-navy-500">({selectedUser.role})</span>
+              </span>
+              <button onClick={() => setSelectedUser(null)} className="text-navy-400 hover:text-red-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name or phone..."
+              />
+              {hits && hits.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-y-auto rounded-xl border border-navy-100 bg-white shadow-lg">
+                  {hits.map((h) => (
+                    <button
+                      key={h.id}
+                      onClick={() => {
+                        setSelectedUser(h);
+                        setSearch('');
+                      }}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-navy-50"
+                    >
+                      <span className="font-medium text-navy-800">
+                        {[h.first_name, h.last_name].filter(Boolean).join(' ') || h.phone || h.id}
+                      </span>
+                      <span className="text-xs text-navy-400">{h.role}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Platform maintenance tonight" />
+        <Input label="Link (optional)" value={link} onChange={(e) => setLink(e.target.value)} placeholder="/portal/..." />
+      </div>
+      <div className="mt-3">
+        <Textarea label="Message" value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="Notification body..." />
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button onClick={send} loading={sending} icon={<Send className="h-4 w-4" />}>
+          {mode === 'broadcast' ? 'Send to everyone' : 'Send'}
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
 export function PortalNotifications() {
   const { user, profile } = useAuth();
@@ -91,6 +237,8 @@ export function PortalNotifications() {
         title={t('portal.notifications', 'Notifications')}
         subtitle={t('portal.notificationsDesc', 'Stay updated with your latest alerts and reminders.')}
       />
+
+      {profile?.role === 'admin' && <AdminSendNotificationPanel />}
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex rounded-lg bg-navy-100 p-1">

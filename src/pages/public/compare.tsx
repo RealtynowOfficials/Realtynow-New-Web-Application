@@ -5,7 +5,7 @@ import { GitCompare, MapPin, X, CheckCircle2, XCircle, ArrowLeft, Home, Shield, 
 import { fetchComparedProperties, clearCompareList, toggleCompareProperty } from '../../lib/compare';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { formatCompactPrice, formatPrice } from '../../lib/utils';
+import { formatCompactPrice, formatPrice , generatePropertyUrl} from '../../lib/utils';
 import type { Property } from '../../lib/types';
 import { useToast } from '../../components/toast';
 import { Spinner } from '../../components/ui';
@@ -201,7 +201,7 @@ export function ComparePage() {
                         {/* Title & location */}
                         <div>
                           <Link
-                            to={`/property/${p.id}`}
+                            to={generatePropertyUrl(p)}
                             className="text-sm font-bold text-gray-900 hover:text-red-600 transition-colors line-clamp-2 leading-tight block"
                           >
                             {p.title}
@@ -303,7 +303,7 @@ export function ComparePage() {
                     <td key={p.id} className="p-4 border-r border-gray-100 last:border-r-0">
                       <div className="flex flex-col gap-2">
                         <Link
-                          to={`/property/${p.id}`}
+                          to={generatePropertyUrl(p)}
                           className="block text-center bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-all"
                         >
                           {t('compare.viewProperty', 'View Property')}

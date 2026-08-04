@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { MessageSquare, User, Phone, Save, CheckCircle2, KeyRound, Upload, Calendar, Clock, Bell } from 'lucide-react';
+import { MessageSquare, User, Phone, Save, CheckCircle2, Upload, Calendar, Clock, Bell } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
@@ -9,7 +9,7 @@ import { uploadFile } from '../../lib/storage';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getPortalSections } from './sections';
 import { Card, EmptyState, Skeleton, Badge, Button, Input, Avatar } from '../../components/ui';
-import { formatDate } from '../../lib/utils';
+import { formatDate , generatePropertyUrl} from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 
 export function PortalEnquiries() {
@@ -74,7 +74,7 @@ export function PortalEnquiries() {
                 <div key={e.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
-                      <Link to={`/property/${e.property?.id}`} className="font-semibold text-navy-900 hover:underline">
+                      <Link to={generatePropertyUrl(e.property as any)} className="font-semibold text-navy-900 hover:underline">
                         {e.property?.title ?? t('portal.propEnquiry', 'Property enquiry')}
                       </Link>
                       <p className="mt-1 text-sm text-navy-600">{e.message}</p>
@@ -210,9 +210,6 @@ export function PortalSettings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [pwForm, setPwForm] = useState({ password: '', confirm: '' });
-  const [pwError, setPwError] = useState('');
-  const [pwSuccess, setPwSuccess] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
 
   useEffect(() => {
@@ -265,21 +262,6 @@ export function PortalSettings() {
     }
     setUploading(false);
   };
-
-  const changePw = useMutation({
-    mutationFn: async () => {
-      if (pwForm.password.length < 8) throw new Error(t('portal.min8Chars', 'Password must be at least 8 characters'));
-      if (pwForm.password !== pwForm.confirm) throw new Error(t('portal.pwMismatch', 'Passwords do not match'));
-      const { error } = await supabase.auth.updateUser({ password: pwForm.password });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      setPwSuccess(true);
-      setPwForm({ password: '', confirm: '' });
-      setTimeout(() => setPwSuccess(false), 3000);
-    },
-    onError: (err: Error) => setPwError(err.message),
-  });
 
   return (
     <DashboardLayout sections={getPortalSections(t)} title={t('common.editProfile', 'Settings')}>
@@ -370,35 +352,6 @@ export function PortalSettings() {
                 <CheckCircle2 className="h-4 w-4" /> {t('forms.saved', 'Saved!')}
               </span>
             )}
-          </div>
-
-          <div className="mt-8 border-t border-navy-100 pt-6">
-            <h3 className="font-display font-semibold text-navy-900 flex items-center gap-2">
-              <KeyRound className="h-5 w-5" /> {t('portal.changePassword', 'Change password')}
-            </h3>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Input
-                label={t('portal.newPassword', 'New password')}
-                type="password"
-                value={pwForm.password}
-                onChange={(e) => setPwForm((f) => ({ ...f, password: e.target.value }))}
-              />
-              <Input
-                label={t('portal.confirmPassword', 'Confirm password')}
-                type="password"
-                value={pwForm.confirm}
-                onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
-              />
-            </div>
-            {pwError && <p className="mt-2 text-sm text-error-600">{pwError}</p>}
-            {pwSuccess && (
-              <p className="mt-2 flex items-center gap-1 text-sm text-success-600">
-                <CheckCircle2 className="h-4 w-4" /> {t('portal.passwordUpdated', 'Password updated!')}
-              </p>
-            )}
-            <Button className="mt-4" variant="secondary" onClick={() => changePw.mutate()} loading={changePw.isPending}>
-              {t('portal.updatePassword', 'Update password')}
-            </Button>
           </div>
 
           <div className="mt-8 border-t border-navy-100 pt-6">

@@ -11,7 +11,7 @@ import { Card, Button, EmptyState, Skeleton, Badge } from '../../components/ui';
 import { PropertyCard, PropertyCardSkeleton } from '../../components/property-card';
 import { getPortalSections } from './sections';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate } from '../../lib/utils';
+import { formatPrice, formatDate , generatePropertyUrl} from '../../lib/utils';
 import { useToast } from '../../components/toast';
 import { fetchComparedProperties, toggleCompareProperty, clearCompareList } from '../../lib/compare';
 import { RemindersWidget } from '../../components/reminders-widget';
@@ -399,7 +399,7 @@ export function PortalCompare() {
                         </button>
                       </div>
                       <Link
-                        to={`/property/${p.id}`}
+                        to={generatePropertyUrl(p)}
                         className="font-display font-bold text-navy-900 hover:text-red-600 line-clamp-2 block"
                       >
                         {p.title}
@@ -428,7 +428,7 @@ export function PortalCompare() {
                 </td>
                 {items.map((p) => (
                   <td key={p.id} className="p-4 border-l border-navy-100">
-                    <Link to={`/property/${p.id}`}>
+                    <Link to={generatePropertyUrl(p)}>
                       <Button size="sm" variant="secondary" className="w-full">
                         {t('compare.viewProperty', 'View Details')}
                       </Button>

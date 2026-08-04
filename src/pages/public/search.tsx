@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { PropertyMap } from '../../components/property-map';
 import { VoiceSearchButton } from '../../components/voice-search-button';
 import { generateSpeech } from '../../lib/elevenlabs';
-import { PostPropertyBanner } from '../../components/post-property-banner';
 import { ListingPromoBanner } from '../../components/listing-promo-banner';
 import {
   SlidersHorizontal,
@@ -16,14 +15,11 @@ import {
   ChevronRight,
   Search,
   Heart,
-  Share2,
   Phone,
   MessageCircle,
   Calendar,
   Eye,
-  Sparkles,
   Camera,
-  Play,
   Bed,
   Bath,
   Car,
@@ -34,7 +30,6 @@ import {
   TrendingUp,
   BarChart3,
   Map,
-  BookmarkPlus,
   GitCompare,
   CheckCircle2,
   Clock,
@@ -43,13 +38,15 @@ import {
   SortDesc,
   LayoutGrid,
   Rows3,
+  Share2,
+  ShieldCheck,
 } from 'lucide-react';
 import { type PropertyFilters } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../components/toast';
-import { formatCompactPrice, formatNumber, cn } from '../../lib/utils';
+import { formatCompactPrice, formatNumber, cn , generatePropertyUrl} from '../../lib/utils';
 import type { Property } from '../../lib/types';
 
 import { AdvancedFilters } from '../../components/advanced-filters';
@@ -59,25 +56,6 @@ const PAGE_SIZE = 10;
 type ViewMode = 'list' | 'grid' | 'map';
 type SortOption = 'newest' | 'price_asc' | 'price_desc' | 'popular' | 'area';
 
-// ──────────────────────────────────────────────────────────────
-// AI Score Badge
-// ──────────────────────────────────────────────────────────────
-function AIScoreBadge({ score }: { score: number }) {
-  const color =
-    score >= 90
-      ? 'from-emerald-500 to-green-600'
-      : score >= 75
-        ? 'from-amber-500 to-orange-500'
-        : 'from-slate-400 to-slate-500';
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full bg-gradient-to-r ${color} px-2 py-0.5 text-[10px] font-extrabold text-white shadow`}
-    >
-      <Sparkles className="h-2.5 w-2.5" />
-      AI {score}%
-    </span>
-  );
-}
 
 // ──────────────────────────────────────────────────────────────
 // Property Horizontal List Card (desktop/tablet)
@@ -94,15 +72,23 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
   const { t } = useLanguageContext();
   const navigate = useNavigate();
   const [activeImg, setActiveImg] = useState(0);
-  const [hovered, setHovered] = useState(false);
   const [imgHovered, setImgHovered] = useState(false);
+  const [showMore, setShowMore] = useState(false);
 
   const images = p.images?.length ? p.images : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
-  const aiScore = useMemo(() => Math.floor(75 + Math.random() * 25), [p.id]);
   const investScore = useMemo(() => Math.floor(60 + Math.random() * 35), [p.id]);
   const pricePerSqft = p.built_up_area && p.price ? Math.round(p.price / p.built_up_area) : null;
 
-  const topAmenities = (p.amenities ?? []).slice(0, 5);
+  // Cap to 2-3 meaningful badges: purpose is always shown; at most one
+  // "highlight" badge on top of it (luxury takes priority over featured).
+  const highlightBadge = p.is_luxury
+    ? { label: t('common.luxury', 'Luxury'), className: 'bg-purple-600' }
+    : p.is_featured
+      ? { label: t('common.featured', 'Featured'), className: 'bg-amber-500' }
+      : null;
+
+  const topAmenities = (p.amenities ?? []).slice(0, 4);
+  const extraAmenityCount = Math.max(0, (p.amenities?.length ?? 0) - 4);
   const amenityIcons: Record<string, string> = {
     'Swimming Pool': '🏊',
     Gym: '💪',
@@ -114,10 +100,23 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
     Garden: '🌿',
   };
 
+  const specs = [
+    p.bedrooms != null && { icon: Bed, val: `${p.bedrooms} BHK`, key: 'bed' },
+    p.bathrooms != null && { icon: Bath, val: `${p.bathrooms} Bath`, key: 'bath' },
+    p.parking != null && { icon: Car, val: `${p.parking} Park`, key: 'park' },
+    p.built_up_area && { icon: Maximize2, val: `${formatNumber(p.built_up_area)} sq.ft`, key: 'area' },
+  ].filter(Boolean) as { icon: typeof Bed; val: string; key: string }[];
+
+  const nearby = [
+    { label: 'Metro 800m', icon: '🚇' },
+    { label: 'School 500m', icon: '🏫' },
+    { label: 'Hospital 1.2km', icon: '🏥' },
+  ];
+
   const handleContact = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate(`/property/${p.id}`);
+    navigate(generatePropertyUrl(p));
   };
 
   return (
@@ -125,38 +124,26 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={cn(
-        'group relative flex flex-col sm:flex-row bg-white rounded-2xl overflow-hidden border transition-all duration-300 cursor-pointer',
-        hovered ? 'shadow-xl shadow-slate-200 border-slate-200 -translate-y-1' : 'shadow-sm border-slate-100',
-      )}
-      style={{ minHeight: 240 }}
-      onClick={() => navigate(`/property/${p.id}`)}
+      whileHover={{ y: -2 }}
+      className="group relative flex flex-col sm:flex-row bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200 transition-all duration-300 cursor-pointer"
+      onClick={() => navigate(generatePropertyUrl(p))}
     >
-      {/* ── IMAGE PANEL (38%) ── */}
+      {/* ── LEFT: IMAGE GALLERY ── */}
       <div
-        className="relative w-full sm:w-[42%] md:w-[45%] shrink-0 overflow-hidden"
-        style={{ minHeight: 220 }}
+        className="relative w-full sm:w-[40%] shrink-0 overflow-hidden aspect-[4/3] sm:aspect-auto"
         onMouseEnter={() => setImgHovered(true)}
         onMouseLeave={() => setImgHovered(false)}
       >
         <img
           src={images[activeImg]}
           alt={p.title}
-          className={cn(
-            'h-full w-full object-cover transition-transform duration-500',
-            imgHovered ? 'scale-110' : 'scale-100',
-          )}
-          style={{ minHeight: 220 }}
+          className={cn('h-full w-full object-cover transition-transform duration-500', imgHovered ? 'scale-110' : 'scale-100')}
           loading="lazy"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/5" />
 
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10" />
-
-        {/* Top-left badges */}
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+        {/* Badges — purpose + at most one highlight */}
+        <div className="absolute top-3 left-3 flex gap-1.5 z-10">
           {p.purpose && (
             <span
               className={cn(
@@ -167,35 +154,34 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
               {p.purpose === 'Rent' ? t('property.forRent', 'For Rent') : t('property.forSale', 'For Sale')}
             </span>
           )}
-          {p.is_featured && (
-            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500 text-white shadow uppercase">
-              {t('common.featured', 'Featured')}
-            </span>
-          )}
-          {p.is_luxury && (
-            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-600 text-white shadow uppercase">
-              {t('common.luxury', 'Luxury')}
-            </span>
-          )}
-          {p.has_virtual_tour && (
-            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow flex items-center gap-1 uppercase">
-              <Camera className="h-2.5 w-2.5" /> 360°
-            </span>
-          )}
-          {p.videos && p.videos.length > 0 && (
-            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-600 text-white shadow flex items-center gap-1 uppercase">
-              <Play className="h-2.5 w-2.5" /> Video
+          {highlightBadge && (
+            <span className={cn('text-[10px] font-extrabold px-2 py-0.5 rounded-full text-white shadow uppercase', highlightBadge.className)}>
+              {highlightBadge.label}
             </span>
           )}
         </div>
 
-        {/* Top-right actions */}
+        {/* Save + Compare */}
         <div className="absolute top-3 right-3 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCompare?.(p.id);
+            }}
+            title={t('property.addToCompare', 'Compare')}
+            className={cn(
+              'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
+              compared ? 'text-blue-600' : 'text-slate-500',
+            )}
+          >
+            <GitCompare className="h-4 w-4" />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onSave?.(p.id);
             }}
+            title={t('property.saveProperty', 'Save')}
             className={cn(
               'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
               saved ? 'text-red-600' : 'text-slate-500',
@@ -203,12 +189,9 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
           >
             <Heart className={cn('h-4 w-4', saved && 'fill-red-600')} />
           </button>
-          <button className="grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm text-slate-500 hover:scale-110 transition">
-            <Share2 className="h-4 w-4" />
-          </button>
         </div>
 
-        {/* Image gallery dots + count */}
+        {/* Gallery dots + count */}
         {images.length > 1 && (
           <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-1 z-10">
             {images.slice(0, 5).map((_, i) => (
@@ -218,10 +201,7 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
                   e.stopPropagation();
                   setActiveImg(i);
                 }}
-                className={cn(
-                  'h-1.5 rounded-full transition-all',
-                  activeImg === i ? 'w-5 bg-white' : 'w-1.5 bg-white/50',
-                )}
+                className={cn('h-1.5 rounded-full transition-all', activeImg === i ? 'w-5 bg-white' : 'w-1.5 bg-white/50')}
               />
             ))}
           </div>
@@ -229,98 +209,56 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
         <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
           <Camera className="h-2.5 w-2.5" /> {images.length}
         </div>
-
-        {/* AI match chip */}
-        <div className="absolute top-10 right-3 z-10">
-          <AIScoreBadge score={aiScore} />
-        </div>
       </div>
 
-      {/* ── CONTENT PANEL (62%) ── */}
-      <div className="flex flex-1 flex-col p-4 sm:p-5 justify-between min-w-0">
-        {/* Header: Title + Price */}
+      {/* ── RIGHT: PROPERTY DETAILS ── */}
+      <div className="flex flex-1 flex-col p-4 sm:p-5 min-w-0">
+        {/* Title + Price */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 truncate leading-tight">
-              {p.title}
-            </h2>
+            <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 truncate leading-tight">{p.title}</h2>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
               <MapPin className="h-3 w-3 text-red-500 shrink-0" />
-              <span className="truncate">{[p.address, p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
+              <span className="truncate">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
             </div>
             {p.property_type_name && (
-              <div className="mt-1 flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                  {p.property_type_name}
-                </span>
-                {(p as any).is_verified && (
-                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                    <CheckCircle2 className="h-3 w-3" /> {t('common.verified', 'Verified')}
-                  </span>
-                )}
-              </div>
+              <span className="mt-1.5 inline-block text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                {p.property_type_name}
+              </span>
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-display text-xl sm:text-2xl font-extrabold text-slate-900">
-              {formatCompactPrice(p.price)}
-            </p>
+            <p className="font-display text-xl sm:text-2xl font-extrabold text-slate-900">{formatCompactPrice(p.price)}</p>
             {pricePerSqft && <p className="text-[11px] text-slate-500 mt-0.5">₹{formatNumber(pricePerSqft)}/sq.ft</p>}
             {p.purpose === 'Rent' && <p className="text-[11px] text-slate-500">/month</p>}
           </div>
         </div>
 
-        {/* Specs row */}
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-          {[
-            p.bedrooms != null && { icon: Bed, val: `${p.bedrooms} BHK`, key: 'bed' },
-            p.bathrooms != null && { icon: Bath, val: `${p.bathrooms} Bath`, key: 'bath' },
-            p.parking != null && { icon: Car, val: `${p.parking} Park`, key: 'park' },
-            p.built_up_area && { icon: Maximize2, val: `${formatNumber(p.built_up_area)} sq.ft`, key: 'area' },
-          ]
-            .filter(Boolean)
-            .map((s: any) => (
+        {/* Key specs — one line */}
+        {specs.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+            {specs.map((s) => (
               <div key={s.key} className="flex items-center gap-1 text-sm text-slate-700">
                 <s.icon className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                 <span className="font-semibold">{s.val}</span>
               </div>
             ))}
-          {p.floor_number != null && (
-            <div className="flex items-center gap-1 text-sm text-slate-700">
-              <Building2 className="h-3.5 w-3.5 text-slate-400" />
-              <span className="font-semibold">
-                Floor {p.floor_number}
-                {p.total_floors ? `/${p.total_floors}` : ''}
-              </span>
-            </div>
-          )}
-          {p.facing && (
-            <div className="flex items-center gap-1 text-sm text-slate-700">
-              <Navigation className="h-3.5 w-3.5 text-slate-400" />
-              <span className="font-semibold">{p.facing}</span>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Nearby chips */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {[
-            { label: 'Metro 800m', icon: '🚇' },
-            { label: 'School 500m', icon: '🏫' },
-            { label: 'Hospital 1.2km', icon: '🏥' },
-          ].map((n) => (
-            <span
-              key={n.label}
-              className="inline-flex items-center gap-1 rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600"
-            >
-              {n.icon} {n.label}
+        {/* Nearby places — one compact row, icons only */}
+        <div className="mt-2.5 flex items-center gap-3 text-[11px] text-slate-500">
+          {nearby.map((n, i) => (
+            <span key={n.label} className="flex items-center gap-1 whitespace-nowrap">
+              {i > 0 && <span className="text-slate-200">·</span>}
+              <span>{n.icon}</span> {n.label}
             </span>
           ))}
         </div>
 
-        {/* Amenities */}
+        {/* Amenities — max 4 + more */}
         {topAmenities.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             {topAmenities.map((a) => (
               <span
                 key={a}
@@ -329,99 +267,120 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
                 {amenityIcons[a] ?? '✓'} {a}
               </span>
             ))}
-            {(p.amenities?.length ?? 0) > 5 && (
-              <span className="text-[11px] font-semibold text-red-600 px-1">
-                +{(p.amenities?.length ?? 0) - 5} more
-              </span>
+            {extraAmenityCount > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMore(true);
+                }}
+                className="text-[11px] font-semibold text-red-600 hover:underline px-1"
+              >
+                +{extraAmenityCount} More
+              </button>
             )}
           </div>
         )}
 
-        {/* AI Insight chips */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-            <TrendingUp className="h-3 w-3" /> Invest {investScore}%
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">
-            <BarChart3 className="h-3 w-3" /> Rental Yield {(2.5 + Math.random() * 2).toFixed(1)}%
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
-            <Zap className="h-3 w-3" /> High Demand
-          </span>
-        </div>
+        {/* More Details — expandable */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowMore((v) => !v);
+          }}
+          className="mt-2.5 flex items-center gap-1 self-start text-[11px] font-bold text-slate-500 hover:text-red-600 transition-colors"
+        >
+          {showMore ? t('common.lessDetails', 'Less Details') : t('common.moreDetails', 'More Details')}
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showMore && 'rotate-180')} />
+        </button>
 
-        {/* Footer: Updated time + Actions */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            <Clock className="h-3 w-3" />
-            <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
-            {p.view_count && (
-              <>
-                <span className="text-slate-200">·</span>
-                <Eye className="h-3 w-3" />
-                <span>{formatNumber(p.view_count)} views</span>
-              </>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex items-center gap-1.5 w-full xl:w-auto overflow-x-auto hide-scrollbar" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={handleContact}
-              className="flex flex-1 xl:flex-none justify-center items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-700 px-2.5 py-1.5 text-[11px] xl:text-xs font-bold text-white transition-all hover:scale-[1.02] shadow-sm shadow-red-600/30 whitespace-nowrap"
-            >
-              <Phone className="h-3.5 w-3.5" /> {t('property.contactAgent', 'Contact')}
-            </button>
-            <button
-              onClick={handleContact}
-              className="flex flex-1 xl:flex-none justify-center items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[11px] xl:text-xs font-bold text-white transition-all hover:scale-[1.02] shadow-sm shadow-emerald-600/30 whitespace-nowrap"
-            >
-              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-            </button>
-            <button
-              onClick={handleContact}
-              className="flex flex-1 xl:flex-none justify-center items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-2.5 py-1.5 text-[11px] xl:text-xs font-bold text-slate-700 transition-all hover:scale-[1.02] whitespace-nowrap"
-            >
-              <Calendar className="h-3.5 w-3.5" /> {t('property.bookVisit', 'Visit')}
-            </button>
-            <Link
-              to={`/property/${p.id}`}
-              className="flex flex-1 xl:flex-none justify-center items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 text-[11px] xl:text-xs font-bold text-red-600 transition-all hover:scale-[1.02] whitespace-nowrap"
+        <AnimatePresence>
+          {showMore && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <Eye className="h-3.5 w-3.5" /> {t('common.viewDetails', 'Details')}
-            </Link>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCompare?.(p.id);
-              }}
-              className={cn(
-                'grid h-8 w-8 place-items-center rounded-xl border transition hover:scale-[1.02]',
-                compared
-                  ? 'border-blue-400 bg-blue-50 text-blue-600'
-                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
-              )}
-              title={t('property.addToCompare', 'Compare')}
-            >
-              <GitCompare className="h-4 w-4" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSave?.(p.id);
-              }}
-              className={cn(
-                'grid h-8 w-8 place-items-center rounded-xl border transition hover:scale-[1.02]',
-                saved
-                  ? 'border-red-400 bg-red-50 text-red-600'
-                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
-              )}
-              title={t('property.saveProperty', 'Save')}
-            >
-              <BookmarkPlus className="h-4 w-4" />
-            </button>
-          </div>
+              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5">
+                {p.floor_number != null && (
+                  <div className="flex items-center gap-1 text-xs text-slate-600">
+                    <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                    Floor {p.floor_number}
+                    {p.total_floors ? `/${p.total_floors}` : ''}
+                  </div>
+                )}
+                {p.facing && (
+                  <div className="flex items-center gap-1 text-xs text-slate-600">
+                    <Navigation className="h-3.5 w-3.5 text-slate-400" /> {p.facing} facing
+                  </div>
+                )}
+                {(p as any).is_verified && (
+                  <div className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {t('common.verified', 'Verified')}
+                  </div>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                  <TrendingUp className="h-3 w-3" /> Invest {investScore}%
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+                  <BarChart3 className="h-3 w-3" /> Rental Yield {(2.5 + Math.random() * 2).toFixed(1)}%
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
+                  <Zap className="h-3 w-3" /> High Demand
+                </span>
+                {p.amenities && p.amenities.length > 4 && (
+                  <div className="mt-1 flex w-full flex-wrap gap-1.5">
+                    {p.amenities.slice(4).map((a) => (
+                      <span
+                        key={a}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                      >
+                        {amenityIcons[a] ?? '✓'} {a}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Updated date */}
+        <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400">
+          <Clock className="h-3 w-3" />
+          <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
+        </div>
+
+        {/* CTA row — 4 equal-width buttons, no scrolling */}
+        <div className="mt-3 grid grid-cols-4 gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={handleContact}
+            className="flex items-center justify-center gap-1 rounded-xl bg-red-600 hover:bg-red-700 px-2 py-2 text-[11px] font-bold text-white transition-all shadow-sm shadow-red-600/30"
+          >
+            <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('property.contactAgent', 'Contact')}</span>
+          </button>
+          <button
+            onClick={handleContact}
+            className="flex items-center justify-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-2 py-2 text-[11px] font-bold text-white transition-all shadow-sm shadow-emerald-600/30"
+          >
+            <MessageCircle className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">WhatsApp</span>
+          </button>
+          <button
+            onClick={handleContact}
+            className="flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-700 transition-all"
+          >
+            <Calendar className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('property.bookVisit', 'Visit')}</span>
+          </button>
+          <Link
+            to={generatePropertyUrl(p)}
+            className="flex items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-2 text-[11px] font-bold text-red-600 transition-all"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Eye className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('common.viewDetails', 'Details')}</span>
+          </Link>
         </div>
       </div>
     </motion.article>
@@ -433,93 +392,95 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
 // ──────────────────────────────────────────────────────────────
 function GridCard({
   property: p,
+  onSave,
+  saved,
 }: {
   property: Property & { city_name?: string; locality_name?: string; property_type_name?: string };
+  onSave?: (id: string) => void;
+  saved?: boolean;
 }) {
-  const { t } = useLanguageContext();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const images = p.images?.length ? p.images : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
-  const aiScore = useMemo(() => Math.floor(75 + Math.random() * 25), [p.id]);
+  const reraNumber = (p as { rera_number?: string | null }).rera_number ?? null;
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const url = `${window.location.origin}${generatePropertyUrl(p)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: p.title, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      addToast('success', 'Link copied to clipboard');
+    } catch {
+      /* user cancelled share sheet — no-op */
+    }
+  };
 
   return (
     <motion.article
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.25 }}
-      className="group relative flex flex-col bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-      onClick={() => navigate(`/property/${p.id}`)}
+      whileHover={{ y: -5 }}
+      className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm transition-shadow duration-300 hover:shadow-xl cursor-pointer"
+      onClick={() => navigate(generatePropertyUrl(p))}
     >
-      <div className="relative aspect-[4/3] overflow-hidden">
+      <div className="relative aspect-video overflow-hidden bg-slate-100">
         <img
           src={images[0]}
           alt={p.title}
-          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-        <div className="absolute top-2 left-2 flex gap-1 flex-wrap">
-          {p.purpose && (
-            <span
-              className={cn(
-                'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
-                p.purpose === 'Rent' ? 'bg-blue-600 text-white' : 'bg-red-600 text-white',
-              )}
-            >
-              {p.purpose === 'Rent' ? t('property.forRent', 'Rent') : t('property.forSale', 'Sale')}
-            </span>
-          )}
-          {p.is_featured && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
-              {t('common.featured', 'Featured')}
-            </span>
-          )}
+        {reraNumber && (
+          <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold text-slate-700 shadow-sm backdrop-blur">
+            <ShieldCheck className="h-3 w-3 text-emerald-600" /> RERA
+          </span>
+        )}
+        <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onSave?.(p.id)}
+            aria-label={saved ? 'Remove from favorites' : 'Add to favorites'}
+            className={cn(
+              'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110',
+              saved ? 'bg-white text-red-500' : 'bg-white/90 text-slate-600 hover:bg-white',
+            )}
+          >
+            <Heart className={cn('h-3.5 w-3.5', saved && 'fill-red-500')} />
+          </button>
+          <button
+            onClick={handleShare}
+            aria-label="Share this property"
+            className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-white"
+          >
+            <Share2 className="h-3.5 w-3.5" />
+          </button>
         </div>
-        <button
-          className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-500 shadow"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Heart className="h-3.5 w-3.5" />
-        </button>
-        <div className="absolute bottom-2 right-2">
-          <AIScoreBadge score={aiScore} />
-        </div>
-        <div className="absolute bottom-2 left-2 text-white font-display font-extrabold text-base">
-          {formatCompactPrice(p.price)}
-        </div>
+        {p.possession_status && (
+          <span className="absolute bottom-2.5 left-2.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">
+            {p.possession_status}
+          </span>
+        )}
       </div>
-      <div className="p-3">
-        <h3 className="font-bold text-slate-900 text-sm truncate">{p.title}</h3>
-        <p className="text-[11px] text-slate-500 mt-0.5 truncate flex items-center gap-0.5">
-          <MapPin className="h-3 w-3 shrink-0 text-red-400" />
-          {p.locality_name}, {p.city_name}
+      <div className="flex flex-1 flex-col p-3.5">
+        <p className="font-display text-base font-extrabold text-slate-900">
+          {formatCompactPrice(p.price)}
+          {p.purpose === 'Rent' && <span className="text-[10px] font-medium text-slate-400">/mo</span>}
         </p>
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-700">
-          {p.bedrooms != null && (
-            <span className="flex items-center gap-0.5">
-              <Bed className="h-3 w-3 text-slate-400" />
-              {p.bedrooms} BHK
-            </span>
-          )}
-          {p.bathrooms != null && (
-            <span className="flex items-center gap-0.5">
-              <Bath className="h-3 w-3 text-slate-400" />
-              {p.bathrooms}
-            </span>
-          )}
-          {p.built_up_area && (
-            <span className="flex items-center gap-0.5">
-              <Maximize2 className="h-3 w-3 text-slate-400" />
-              {formatNumber(p.built_up_area)} sqft
-            </span>
-          )}
-        </div>
-        <Link
-          to={`/property/${p.id}`}
-          className="mt-3 block w-full text-center rounded-xl bg-red-600 hover:bg-red-700 py-1.5 text-xs font-bold text-white transition"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {t('common.viewDetails', 'View Details')}
-        </Link>
+        <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 truncate">{p.title}</h3>
+        <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+          <MapPin className="h-3 w-3 shrink-0 text-red-400" />
+          <span className="truncate">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
+        </p>
+        {p.bedrooms != null && (
+          <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+            <Bed className="h-3 w-3 text-slate-400" /> {p.bedrooms} BHK
+          </span>
+        )}
       </div>
     </motion.article>
   );
@@ -902,9 +863,36 @@ export function SearchPage() {
       const found = types.find((t2) => t2.name.toLowerCase() === typeNameParam.toLowerCase());
       if (found) resolvedTypeId = found.id;
     }
+
+    // Phase 11: Resolve ?city=CityName → city_id UUID (footer links use names not UUIDs)
+    const cityParam = params.get('city') || undefined;
+    let resolvedCityId: string | undefined;
+    if (cityParam) {
+      const isUuid = /^[0-9a-f-]{36}$/i.test(cityParam);
+      resolvedCityId = isUuid
+        ? cityParam
+        : cities?.find((c) => c.name.toLowerCase() === cityParam.toLowerCase())?.id;
+    }
+
+    // Phase 11: Resolve ?locality=LocalityName → locality_id UUID
+    const localityParam = params.get('locality') || undefined;
+    let resolvedLocalityId: string | undefined;
+    if (localityParam && localities) {
+      const isUuid = /^[0-9a-f-]{36}$/i.test(localityParam);
+      resolvedLocalityId = isUuid
+        ? localityParam
+        : localities.find(
+            (l) =>
+              l.name.toLowerCase() === localityParam.toLowerCase() &&
+              (!resolvedCityId || l.city_id === resolvedCityId),
+          )?.id;
+    }
+
     return {
       q: params.get('q') || undefined,
-      city_id: params.get('city') || undefined,
+      city_id: resolvedCityId,
+       
+      ...(resolvedLocalityId ? { locality_id: resolvedLocalityId } : {}),
       purpose: params.get('purpose') || undefined,
       property_type_id: resolvedTypeId,
       min_price: params.get('min_price') ? Number(params.get('min_price')) : undefined,
@@ -917,7 +905,7 @@ export function SearchPage() {
       facing: params.get('facing') || undefined,
       is_luxury: params.get('luxury') === '1' || undefined,
     };
-  }, [params, types]);
+  }, [params, types, cities, localities]);
 
   const sortClause = useMemo(() => {
     switch (sort) {
@@ -943,6 +931,8 @@ export function SearchPage() {
         .eq('status', 'published');
       if (filters.purpose) q = q.eq('purpose', filters.purpose);
       if (filters.city_id) q = q.eq('city_id', filters.city_id);
+      // Phase 11: Apply resolved locality filter
+      if ((filters as any).locality_id) q = q.eq('locality_id', (filters as any).locality_id);
       if (filters.property_type_id) q = q.eq('property_type_id', filters.property_type_id);
       if (filters.min_price != null) q = q.gte('price', filters.min_price);
       if (filters.max_price != null) q = q.lte('price', filters.max_price);
@@ -1256,14 +1246,14 @@ export function SearchPage() {
                   <div
                     className={cn(
                       'space-y-4',
-                      view === 'grid' && 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 space-y-0',
+                      view === 'grid' && 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 space-y-0',
                     )}
                   >
-                    {Array.from({ length: view === 'grid' ? 6 : 4 }).map((_, i) =>
+                    {Array.from({ length: view === 'grid' ? 10 : 4 }).map((_, i) =>
                       view === 'list' ? (
                         <ListSkeleton key={i} />
                       ) : (
-                        <div key={i} className="h-72 rounded-2xl bg-slate-200 animate-pulse" />
+                        <div key={i} className="aspect-[3/4] rounded-2xl bg-slate-200 animate-pulse" />
                       ),
                     )}
                   </div>
@@ -1271,7 +1261,9 @@ export function SearchPage() {
                   <>
                     <div
                       className={cn(
-                        view === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-5' : 'space-y-4',
+                        view === 'grid'
+                          ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                          : 'space-y-4',
                       )}
                     >
                       {data.data.map((p, index) => (
@@ -1285,7 +1277,7 @@ export function SearchPage() {
                               compared={comparedIds.has(p.id)}
                             />
                           ) : (
-                            <GridCard property={p as any} />
+                            <GridCard property={p as any} onSave={toggleSave} saved={savedIds.has(p.id)} />
                           )}
 
                         </div>

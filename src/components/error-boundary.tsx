@@ -10,6 +10,45 @@ interface State {
   error: Error | null;
 }
 
+// Matches the two known symptoms of a stale/duplicate JS module graph:
+//   1. A lazy route chunk failed to fetch (deleted/renamed after a deploy).
+//   2. Two copies of React ended up loaded in the same page (typically a
+//      service worker serving an old cached chunk alongside fresh ones),
+//      so a hook call resolves against a null internal dispatcher —
+//      surfaces as "Cannot read properties of null (reading 'useX')".
+// Both are infrastructure-staleness bugs, not application bugs: the fix is
+// to drop any stale cache and reload once, not to keep showing an error.
+function isStaleModuleGraphError(error: Error): boolean {
+  const message = error.message || '';
+  return (
+    message.includes('Failed to fetch dynamically imported module') ||
+    message.includes('error loading dynamically imported module') ||
+    /Cannot read properties of null \(reading 'use[A-Z]\w*'\)/.test(message)
+  );
+}
+
+// Best-effort cleanup so the reload actually gets fresh code instead of
+// hitting the same stale cache again. Never blocks or throws — this is
+// cache hygiene, not error handling, so failures here are silently ignored.
+async function clearStaleCaches(): Promise<void> {
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+  } catch {
+    /* best-effort */
+  }
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((r) => r.update().catch(() => r.unregister())));
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -17,11 +56,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
-    if (error.message && error.message.includes('Failed to fetch dynamically imported module')) {
+    if (isStaleModuleGraphError(error)) {
       const hasRetried = sessionStorage.getItem('dynamic-import-retry');
       if (!hasRetried) {
         sessionStorage.setItem('dynamic-import-retry', 'true');
-        window.location.reload();
+        clearStaleCaches().finally(() => window.location.reload());
       } else {
         sessionStorage.removeItem('dynamic-import-retry');
       }
@@ -30,8 +69,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: { componentStack: string }) {
-    if (error.message && error.message.includes('Failed to fetch dynamically imported module')) {
-      return; // Handled by reload
+    if (isStaleModuleGraphError(error)) {
+      return; // Handled by reload above
     }
     console.error('ErrorBoundary caught an error', error, errorInfo);
   }

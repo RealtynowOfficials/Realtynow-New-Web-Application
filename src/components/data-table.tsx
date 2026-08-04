@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Search, ArrowUpDown, Calendar, LayoutList, LayoutGrid } from 'lucide-react';
 import { Button, Input, Skeleton, Badge } from './ui';
 import { cn, formatDate, formatPrice } from '../lib/utils';
@@ -85,6 +85,8 @@ interface DataTableProps<T> {
   getRowId: (row: T) => string;
   cardRender?: (row: T) => React.ReactNode;
   defaultView?: 'table' | 'grid';
+  /** Fires with the exact rows currently rendered on screen (after search/date-filter/sort/pagination), so callers (e.g. CSV export) can match the UI exactly. */
+  onVisibleRowsChange?: (rows: T[]) => void;
 }
 
 export function DataTable<T>({
@@ -103,6 +105,7 @@ export function DataTable<T>({
   getRowId,
   cardRender,
   defaultView = 'table',
+  onVisibleRowsChange,
 }: DataTableProps<T>) {
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -160,7 +163,14 @@ export function DataTable<T>({
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const current = Math.min(page, totalPages);
-  const pageRows = sorted.slice((current - 1) * pageSize, current * pageSize);
+  const pageRows = useMemo(
+    () => sorted.slice((current - 1) * pageSize, current * pageSize),
+    [sorted, current, pageSize],
+  );
+
+  useEffect(() => {
+    onVisibleRowsChange?.(pageRows);
+  }, [pageRows, onVisibleRowsChange]);
   const allOnPageSelected = selectedIds && pageRows.length > 0 && pageRows.every((r) => selectedIds.has(getRowId(r)));
 
   const toggleSort = (key: string) => {

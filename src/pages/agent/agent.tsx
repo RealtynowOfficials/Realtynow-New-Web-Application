@@ -25,7 +25,7 @@ import { Card, Skeleton, Badge, Button, EmptyState, Modal, Input, Textarea, Sele
 import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column } from '../../components/data-table';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate, formatNumber } from '../../lib/utils';
+import { formatPrice, formatDate, formatNumber , generatePropertyUrl} from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { RemindersWidget } from '../../components/reminders-widget';
 import type { Property } from '../../lib/types';
@@ -231,7 +231,7 @@ export function AgentProperties() {
             className="h-10 w-14 rounded object-cover"
           />
           <div className="min-w-0">
-            <Link to={`/property/${p.id}`} className="font-medium text-navy-900 hover:underline truncate block">
+            <Link to={generatePropertyUrl(p)} className="font-medium text-navy-900 hover:underline truncate block">
               {p.title}
             </Link>
             <p className="text-xs text-navy-500">
@@ -284,7 +284,7 @@ export function AgentProperties() {
             </div>
             <div className="mt-4 pt-3 border-t border-navy-100 flex items-center justify-between gap-2">
               <span className="text-xs text-navy-500 font-medium">👁️ {p.view_count ?? 0} Views</span>
-              <Link to={`/property/${p.id}`} target="_blank">
+              <Link to={generatePropertyUrl(p)} target="_blank">
                 <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />}>
                   View Listing
                 </Button>
@@ -348,7 +348,7 @@ export function AgentLeads() {
           <p className="font-bold text-navy-900">{l.name}</p>
           {l.property?.title && (
             <Link
-              to={`/property/${l.property.id}`}
+              to={generatePropertyUrl(l.property)}
               className="text-xs text-primary-600 hover:underline flex items-center gap-1 mt-0.5 font-medium"
             >
               <Building2 className="h-3 w-3" /> {l.property.title}
@@ -506,7 +506,7 @@ export function AgentLeads() {
 
               {l.property?.title && (
                 <Link
-                  to={`/property/${l.property.id}`}
+                  to={generatePropertyUrl(l.property)}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 bg-primary-50 px-2.5 py-1 rounded-lg hover:bg-primary-100 transition mb-3"
                 >
                   <Building2 className="h-3.5 w-3.5" />

@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
-import { formatPrice } from '../lib/utils';
+import { formatPrice , generatePropertyUrl} from '../lib/utils';
 import { MapPin } from 'lucide-react';
 
 // Fix for default marker icon in leaflet with bundlers
@@ -152,7 +152,7 @@ export function PropertyMap({ properties }: PropertyMapProps) {
                     <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{p.title}</h4>
                     <p className="text-[10px] text-slate-500 line-clamp-1">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</p>
                     <Link 
-                      to={`/property/${p.id}`} 
+                      to={generatePropertyUrl(p)} 
                       className="mt-2 block w-full text-center bg-red-50 text-red-600 hover:bg-red-100 py-1 rounded text-[10px] font-bold transition"
                     >
                       View Details

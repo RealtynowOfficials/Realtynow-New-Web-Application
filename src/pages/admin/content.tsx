@@ -22,7 +22,7 @@ import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboar
 import { getAdminSections } from '../portal/sections';
 import { Card, Button, Modal, Input, Textarea, Badge, Skeleton, EmptyState, Select } from '../../components/ui';
 import { BulkActionsBar } from '../../components/data-table';
-import { cn, exportToCsv, formatNumber } from '../../lib/utils';
+import { cn, exportToCsv, formatNumber , generatePropertyUrl} from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { uploadFile } from '../../lib/storage';
 import { useToast } from '../../components/toast';
@@ -814,6 +814,8 @@ export function AdminAdvertisements() {
     html_content: '',
     button_text: 'Learn More',
     company_logo: '',
+    price_text: '',
+    location_text: '',
   };
 
   const [form, setForm] = useState(initialForm);
@@ -857,6 +859,9 @@ export function AdminAdvertisements() {
         title: form.title,
         subtitle: form.subtitle,
         description: form.description,
+        company_logo: form.company_logo,
+        price_text: form.price_text,
+        location_text: form.location_text,
         banner_type: form.banner_type,
         placement: form.placement,
         image_url:
@@ -867,7 +872,7 @@ export function AdminAdvertisements() {
         cta_text: form.cta_text,
         cta_link:
           form.redirect_type === 'Property' && form.property_id
-            ? `/property/${form.property_id}`
+            ? generatePropertyUrl({ id: form.property_id })
             : form.redirect_type === 'Category'
               ? `/search?purpose=${form.category_name}`
               : form.cta_link,
@@ -980,6 +985,8 @@ export function AdminAdvertisements() {
       image_mobile: a.image_mobile ?? '',
       video_url: a.video_url ?? '',
       company_logo: a.company_logo ?? '',
+      price_text: a.price_text ?? '',
+      location_text: a.location_text ?? '',
       cta_text: a.cta_text ?? 'Explore Properties',
       cta_link: a.cta_link ?? a.link_url ?? '',
       redirect_type: a.redirect_type ?? 'External URL',
@@ -1353,6 +1360,21 @@ export function AdminAdvertisements() {
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="Detailed promotional content for users..."
               />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="Price / Offer (for Hero slides)"
+                  value={form.price_text}
+                  onChange={(e) => setForm((f) => ({ ...f, price_text: e.target.value }))}
+                  placeholder="e.g. ₹85L onwards"
+                />
+                <Input
+                  label="Location (for Hero slides)"
+                  value={form.location_text}
+                  onChange={(e) => setForm((f) => ({ ...f, location_text: e.target.value }))}
+                  placeholder="e.g. Gachibowli, Hyderabad"
+                />
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <Select

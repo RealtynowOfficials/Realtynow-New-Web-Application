@@ -2,13 +2,13 @@ import { supabase } from './supabase';
 
 const PRIVATE_BUCKETS = new Set(['property-documents', 'agent-documents', 'customer-documents', 'company-assets']);
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'image/heic', 'image/heif'];
 const ALLOWED_DOC_TYPES = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export type StorageBucket =

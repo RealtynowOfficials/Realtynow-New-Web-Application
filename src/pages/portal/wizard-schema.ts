@@ -51,9 +51,13 @@ export const propertyWizardSchema = z.object({
   // Location
   city_name: z.string().optional(),
   locality_name: z.string().optional(),
+  state_name: z.string().optional(),
+  country: z.string().optional(),
+  pincode: z.string().optional(),
   address: z.string().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
+  place_id: z.string().optional(),
   nearby_places: z
     .object({
       metro: z.string().optional(),
