@@ -1,12 +1,26 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ShieldCheck, Smartphone, ArrowLeft, RotateCw, Building2, UserCircle2 } from 'lucide-react';
+import {
+  ShieldCheck,
+  ArrowLeft,
+  ArrowRight,
+  RotateCw,
+  Search,
+  Home,
+  Briefcase,
+  HardHat,
+  Star,
+  Sparkles,
+  Users,
+  Loader2,
+  Lock,
+} from 'lucide-react';
 import { z } from 'zod';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useToast } from '../../components/toast';
-import { Button, Input } from '../../components/ui';
+import { Input } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { cn } from '../../lib/utils';
 import { initMsg91Widget, sendMsg91Otp, verifyMsg91Otp, retryMsg91Otp, MSG91_CAPTCHA_CONTAINER_ID } from '../../lib/msg91';
@@ -17,6 +31,32 @@ const RESEND_COOLDOWN_SECONDS = 10;
 const PRIMARY_RED = '#D8232A';
 
 type LoginTab = 'customer' | 'agent';
+
+// Purely presentational — four segments map onto the same two functional login intents
+// (LoginTab) that already exist. Buyer/Owner both drive the 'customer' OTP flow, Agent/
+// Builder both drive the 'agent' flow, exactly as the previous 2-tab UI did.
+type Segment = 'buyer' | 'owner' | 'agent' | 'builder';
+const SEGMENTS: { id: Segment; label: string; tab: LoginTab; icon: typeof Search }[] = [
+  { id: 'buyer', label: 'Buyer', tab: 'customer', icon: Search },
+  { id: 'owner', label: 'Owner', tab: 'customer', icon: Home },
+  { id: 'agent', label: 'Agent', tab: 'agent', icon: Briefcase },
+  { id: 'builder', label: 'Builder', tab: 'agent', icon: HardHat },
+];
+
+// Fixed (not random-per-render) positions/timings for the left panel's floating particles —
+// deterministic so the animation doesn't jump on re-renders.
+const PARTICLES = [
+  { x: 8, y: 18, duration: 6, delay: 0 },
+  { x: 22, y: 62, duration: 7.5, delay: 0.6 },
+  { x: 38, y: 30, duration: 5.5, delay: 1.2 },
+  { x: 55, y: 75, duration: 8, delay: 0.3 },
+  { x: 68, y: 22, duration: 6.5, delay: 1.8 },
+  { x: 80, y: 55, duration: 7, delay: 0.9 },
+  { x: 90, y: 15, duration: 6.8, delay: 1.5 },
+  { x: 15, y: 85, duration: 7.2, delay: 2.1 },
+  { x: 48, y: 12, duration: 5.8, delay: 0.4 },
+  { x: 72, y: 88, duration: 6.3, delay: 1.1 },
+];
 
 const mobileSchema = z
   .string()
@@ -51,9 +91,11 @@ export function OtpLoginPage() {
   const { addToast } = useToast();
 
   const [tab, setTab] = useState<LoginTab>('customer');
+  const [segment, setSegment] = useState<Segment>('buyer');
   const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
   const [mobile, setMobile] = useState('');
   const [mobileError, setMobileError] = useState<string | null>(null);
+  const [mobileFocused, setMobileFocused] = useState(false);
   const [sending, setSending] = useState(false);
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
@@ -112,6 +154,14 @@ export function OtpLoginPage() {
     setRequestName('');
     setRequestSubmitted(false);
   }, []);
+
+  const selectSegment = useCallback(
+    (seg: Segment) => {
+      setSegment(seg);
+      selectTab(SEGMENTS.find((s) => s.id === seg)!.tab);
+    },
+    [selectTab],
+  );
 
   const sendOtp = useCallback(async () => {
     const parsed = mobileSchema.safeParse(mobile);
@@ -226,73 +276,173 @@ export function OtpLoginPage() {
     if (pasted.length === OTP_LENGTH) submitOtp(pasted);
   };
 
+  const primaryBtnClass =
+    'group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 bg-[length:200%_100%] py-3.5 text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-all duration-300 hover:bg-[position:100%_0] hover:shadow-xl hover:shadow-red-600/35 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60';
+
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
-      {/* Left brand panel */}
-      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden bg-gradient-to-br from-navy-900 via-navy-800 to-navy-950 p-12 text-white">
-        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-gold-400/20 blur-3xl" />
-        <LogoLight to="/" className="relative" size={220} src="/2.png" />
-        <div className="relative">
-          <h2 className="font-display text-3xl font-bold leading-tight">
-            {t('auth.welcomeBack', 'Welcome to RealtyNow')}
-          </h2>
-          <p className="mt-3 max-w-md text-navy-200">
-            {t('auth.otpSub', 'Sign in instantly with your mobile number — no password needed.')}
-          </p>
-          <ul className="mt-6 space-y-3 text-sm text-navy-200">
-            {[
-              t('auth.feat1', 'AI-powered property recommendations'),
-              t('auth.feat2', 'Verified listings & trusted agents'),
-              t('auth.feat3', 'Real-time notifications'),
-            ].map((f) => (
-              <li key={f} className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-gold-400" /> {f}
-              </li>
-            ))}
-          </ul>
+    <div className="relative min-h-screen overflow-hidden bg-navy-950 lg:grid lg:grid-cols-2">
+      {/* ───────────── Left — cinematic panel ───────────── */}
+      <div className="relative hidden overflow-hidden lg:block">
+        <motion.div
+          className="absolute inset-0"
+          initial={{ scale: 1.08 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 20, ease: 'easeOut' }}
+        >
+          <img
+            src="https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg"
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        </motion.div>
+
+        {/* Cinematic dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-navy-950/85 via-navy-950/75 to-navy-950/95" />
+        <div className="absolute inset-0 bg-gradient-to-r from-navy-950/70 via-transparent to-navy-950/50" />
+
+        {/* Animated glow */}
+        <motion.div
+          className="pointer-events-none absolute -left-32 top-1/3 h-[28rem] w-[28rem] rounded-full bg-red-600/30 blur-[120px]"
+          animate={{ opacity: [0.35, 0.65, 0.35], scale: [1, 1.12, 1] }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="pointer-events-none absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-gold-400/20 blur-[100px]"
+          animate={{ opacity: [0.25, 0.5, 0.25] }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+        />
+
+        {/* Floating particles */}
+        <div className="pointer-events-none absolute inset-0">
+          {PARTICLES.map((p, i) => (
+            <motion.span
+              key={i}
+              className="absolute h-1 w-1 rounded-full bg-white/50"
+              style={{ left: `${p.x}%`, top: `${p.y}%` }}
+              animate={{ y: [0, -18, 0], opacity: [0.15, 0.8, 0.15] }}
+              transition={{ duration: p.duration, repeat: Infinity, delay: p.delay, ease: 'easeInOut' }}
+            />
+          ))}
         </div>
-        <p className="relative text-xs text-navy-400">
-          &copy; {new Date().getFullYear()} Realtynow Properties Private limited.{' '}
-          {t('footer.rightsReserved', 'All rights reserved.')}
-        </p>
+
+        {/* Content */}
+        <div className="relative flex h-full flex-col justify-between p-12 text-white">
+          <LogoLight to="/" size={200} src="/2.png" />
+
+          <div className="max-w-md">
+            <motion.span
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.5 }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold backdrop-blur-md"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-gold-400" /> AI-Powered Real Estate
+            </motion.span>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mt-4 font-display text-4xl font-bold leading-[1.15] tracking-tight"
+            >
+              {t('auth.welcomeBack', 'Find Your Perfect')}{' '}
+              <span className="bg-gradient-to-r from-red-400 to-gold-400 bg-clip-text text-transparent">
+                Place to Call Home
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.5 }}
+              className="mt-3 text-sm leading-relaxed text-navy-200"
+            >
+              {t('auth.otpSub', 'Sign in instantly with your mobile number — no password needed.')}
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.5 }}
+              className="mt-6 flex flex-wrap gap-2"
+            >
+              {[
+                { icon: ShieldCheck, label: t('auth.feat2', 'Verified listings & trusted agents') },
+                { icon: Sparkles, label: t('auth.feat1', 'AI-powered property recommendations') },
+                { icon: Users, label: t('auth.feat3', 'Real-time notifications') },
+              ].map(({ icon: Icon, label }) => (
+                <span
+                  key={label}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-navy-100 backdrop-blur-md"
+                >
+                  <Icon className="h-3.5 w-3.5 text-gold-400" /> {label}
+                </span>
+              ))}
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 0.5 }}
+              className="mt-6 flex items-center gap-4 text-xs text-navy-300"
+            >
+              <span className="flex items-center gap-1">
+                <Star className="h-3.5 w-3.5 fill-gold-400 text-gold-400" /> 4.9/5 rated
+              </span>
+              <span className="h-3 w-px bg-white/15" />
+              <span>10,000+ verified listings</span>
+            </motion.div>
+          </div>
+
+          <p className="relative text-xs text-navy-400">
+            &copy; {new Date().getFullYear()} Realtynow Properties Private limited.{' '}
+            {t('footer.rightsReserved', 'All rights reserved.')}
+          </p>
+        </div>
       </div>
 
-      {/* Right form panel */}
-      <div className="flex items-center justify-center bg-navy-50/40 px-6 py-12">
+      {/* ───────────── Right — glass login card ───────────── */}
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-navy-50 px-5 py-10 sm:px-8">
+        <div className="pointer-events-none absolute -top-24 right-0 h-72 w-72 rounded-full bg-red-100/60 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-0 h-72 w-72 rounded-full bg-gold-50 blur-3xl" />
+
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-md"
+          initial={{ opacity: 0, y: 20, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="relative w-full max-w-md rounded-[24px] border border-white/60 bg-white/90 p-7 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl sm:p-9"
         >
-          <div className="lg:hidden mb-8 flex justify-center">
-            <Logo to="/" size={220} src="/2.png" />
+          <div className="mb-7 flex justify-center lg:hidden">
+            <Logo to="/" size={180} src="/2.png" />
           </div>
 
           {step === 'mobile' && (
-            <div className="mb-6 grid grid-cols-2 gap-2 rounded-2xl bg-navy-100/70 p-1.5">
-              <button
-                type="button"
-                onClick={() => selectTab('customer')}
-                className={cn(
-                  'flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition-colors',
-                  tab === 'customer' ? 'text-white shadow' : 'text-navy-500 hover:text-navy-800',
-                )}
-                style={tab === 'customer' ? { backgroundColor: PRIMARY_RED } : undefined}
-              >
-                <UserCircle2 className="h-4 w-4" /> {t('auth.tabCustomer', 'Buyer / Owner')}
-              </button>
-              <button
-                type="button"
-                onClick={() => selectTab('agent')}
-                className={cn(
-                  'flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition-colors',
-                  tab === 'agent' ? 'text-white shadow' : 'text-navy-500 hover:text-navy-800',
-                )}
-                style={tab === 'agent' ? { backgroundColor: PRIMARY_RED } : undefined}
-              >
-                <Building2 className="h-4 w-4" /> {t('auth.tabAgent', 'Agent / Builder')}
-              </button>
+            <div className="relative mb-7 grid grid-cols-4 gap-1 rounded-2xl bg-navy-100/70 p-1.5">
+              {SEGMENTS.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => selectSegment(id)}
+                  className="relative rounded-xl py-2.5 text-[11px] font-bold transition-colors"
+                >
+                  {segment === id && (
+                    <motion.span
+                      layoutId="segment-pill"
+                      className="absolute inset-0 rounded-xl shadow"
+                      style={{ backgroundColor: PRIMARY_RED }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      'relative z-10 flex flex-col items-center gap-1',
+                      segment === id ? 'text-white' : 'text-navy-500',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" /> {label}
+                  </span>
+                </button>
+              ))}
             </div>
           )}
 
@@ -317,31 +467,84 @@ export function OtpLoginPage() {
                     e.preventDefault();
                     sendOtp();
                   }}
-                  className="mt-6 space-y-4"
+                  className="mt-7 space-y-5"
                 >
                   <div className="relative">
-                    <Smartphone className="pointer-events-none absolute left-[52px] top-[38px] h-4 w-4 text-navy-400" />
-                    <span className="pointer-events-none absolute left-3 top-[34px] text-sm font-semibold text-navy-500">
-                      +91
-                    </span>
-                    <Input
-                      label={t('auth.mobileNumber', 'Mobile Number')}
-                      value={mobile}
-                      onChange={(e) => setMobile(e.target.value)}
-                      placeholder="98765 43210"
-                      className="pl-[76px]"
-                      error={mobileError ?? undefined}
-                      autoFocus
-                      inputMode="tel"
-                      maxLength={10}
-                    />
+                    <div
+                      className={cn(
+                        'flex items-center gap-2.5 rounded-2xl border-2 bg-white px-4 pb-2.5 pt-5 transition-all duration-200',
+                        mobileError
+                          ? 'border-error-400 ring-4 ring-error-100'
+                          : mobileFocused
+                            ? 'border-red-400 ring-4 ring-red-400/10'
+                            : 'border-navy-150',
+                      )}
+                    >
+                      <span className="flex shrink-0 items-center gap-1.5 text-sm font-bold text-navy-700">
+                        <span className="text-base leading-none">🇮🇳</span> +91
+                      </span>
+                      <span className="h-5 w-px shrink-0 bg-navy-150" />
+                      <input
+                        id="mobile-input"
+                        value={mobile}
+                        onChange={(e) => setMobile(e.target.value)}
+                        onFocus={() => setMobileFocused(true)}
+                        onBlur={() => setMobileFocused(false)}
+                        autoFocus
+                        inputMode="tel"
+                        maxLength={10}
+                        className="w-full bg-transparent text-sm font-semibold text-navy-900 outline-none"
+                      />
+                    </div>
+                    <label
+                      htmlFor="mobile-input"
+                      className={cn(
+                        'pointer-events-none absolute left-[4.9rem] transition-all duration-200',
+                        mobileFocused || mobile
+                          ? 'top-2 text-[10px] font-bold uppercase tracking-wide text-red-500'
+                          : 'top-1/2 -translate-y-1/2 text-sm text-navy-400',
+                      )}
+                    >
+                      {t('auth.mobileNumber', 'Mobile Number')}
+                    </label>
+                    {mobileError && (
+                      <p className="mt-1.5 text-xs font-semibold text-error-600">{mobileError}</p>
+                    )}
                   </div>
+
                   {/* MSG91 renders its H-Captcha challenge into this element (captchaRenderId in src/lib/msg91.ts) */}
-                  <div id={MSG91_CAPTCHA_CONTAINER_ID} className="flex justify-center" />
-                  <Button type="submit" className="w-full" loading={sending}>
-                    {t('auth.sendOtp', 'Send OTP')}
-                  </Button>
+                  <div className="rounded-2xl border border-navy-100 bg-navy-50/60 p-3">
+                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-navy-400">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Quick human verification
+                    </p>
+                    <div id={MSG91_CAPTCHA_CONTAINER_ID} className="flex justify-center" />
+                  </div>
+
+                  <button type="submit" disabled={sending} className={primaryBtnClass}>
+                    {sending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> {t('auth.sendingOtp', 'Sending OTP…')}
+                      </>
+                    ) : (
+                      <>
+                        {t('auth.sendOtp', 'Send OTP')}
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </>
+                    )}
+                  </button>
                 </form>
+
+                <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-[11px] text-navy-400">
+                  <Lock className="h-3 w-3" />
+                  {t('auth.privacyNote', 'Protected by industry-standard encryption.')}{' '}
+                  <a href="/privacy" className="font-semibold text-navy-500 hover:text-red-600">
+                    Privacy Policy
+                  </a>
+                  {' & '}
+                  <a href="/terms" className="font-semibold text-navy-500 hover:text-red-600">
+                    Terms
+                  </a>
+                </p>
               </motion.div>
             ) : (
               <motion.div
@@ -366,15 +569,23 @@ export function OtpLoginPage() {
 
                 {agentNotFound ? (
                   requestSubmitted ? (
-                    <div className="rounded-2xl border border-navy-100 bg-navy-50/70 p-5 text-center shadow-sm">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.97 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="rounded-2xl border border-navy-100 bg-navy-50/70 p-5 text-center shadow-sm"
+                    >
                       <ShieldCheck className="mx-auto h-8 w-8 text-success-600" />
                       <p className="mt-2 font-bold text-navy-900">Request submitted</p>
                       <p className="mt-1 text-sm text-navy-500">
                         An administrator will review your request and create your account shortly.
                       </p>
-                    </div>
+                    </motion.div>
                   ) : (
-                    <div className="rounded-2xl border border-navy-100 bg-navy-50/70 p-5 shadow-sm">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.97 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="rounded-2xl border border-navy-100 bg-navy-50/70 p-5 shadow-sm"
+                    >
                       <p className="text-sm font-semibold text-error-600">
                         Your account has not been created yet. Please contact the administrator.
                       </p>
@@ -388,16 +599,19 @@ export function OtpLoginPage() {
                           onChange={(e) => setRequestName(e.target.value)}
                           placeholder="Your full name"
                         />
-                        <Button
-                          className="w-full"
+                        <button
                           onClick={submitAgentRequest}
-                          loading={requestSubmitting}
-                          disabled={!requestName.trim()}
+                          disabled={requestSubmitting || !requestName.trim()}
+                          className={primaryBtnClass}
                         >
-                          Request account access
-                        </Button>
+                          {requestSubmitting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            'Request account access'
+                          )}
+                        </button>
                       </div>
-                    </div>
+                    </motion.div>
                   )
                 ) : (
                   <>
@@ -407,13 +621,16 @@ export function OtpLoginPage() {
                       <span className="font-semibold text-navy-700">{normalizeMobile(mobile)}</span>
                     </p>
 
-                    <div className="mt-6 flex justify-center gap-3">
+                    <div className="mt-7 flex justify-center gap-3">
                       {otp.map((digit, i) => (
-                        <input
+                        <motion.input
                           key={i}
                           ref={(el) => {
                             inputRefs.current[i] = el;
                           }}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.05 }}
                           type="text"
                           inputMode="numeric"
                           maxLength={1}
@@ -422,7 +639,13 @@ export function OtpLoginPage() {
                           onKeyDown={(e) => handleOtpKeyDown(i, e)}
                           onPaste={handleOtpPaste}
                           disabled={verifying || expirySeconds <= 0}
-                          className="h-14 w-14 rounded-xl border border-navy-200 text-center text-2xl font-bold text-navy-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-200 disabled:bg-navy-50"
+                          className={cn(
+                            'h-14 w-14 rounded-2xl border-2 bg-white text-center text-2xl font-bold text-navy-900 outline-none transition-all duration-200',
+                            digit
+                              ? 'border-red-400 shadow-[0_0_0_4px_rgba(214,38,52,0.08)]'
+                              : 'border-navy-150 focus:border-red-400 focus:shadow-[0_0_0_4px_rgba(214,38,52,0.08)]',
+                            'disabled:bg-navy-50',
+                          )}
                         />
                       ))}
                     </div>
@@ -441,7 +664,7 @@ export function OtpLoginPage() {
                       <button
                         onClick={resendOtp}
                         disabled={resendCooldown > 0 || resending}
-                        className="flex items-center gap-1 font-semibold text-primary-600 disabled:text-navy-400"
+                        className="flex items-center gap-1 font-semibold text-red-600 disabled:text-navy-400"
                       >
                         <RotateCw className={`h-3.5 w-3.5 ${resending ? 'animate-spin' : ''}`} />
                         {resendCooldown > 0
@@ -451,7 +674,9 @@ export function OtpLoginPage() {
                     </div>
 
                     {verifying && (
-                      <p className="mt-4 text-center text-sm text-navy-500">{t('auth.verifying', 'Verifying…')}</p>
+                      <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-sm text-navy-500">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('auth.verifying', 'Verifying…')}
+                      </p>
                     )}
                   </>
                 )}

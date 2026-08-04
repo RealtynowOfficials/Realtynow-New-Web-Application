@@ -493,8 +493,11 @@ export function PropertyDetailPage() {
   const images = property?.images?.length ? property.images : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
   const agentName = agent ? `${agent.first_name ?? ''} ${agent.last_name ?? ''}`.trim() : 'Agent';
 
+  // AI-generated JSON-LD (generatePropertySeo edge function, written on submit/resubmit)
+  // takes priority; this client-built version is only a fallback for properties that
+  // predate SEO generation or haven't run it yet.
   const schema = property
-    ? {
+    ? property.json_ld ?? {
         '@context': 'https://schema.org',
         '@type': 'RealEstateListing',
         name: property.title,
@@ -516,10 +519,16 @@ export function PropertyDetailPage() {
     : undefined;
 
   useSEO({
-    title: property?.title,
-    description: property?.description ?? `${property?.property_type_name ?? 'Property'} for ${property?.purpose === 'Rent' ? 'rent' : 'sale'} in ${property?.locality_name ?? property?.city_name ?? 'India'} — RealtyNow`,
+    title: property?.seo_title || property?.title,
+    description:
+      property?.seo_description ||
+      property?.description ||
+      `${property?.property_type_name ?? 'Property'} for ${property?.purpose === 'Rent' ? 'rent' : 'sale'} in ${property?.locality_name ?? property?.city_name ?? 'India'} — RealtyNow`,
     type: 'product',
-    image: images[0],
+    image: property?.og_image || images[0],
+    twitterTitle: property?.twitter_title || undefined,
+    twitterDescription: property?.twitter_description || undefined,
+    twitterImage: property?.twitter_image || undefined,
     schema,
   });
 

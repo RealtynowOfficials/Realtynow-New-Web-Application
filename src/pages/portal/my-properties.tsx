@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Edit3, Trash2, Send, Eye, Building2 } from 'lucide-react';
@@ -8,13 +8,34 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 
 import { getPortalSections } from './sections';
-import { Button, Card, EmptyState, Modal, Badge } from '../../components/ui';
+import { Button, Card, EmptyState, Modal, Badge, Select, Input } from '../../components/ui';
 import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { submitPropertyForReview } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
 import { formatPrice, formatDate , generatePropertyUrl} from '../../lib/utils';
 import type { Property } from '../../lib/types';
+import { ExportMenu } from '../../components/export-menu';
+import { SavedFiltersMenu } from '../../components/saved-filters-menu';
+import { useSavedFilters } from '../../lib/saved-filters';
+
+const MY_PROPERTIES_EXPORT_COLUMNS = [
+  { key: 'id', label: 'ID' },
+  { key: 'title', label: 'Property' },
+  { key: 'locality_name', label: 'Locality' },
+  { key: 'city_name', label: 'City' },
+  { key: 'price', label: 'Price' },
+  { key: 'purpose', label: 'Purpose' },
+  { key: 'status', label: 'Status' },
+  { key: 'created_at', label: 'Created' },
+];
+
+interface MyPropertiesFilterState {
+  city: string;
+  type: string;
+  minPrice: string;
+  maxPrice: string;
+}
 
 export function PortalMyProperties() {
   const { t } = useLanguageContext();
@@ -23,10 +44,13 @@ export function PortalMyProperties() {
   const [tab, setTab] = useState<string>('all');
   const [toDelete, setToDelete] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [visibleRows, setVisibleRows] = useState<Property[]>([]);
+  const [rich, setRich] = useState<MyPropertiesFilterState>({ city: '', type: '', minPrice: '', maxPrice: '' });
+  const savedFilters = useSavedFilters<MyPropertiesFilterState>('portal-my-properties');
 
   const sections = getPortalSections(t);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['portal-my-properties', user?.id],
     queryFn: async () => {
       const { data } = await supabase
@@ -74,15 +98,34 @@ export function PortalMyProperties() {
   };
 
   const filtered = (data ?? []).filter((p) => {
-    if (tab === 'all') return true;
-    if (tab === 'draft') return p.status === 'draft';
-    if (tab === 'pending')
-      return ['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending';
-    if (tab === 'published') return (p.status === 'published' || p.is_live) && p.status !== 'rejected';
-    if (tab === 'rejected')
-      return ['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected';
-    return p.status === tab;
+    if (tab === 'all') {
+      /* no-op, status-tab passes everything through */
+    } else if (tab === 'draft') {
+      if (p.status !== 'draft') return false;
+    } else if (tab === 'pending') {
+      if (!(['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending')) return false;
+    } else if (tab === 'published') {
+      if (!((p.status === 'published' || p.is_live) && p.status !== 'rejected')) return false;
+    } else if (tab === 'rejected') {
+      if (!(['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected')) return false;
+    } else if (p.status !== tab) return false;
+
+    if (rich.city && p.city_id !== rich.city) return false;
+    if (rich.type && p.property_type_id !== rich.type) return false;
+    if (rich.minPrice && p.price < Number(rich.minPrice)) return false;
+    if (rich.maxPrice && p.price > Number(rich.maxPrice)) return false;
+    return true;
   });
+
+  const filterOptions = useMemo(() => {
+    const cities = new Map<string, string>();
+    const types = new Map<string, string>();
+    (data ?? []).forEach((p) => {
+      if (p.city_id && p.city_name) cities.set(p.city_id, p.city_name);
+      if (p.property_type_id && p.property_type_name) types.set(p.property_type_id, p.property_type_name);
+    });
+    return { cities: [...cities.entries()], types: [...types.entries()] };
+  }, [data]);
 
   const submitMutation = useMutation({
     mutationFn: (id: string) => submitPropertyForReview(id),
@@ -262,40 +305,91 @@ export function PortalMyProperties() {
         title={t('common.saved', 'My Properties')}
         subtitle={t('portal.manageListingsSub', 'Manage all your listings across every status.')}
         action={
-          <Link to="/portal/list-property">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
-            >
-              <span>{t('forms.postProperty', 'Post Property')}</span>
-              <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
-                FREE
-              </span>
-            </button>
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <SavedFiltersMenu
+              presets={savedFilters.presets}
+              onSave={(name) => savedFilters.save(name, rich)}
+              onRemove={savedFilters.remove}
+              onApply={setRich}
+            />
+            <ExportMenu
+              filename="my-properties"
+              rows={visibleRows as unknown as Record<string, unknown>[]}
+              columns={MY_PROPERTIES_EXPORT_COLUMNS}
+            />
+            <Link to="/portal/list-property">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+              >
+                <span>{t('forms.postProperty', 'Post Property')}</span>
+                <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
+                  FREE
+                </span>
+              </button>
+            </Link>
+          </div>
         }
       />
-      <div className="mb-4 flex gap-2 overflow-x-auto">
-        {tabs.map((tItem) => {
-          const count = getTabCount(tItem.key);
-          return (
-            <button
-              key={tItem.key}
-              onClick={() => setTab(tItem.key)}
-              className={`rounded-lg px-3.5 py-2 text-sm font-medium whitespace-nowrap transition flex items-center gap-2 cursor-pointer ${tab === tItem.key ? 'bg-navy-900 text-white shadow-sm' : 'text-navy-600 hover:bg-navy-100'}`}
-            >
-              {tItem.label}
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-bold ${tab === tItem.key ? 'bg-white/20 text-white' : 'bg-navy-100 text-navy-600'}`}
+
+      <div className="sticky top-0 z-20 -mx-1 mb-4 space-y-3 bg-navy-50/95 px-1 pb-3 pt-1 backdrop-blur-sm">
+        <div className="flex gap-2 overflow-x-auto">
+          {tabs.map((tItem) => {
+            const count = getTabCount(tItem.key);
+            return (
+              <button
+                key={tItem.key}
+                onClick={() => setTab(tItem.key)}
+                className={`rounded-lg px-3.5 py-2 text-sm font-medium whitespace-nowrap transition flex items-center gap-2 cursor-pointer ${tab === tItem.key ? 'bg-navy-900 text-white shadow-sm' : 'text-navy-600 hover:bg-navy-100'}`}
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+                {tItem.label}
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-bold ${tab === tItem.key ? 'bg-white/20 text-white' : 'bg-navy-100 text-navy-600'}`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <Card className="p-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Select value={rich.city} onChange={(e) => setRich((f) => ({ ...f, city: e.target.value }))} className="text-sm">
+              <option value="">All cities</option>
+              {filterOptions.cities.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+            <Select value={rich.type} onChange={(e) => setRich((f) => ({ ...f, type: e.target.value }))} className="text-sm">
+              <option value="">All types</option>
+              {filterOptions.types.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="number"
+              placeholder="Min price"
+              value={rich.minPrice}
+              onChange={(e) => setRich((f) => ({ ...f, minPrice: e.target.value }))}
+              className="text-sm"
+            />
+            <Input
+              type="number"
+              placeholder="Max price"
+              value={rich.maxPrice}
+              onChange={(e) => setRich((f) => ({ ...f, maxPrice: e.target.value }))}
+              className="text-sm"
+            />
+          </div>
+        </Card>
       </div>
 
-      <BulkActionsBar count={selected.size} onDelete={bulkDelete} />
+      {selected.size > 0 && <BulkActionsBar count={selected.size} onDelete={bulkDelete} />}
       {filtered.length === 0 && !isLoading ? (
         <Card>
           <EmptyState
@@ -314,6 +408,7 @@ export function PortalMyProperties() {
           columns={columns}
           rows={filtered}
           loading={isLoading}
+          error={error instanceof Error ? error.message : null}
           getRowId={(p) => p.id}
           selectedIds={selected}
           onToggleSelect={toggleSelect}
@@ -324,6 +419,7 @@ export function PortalMyProperties() {
               return n;
             })
           }
+          onVisibleRowsChange={setVisibleRows}
           cardRender={(p) => (
             <Card className="p-4 flex flex-col justify-between h-full hover:shadow-md transition-shadow">
               <div>

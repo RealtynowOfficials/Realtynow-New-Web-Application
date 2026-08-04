@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation, ScrollRestoration } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { queryClient } from './lib/queryClient';
@@ -14,6 +14,8 @@ import { ScrollToTop } from './components/scroll-to-top';
 import type { UserRole } from './lib/types';
 import { LanguageProvider } from './lib/i18n/language-context';
 import { LocationProvider } from './contexts/location-context';
+import { AdminSecretGate } from './components/admin-secret-gate';
+import { isAdmin2faVerified } from './lib/admin-security';
 
 const HomePage = lazy(() => import('./pages/public/home').then((m) => ({ default: m.HomePage })));
 const SearchPage = lazy(() => import('./pages/public/search').then((m) => ({ default: m.SearchPage })));
@@ -43,6 +45,7 @@ const BorewellServicesPage = lazy(() =>
 const HomeLoansPage = lazy(() => import('./pages/public/home-loans').then((m) => ({ default: m.HomeLoansPage })));
 
 const OtpLoginPage = lazy(() => import('./pages/auth/otp-login').then((m) => ({ default: m.OtpLoginPage })));
+const AdminLoginPage = lazy(() => import('./pages/auth/admin-login').then((m) => ({ default: m.AdminLoginPage })));
 const AgentRegisterPage = lazy(() =>
   import('./pages/auth/agent-register').then((m) => ({ default: m.AgentRegisterPage })),
 );
@@ -92,6 +95,12 @@ const AdminTestimonials = lazy(() => import('./pages/admin/content').then((m) =>
 const AdminFaqs = lazy(() => import('./pages/admin/content').then((m) => ({ default: m.AdminFaqs })));
 const AdminAdvertisements = lazy(() =>
   import('./pages/admin/content').then((m) => ({ default: m.AdminAdvertisements })),
+);
+const AdminHeroCampaigns = lazy(() =>
+  import('./pages/admin/hero-campaigns').then((m) => ({ default: m.AdminHeroCampaigns })),
+);
+const AdminSecuritySettings = lazy(() =>
+  import('./pages/admin/security-settings').then((m) => ({ default: m.AdminSecuritySettings })),
 );
 const AdminAuditLogs = lazy(() => import('./pages/admin/audit').then((m) => ({ default: m.AdminAuditLogs })));
 const AdminSettings = lazy(() => import('./pages/admin/settings').then((m) => ({ default: m.AdminSettings })));
@@ -146,6 +155,8 @@ const ADMIN_IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 hours of inactivity
 function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   const { user, profile, loading, signOut } = useAuth();
   const location = useLocation();
+  const isAdminRoute = !!allowRoles?.includes('admin');
+  const [verified2fa, setVerified2fa] = useState(() => isAdmin2faVerified());
 
   // Admin sessions auto-logout after 3h of *inactivity* (not just time since login).
   // Previously this only checked once on mount, so an admin left on one page for
@@ -196,7 +207,11 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
     };
   }, [profile, signOut]);
   if (loading) return <PageLoader />;
-  if (!user) return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
+  if (!user) {
+    // Admin routes bounce to the dedicated admin portal login, not the general one.
+    const loginPath = isAdminRoute ? '/admin/login' : '/login';
+    return <Navigate to={`${loginPath}?redirect=${encodeURIComponent(location.pathname)}`} replace />;
+  }
   if (allowRoles && profile && !allowRoles.includes(profile.role)) {
     const home =
       profile.role === 'admin'
@@ -207,6 +222,11 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
             ? '/builder'
             : '/portal';
     return <Navigate to={home} replace />;
+  }
+  // Second factor — Secret Access Code — gates every admin route until verified for this
+  // browser session, layered on top of the mobile-OTP session already established above.
+  if (isAdminRoute && profile?.role === 'admin' && !verified2fa) {
+    return <AdminSecretGate onVerified={() => setVerified2fa(true)} />;
   }
   return (
     <ErrorBoundary>
@@ -277,7 +297,17 @@ function AppRoutes() {
             { path: '/verify-email', element: <Navigate to="/login" replace /> },
             { path: '/agent/login', element: <Navigate to="/login" replace /> },
             { path: '/builder/login', element: <Navigate to="/login" replace /> },
-            { path: '/admin/login', element: <Navigate to="/login" replace /> },
+            {
+              // Dedicated, isolated admin entry point — deliberately separate route and UI
+              // from /login (see src/pages/auth/admin-login.tsx for why the session
+              // mechanism is still shared under the hood).
+              path: '/admin/login',
+              element: (
+                <Suspense fallback={<PageLoader />}>
+                  <AdminLoginPage />
+                </Suspense>
+              ),
+            },
             {
               path: '/agent/register',
               element: (
@@ -341,6 +371,8 @@ function AppRoutes() {
                 { path: '/admin/testimonials', element: <AdminTestimonials /> },
                 { path: '/admin/faqs', element: <AdminFaqs /> },
                 { path: '/admin/advertisements', element: <AdminAdvertisements /> },
+                { path: '/admin/hero-campaigns', element: <AdminHeroCampaigns /> },
+                { path: '/admin/security', element: <AdminSecuritySettings /> },
                 { path: '/admin/master', element: <AdminMasterData /> },
                 { path: '/admin/audit', element: <AdminAuditLogs /> },
                 { path: '/admin/languages', element: <AdminLanguages /> },

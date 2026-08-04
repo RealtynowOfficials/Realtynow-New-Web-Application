@@ -93,6 +93,47 @@ export function exportToCsv(
   URL.revokeObjectURL(url);
 }
 
+export async function exportToExcel(
+  filename: string,
+  rows: Record<string, unknown>[],
+  columns: { key: string; label: string }[],
+) {
+  const XLSX = await import('xlsx');
+  const data = rows.map((r) => Object.fromEntries(columns.map((c) => [c.label, r[c.key] ?? ''])));
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Data');
+  XLSX.writeFile(workbook, `${filename}.xlsx`);
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+export async function exportToPdf(
+  filename: string,
+  rows: Record<string, unknown>[],
+  columns: { key: string; label: string }[],
+) {
+  const html2pdf = (await import('html2pdf.js')).default;
+  const container = document.createElement('div');
+  container.style.padding = '16px';
+  container.innerHTML = `
+    <h2 style="font-family: sans-serif; margin-bottom: 12px; font-size: 16px;">${escapeHtml(filename)}</h2>
+    <table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 10px;">
+      <thead>
+        <tr>${columns.map((c) => `<th style="border:1px solid #ddd; padding:6px; text-align:left; background:#f5f5f5;">${escapeHtml(c.label)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${rows.map((r) => `<tr>${columns.map((c) => `<td style="border:1px solid #ddd; padding:6px;">${escapeHtml(r[c.key])}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>`;
+  await html2pdf()
+    .set({ margin: 10, filename: `${filename}.pdf`, jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' } })
+    .from(container)
+    .save();
+}
+
 export function generatePropertyUrl(p?: { id?: string | null; title?: string | null } | null): string {
   if (!p || !p.id) return '#';
   if (!p.title) return `/property/${p.id}`;

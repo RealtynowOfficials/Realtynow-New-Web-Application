@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Check, X, Eye, Send, FileText, Search, Download, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
+import { Check, X, Eye, Send, FileText, Search, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { queryClient } from '../../lib/queryClient';
@@ -12,10 +12,38 @@ import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { updatePropertyStatus, adminApproveWithAi, adminRejectWithAi } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate, cn, exportToCsv , generatePropertyUrl} from '../../lib/utils';
+import { formatPrice, formatDate, cn, generatePropertyUrl } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
 import type { Property, AiVerification } from '../../lib/types';
+import { ExportMenu } from '../../components/export-menu';
+import { SavedFiltersMenu } from '../../components/saved-filters-menu';
+import { useSavedFilters } from '../../lib/saved-filters';
+
+const ADMIN_PROPERTIES_PAGE_SIZE = 12;
+const ADMIN_PROPERTIES_EXPORT_COLUMNS = [
+  { key: 'id', label: 'ID' },
+  { key: 'title', label: 'Property' },
+  { key: 'locality_name', label: 'Locality' },
+  { key: 'city_name', label: 'City' },
+  { key: 'price', label: 'Price' },
+  { key: 'purpose', label: 'Purpose' },
+  { key: 'status', label: 'Status' },
+  { key: 'view_count', label: 'Views' },
+  { key: 'created_at', label: 'Created' },
+];
+
+interface AdminPropertiesFilterState {
+  tab: string;
+  search: string;
+  city: string;
+  minPrice: string;
+  maxPrice: string;
+  purpose: string;
+  type: string;
+  dateFrom: string;
+  dateTo: string;
+}
 
 interface PendingProperty extends Property {
   owner?: { first_name: string | null; last_name: string | null; email: string } | null;
@@ -809,7 +837,12 @@ export function AdminProperties() {
     locality_id: '',
     property_type_id: '',
     status: 'draft',
+    seo_title: '',
+    seo_description: '',
+    seo_slug: '',
+    seo_keywords: '',
   });
+  const [regeneratingSeo, setRegeneratingSeo] = useState(false);
   const [filters, setFilters] = useState({
     city: '',
     minPrice: '',
@@ -822,10 +855,17 @@ export function AdminProperties() {
   const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
   const [propertyTypes, setPropertyTypes] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
   const realtimeTick = useRealtimeCount('properties');
+  const savedFilters = useSavedFilters<AdminPropertiesFilterState>('admin-properties');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-properties', tab, search, filters, realtimeTick],
+  // Reset to page 1 whenever the filter/search/tab shape changes underneath the current page.
+  useEffect(() => {
+    setPage(1);
+  }, [tab, search, filters]);
+
+  const { data, isLoading, error: queryError } = useQuery({
+    queryKey: ['admin-properties', tab, search, filters, page, realtimeTick],
     queryFn: async () => {
       const { data: citiesData } = await supabase.from('cities').select('id, name').order('name');
       const { data: typesData } = await supabase.from('property_types').select('id, name').order('name');
@@ -833,7 +873,7 @@ export function AdminProperties() {
       setPropertyTypes(typesData ?? []);
       let q = supabase
         .from('v_properties_search')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('created_at', { ascending: false });
 
       if (tab !== 'all') {
@@ -857,14 +897,21 @@ export function AdminProperties() {
       if (filters.dateFrom) q = q.gte('created_at', filters.dateFrom);
       if (filters.dateTo) q = q.lte('created_at', `${filters.dateTo}T23:59:59Z`);
 
-      const queryRes = await q;
+      const from = (page - 1) * ADMIN_PROPERTIES_PAGE_SIZE;
+      const queryRes = await q.range(from, from + ADMIN_PROPERTIES_PAGE_SIZE - 1);
       let data = queryRes.data;
+      let count = queryRes.count;
       const error = queryRes.error;
 
       if (error) {
         console.warn('Supabase Query Warning, falling back to raw select:', error);
-        const rawRes = await supabase.from('v_properties_search').select('*').order('created_at', { ascending: false });
+        const rawRes = await supabase
+          .from('v_properties_search')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .range(from, from + ADMIN_PROPERTIES_PAGE_SIZE - 1);
         data = rawRes.data;
+        count = rawRes.count;
       }
 
       const properties = data ?? [];
@@ -888,13 +935,19 @@ export function AdminProperties() {
         }
       }
 
-      return properties.map((p) => {
-        const owner = profilesMap[p.owner_id] || null;
-        // The view already returns flattened fields like city_name, so we don't need mapJoined here
-        return { ...p, owner } as unknown as PendingProperty;
-      });
+      return {
+        properties: properties.map((p) => {
+          const owner = profilesMap[p.owner_id] || null;
+          // The view already returns flattened fields like city_name, so we don't need mapJoined here
+          return { ...p, owner } as unknown as PendingProperty;
+        }),
+        count: count ?? properties.length,
+      };
     },
   });
+
+  const properties = data?.properties ?? [];
+  const totalCount = data?.count ?? 0;
 
   const seedSampleProperties = async () => {
     try {
@@ -1052,6 +1105,10 @@ export function AdminProperties() {
                 locality_id: p.locality_id ?? '',
                 property_type_id: p.property_type_id ?? '',
                 status: p.status,
+                seo_title: p.seo_title ?? '',
+                seo_description: p.seo_description ?? '',
+                seo_slug: p.seo_slug ?? '',
+                seo_keywords: (p.seo_keywords ?? []).join(', '),
               });
             }}
           >
@@ -1105,6 +1162,12 @@ export function AdminProperties() {
         locality_id: editForm.locality_id,
         property_type_id: editForm.property_type_id,
         status: editForm.status,
+        seo_title: editForm.seo_title || null,
+        seo_description: editForm.seo_description || null,
+        seo_slug: editForm.seo_slug || null,
+        seo_keywords: editForm.seo_keywords
+          ? editForm.seo_keywords.split(',').map((k) => k.trim()).filter(Boolean)
+          : [],
       })
       .eq('id', editing.id);
     setSaving(false);
@@ -1112,20 +1175,39 @@ export function AdminProperties() {
     queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
   };
 
-  const handleExport = () => {
-    // Export exactly what's on screen: same filters/search/sort/pagination the table applies.
-    if (!visibleRows.length) return;
-    exportToCsv('admin-properties', visibleRows as unknown as Record<string, unknown>[], [
-      { key: 'id', label: 'ID' },
-      { key: 'title', label: 'Property' },
-      { key: 'locality_name', label: 'Locality' },
-      { key: 'city_name', label: 'City' },
-      { key: 'price', label: 'Price' },
-      { key: 'purpose', label: 'Purpose' },
-      { key: 'status', label: 'Status' },
-      { key: 'view_count', label: 'Views' },
-      { key: 'created_at', label: 'Created' },
-    ]);
+  const regenerateSeo = async () => {
+    if (!editing) return;
+    setRegeneratingSeo(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generatePropertySeo', {
+        body: { property_id: editing.id },
+      });
+      if (error) throw error;
+      setEditForm((f) => ({
+        ...f,
+        seo_title: data?.seo_title ?? f.seo_title,
+        seo_slug: data?.seo_slug ?? f.seo_slug,
+      }));
+      const { data: refreshed } = await supabase
+        .from('properties')
+        .select('seo_title, seo_description, seo_slug, seo_keywords')
+        .eq('id', editing.id)
+        .single();
+      if (refreshed) {
+        setEditForm((f) => ({
+          ...f,
+          seo_title: refreshed.seo_title ?? '',
+          seo_description: refreshed.seo_description ?? '',
+          seo_slug: refreshed.seo_slug ?? '',
+          seo_keywords: (refreshed.seo_keywords ?? []).join(', '),
+        }));
+      }
+      toast.addToast('success', 'SEO regenerated with AI');
+    } catch (err: any) {
+      toast.addToast('error', err?.message || 'SEO regeneration failed');
+    } finally {
+      setRegeneratingSeo(false);
+    }
   };
 
   const toggleSelect = (id: string) =>
@@ -1144,43 +1226,60 @@ export function AdminProperties() {
         title="All properties"
         subtitle="Manage every property on the platform."
         action={
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
-              Export CSV
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            <SavedFiltersMenu
+              presets={savedFilters.presets}
+              onSave={(name) => savedFilters.save(name, { tab, search, ...filters })}
+              onRemove={savedFilters.remove}
+              onApply={(f) => {
+                setTab(f.tab);
+                setSearch(f.search);
+                setFilters({
+                  city: f.city,
+                  minPrice: f.minPrice,
+                  maxPrice: f.maxPrice,
+                  purpose: f.purpose,
+                  type: f.type,
+                  dateFrom: f.dateFrom,
+                  dateTo: f.dateTo,
+                });
+              }}
+            />
+            <ExportMenu filename="admin-properties" rows={visibleRows as unknown as Record<string, unknown>[]} columns={ADMIN_PROPERTIES_EXPORT_COLUMNS} />
           </div>
         }
       />
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1 overflow-x-auto">
-          {['all', 'published', 'pending', 'approved', 'rejected', 'draft'].map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
-                tab === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50',
-              )}
-            >
-              {t === 'pending' ? 'Pending' : t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-400" />
-            <Input
-              placeholder="Search title or address…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+      <div className="sticky top-0 z-20 -mx-1 space-y-3 bg-navy-50/95 px-1 pb-3 pt-1 backdrop-blur-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-1 overflow-x-auto">
+            {['all', 'published', 'pending', 'approved', 'rejected', 'draft'].map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
+                  tab === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50',
+                )}
+              >
+                {t === 'pending' ? 'Pending' : t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-400" />
+              <Input
+                placeholder="Search title or address…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Rich filters */}
-      <Card className="mb-4 p-4">
+        {/* Rich filters */}
+        <Card className="p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Select
             value={filters.city}
@@ -1255,7 +1354,8 @@ export function AdminProperties() {
             Clear filters
           </Button>
         </div>
-      </Card>
+        </Card>
+      </div>
 
       {selected.size > 0 && (
         <BulkActionsBar
@@ -1280,7 +1380,7 @@ export function AdminProperties() {
         />
       )}
 
-      {data?.length === 0 && !isLoading ? (
+      {properties.length === 0 && !isLoading ? (
         <Card>
           <EmptyState
             icon={<FileText className="h-6 w-6" />}
@@ -1320,10 +1420,12 @@ export function AdminProperties() {
       ) : (
         <DataTable
           columns={columns}
-          rows={data ?? []}
+          rows={properties}
           loading={isLoading}
+          error={queryError instanceof Error ? queryError.message : null}
+          searchable={false}
+          dateFilterable={false}
           getRowId={(p) => p.id}
-          pageSize={10}
           selectedIds={selected}
           onToggleSelect={toggleSelect}
           onSelectAll={(ids) =>
@@ -1334,6 +1436,12 @@ export function AdminProperties() {
             })
           }
           onVisibleRowsChange={handleVisibleRowsChange}
+          serverPagination={{
+            page,
+            pageSize: ADMIN_PROPERTIES_PAGE_SIZE,
+            totalCount,
+            onPageChange: setPage,
+          }}
         />
       )}
 
@@ -1433,6 +1541,43 @@ export function AdminProperties() {
                 </option>
               ))}
             </Select>
+
+            <div className="sm:col-span-2 mt-2 flex items-center justify-between border-t border-navy-100 pt-3">
+              <div>
+                <h4 className="text-sm font-bold text-navy-900">SEO metadata</h4>
+                <p className="text-xs text-navy-500">
+                  AI-generated on submit/resubmit. Edits here override the AI output until it's regenerated again.
+                </p>
+              </div>
+              <Button size="sm" variant="secondary" onClick={regenerateSeo} loading={regeneratingSeo}>
+                Regenerate with AI
+              </Button>
+            </div>
+            <div className="sm:col-span-2">
+              <Input
+                label="SEO title"
+                value={editForm.seo_title}
+                onChange={(e) => setEditForm((f) => ({ ...f, seo_title: e.target.value }))}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Textarea
+                label="Meta description"
+                rows={2}
+                value={editForm.seo_description}
+                onChange={(e) => setEditForm((f) => ({ ...f, seo_description: e.target.value }))}
+              />
+            </div>
+            <Input
+              label="URL slug"
+              value={editForm.seo_slug}
+              onChange={(e) => setEditForm((f) => ({ ...f, seo_slug: e.target.value }))}
+            />
+            <Input
+              label="Keywords (comma-separated)"
+              value={editForm.seo_keywords}
+              onChange={(e) => setEditForm((f) => ({ ...f, seo_keywords: e.target.value }))}
+            />
           </div>
         )}
       </Modal>

@@ -17,7 +17,9 @@ import {
   ScrollText,
   ShieldCheck,
   Calendar,
+  Image,
   LayoutTemplate,
+  Lock,
 } from 'lucide-react';
 import type { NavSection } from '../../components/dashboard-layout';
 
@@ -90,6 +92,7 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
       { to: '/admin/testimonials', label: t('dashboard:testimonials', 'Testimonials'), icon: Star },
       { to: '/admin/faqs', label: t('dashboard:faqs', 'FAQs'), icon: HelpCircle },
       { to: '/admin/advertisements', label: t('dashboard:advertisements', 'Advertisements'), icon: Megaphone },
+      { to: '/admin/hero-campaigns', label: t('dashboard:heroCampaigns', 'Hero Campaigns'), icon: Image },
       { to: '/admin/languages', label: t('dashboard:languages', 'Languages & i18n'), icon: ShieldCheck },
     ],
   },
@@ -100,6 +103,7 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
       { to: '/admin/audit', label: t('dashboard:auditLogs', 'Audit Logs'), icon: ScrollText },
       { to: '/admin/property-page-settings', label: t('dashboard:propertyPageSettings', 'Property Page Settings'), icon: LayoutTemplate },
       { to: '/admin/settings', label: t('dashboard:settings', 'Settings'), icon: ShieldCheck },
+      { to: '/admin/security', label: t('dashboard:security', 'Security'), icon: Lock },
     ],
   },
 ];

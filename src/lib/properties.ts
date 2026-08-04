@@ -197,6 +197,7 @@ export async function resubmitProperty(propertyId: string) {
   });
   if (error) throw error;
   triggerAiVerification(propertyId);
+  triggerPropertySeoGeneration(propertyId);
   return data;
 }
 
@@ -211,6 +212,19 @@ export async function resubmitProperty(propertyId: string) {
 export function triggerAiVerification(propertyId: string) {
   supabase.functions.invoke('verifyProperty', { body: { property_id: propertyId } }).catch((err) => {
     console.error('AI verification trigger failed:', err);
+  });
+}
+
+/**
+ * Fire-and-forget trigger for the `generatePropertySeo` edge function. Generates the SEO
+ * title, description, slug, keywords, Open Graph and Twitter Card fields, canonical URL,
+ * JSON-LD, and image alt text from the property's own details and writes them straight onto
+ * the row — replaces the old customer-facing SEO wizard step. Called on submit, resubmit,
+ * and admin approve/publish so SEO stays current whenever the underlying listing changes.
+ */
+export function triggerPropertySeoGeneration(propertyId: string) {
+  supabase.functions.invoke('generatePropertySeo', { body: { property_id: propertyId } }).catch((err) => {
+    console.error('SEO generation trigger failed:', err);
   });
 }
 

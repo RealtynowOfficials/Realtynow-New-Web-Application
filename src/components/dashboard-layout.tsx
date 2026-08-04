@@ -68,8 +68,11 @@ export function DashboardLayout({
         <div className="border-t border-navy-100 p-3">
           <button
             onClick={() => {
+              const isAdmin = profile?.role === 'admin';
               signOut();
-              navigate('/');
+              // Admins land back on their own dedicated login portal, not the public site —
+              // keeps the admin auth flow feeling fully separate end-to-end.
+              navigate(isAdmin ? '/admin/login' : '/');
             }}
             className="sidebar-link w-full text-left text-error-600 hover:bg-error-50"
           >

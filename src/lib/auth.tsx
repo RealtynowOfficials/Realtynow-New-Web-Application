@@ -136,10 +136,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Best-effort audit log + clear the admin 2FA session flag *before* the session is torn
+    // down (the log call needs a valid bearer token) — otherwise a different admin signing
+    // in on the same browser tab would inherit a stale "verified" flag from sessionStorage.
+    if (profile?.role === 'admin') {
+      const { logAdminLogout, clearAdmin2faVerified } = await import('./admin-security');
+      await logAdminLogout();
+      clearAdmin2faVerified();
+    }
     await supabase.auth.signOut();
     setProfile(null);
     setSession(null);
-  }, []);
+  }, [profile]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) await loadProfile(session.user.id);

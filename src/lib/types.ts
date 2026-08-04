@@ -154,6 +154,22 @@ export interface Property {
   verified_status?: string | null;
   ai_score?: number | null;
   possession_status?: 'Ready to Move' | 'Under Construction' | 'New Launch' | null;
+  // AI-generated SEO metadata (generatePropertySeo edge function) — admin can view/override,
+  // customers no longer enter these directly (see docs/AI_FEATURES.md).
+  seo_title?: string | null;
+  seo_description?: string | null;
+  seo_slug?: string | null;
+  seo_keywords?: string[] | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  twitter_title?: string | null;
+  twitter_description?: string | null;
+  twitter_image?: string | null;
+  canonical_url?: string | null;
+  json_ld?: Record<string, unknown> | null;
+  image_alt_text?: string[] | null;
+  seo_generated_at?: string | null;
 }
 
 export interface VirtualTour {
@@ -232,6 +248,37 @@ export interface Notification {
   link: string | null;
   read_at: string | null;
   created_at: string;
+  // Enterprise notification columns (migration 0035)
+  channel?: string[];
+  delivered_via?: string[];
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  template_key?: string | null;
+  template_vars?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+  is_dismissed?: boolean;
+  action_url?: string | null;
+  action_label?: string | null;
+  expires_at?: string | null;
+  group_key?: string | null;
+  updated_at?: string;
+}
+
+export interface NotificationPreferences {
+  user_id: string;
+  in_app: boolean;
+  email: boolean;
+  sms: boolean;
+  whatsapp: boolean;
+  push: boolean;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  timezone: string;
+  marketing: boolean;
+  property_updates: boolean;
+  lead_updates: boolean;
+  payment_updates: boolean;
+  system_alerts: boolean;
 }
 
 export interface Favorite {
@@ -357,6 +404,28 @@ export interface Advertisement {
   internal_comments?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface HeroCampaign {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  description?: string | null;
+  banner_image?: string | null;
+  mobile_banner?: string | null;
+  logo?: string | null;
+  cta_text?: string | null;
+  cta_url?: string | null;
+  city_id?: string | null;
+  campaign_type: 'Paid' | 'Free';
+  priority?: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  order_no?: number;
+  status: 'Active' | 'Inactive';
+  created_at?: string;
+  updated_at?: string;
+  cities?: { name: string } | null;
 }
 
 export interface AuditLog {

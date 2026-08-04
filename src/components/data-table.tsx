@@ -68,14 +68,25 @@ export function isDateInPreset(
   return true;
 }
 
+export interface ServerPagination {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  onPageChange: (page: number) => void;
+}
+
 interface DataTableProps<T> {
   columns: Column<T>[];
   rows: T[];
   loading?: boolean;
+  /** Non-blocking error banner shown above the table/cards (data, if any, still renders below). */
+  error?: string | null;
   searchable?: boolean;
   searchPlaceholder?: string;
   searchKeys?: (keyof T)[];
   dateKey?: keyof T;
+  /** Hides the built-in date-preset dropdown — set false when the caller already has its own date filter (e.g. server-side range inputs), so users aren't shown two competing date controls. */
+  dateFilterable?: boolean;
   pageSize?: number;
   onRowClick?: (row: T) => void;
   selectedIds?: Set<string>;
@@ -87,15 +98,28 @@ interface DataTableProps<T> {
   defaultView?: 'table' | 'grid';
   /** Fires with the exact rows currently rendered on screen (after search/date-filter/sort/pagination), so callers (e.g. CSV export) can match the UI exactly. */
   onVisibleRowsChange?: (rows: T[]) => void;
+  /** Sticks the toolbar to the top of the scroll container instead of scrolling away with the page. */
+  sticky?: boolean;
+  /**
+   * Opt-in server-side pagination: when set, `rows` is treated as already being exactly the
+   * current page (the caller fetched it with its own `.range()` query) — DataTable stops
+   * slicing/paginating locally and defers page count/navigation to this prop instead.
+   * Client-side search/date-filter here would only ever see one page's worth of rows, so
+   * pair this with `searchable={false}` / `dateFilterable={false}` when the caller already
+   * has its own server-side equivalents (as every current server-mode page does).
+   */
+  serverPagination?: ServerPagination;
 }
 
 export function DataTable<T>({
   columns,
   rows,
   loading,
+  error,
   searchable = true,
   searchKeys,
   dateKey = 'created_at' as keyof T,
+  dateFilterable = true,
   pageSize = 10,
   onRowClick,
   selectedIds,
@@ -106,27 +130,30 @@ export function DataTable<T>({
   cardRender,
   defaultView = 'table',
   onVisibleRowsChange,
+  sticky = false,
+  serverPagination,
 }: DataTableProps<T>) {
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [page, setPage] = useState(1);
+  const [localPage, setLocalPage] = useState(1);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>(defaultView);
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
-  // 1. Date Filtering
+  // 1. Date Filtering (skipped entirely in server-pagination mode — rows are already final)
   const dateFiltered = useMemo(() => {
+    if (serverPagination) return rows;
     return rows.filter((r) => {
       const val = (r as Record<string, unknown>)[dateKey as string] as string | null | undefined;
       return isDateInPreset(val, datePreset, customStart, customEnd);
     });
-  }, [rows, dateKey, datePreset, customStart, customEnd]);
+  }, [rows, dateKey, datePreset, customStart, customEnd, serverPagination]);
 
-  // 2. Search Query Filtering
+  // 2. Search Query Filtering (skipped in server-pagination mode)
   const filtered = useMemo(() => {
-    if (!query) return dateFiltered;
+    if (serverPagination || !query) return dateFiltered;
     const q = query.toLowerCase();
     if (!searchKeys || searchKeys.length === 0) {
       return dateFiltered.filter((r) =>
@@ -144,9 +171,9 @@ export function DataTable<T>({
           .includes(q),
       ),
     );
-  }, [dateFiltered, query, searchKeys]);
+  }, [dateFiltered, query, searchKeys, serverPagination]);
 
-  // 3. Sorting
+  // 3. Sorting (in server-pagination mode this only reorders the current page, not the full set)
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
     const col = columns.find((c) => c.key === sortKey);
@@ -161,12 +188,15 @@ export function DataTable<T>({
     });
   }, [filtered, sortKey, sortDir, columns]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const current = Math.min(page, totalPages);
-  const pageRows = useMemo(
-    () => sorted.slice((current - 1) * pageSize, current * pageSize),
-    [sorted, current, pageSize],
-  );
+  const effectivePageSize = serverPagination?.pageSize ?? pageSize;
+  const totalCount = serverPagination?.totalCount ?? sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / effectivePageSize));
+  const current = serverPagination ? serverPagination.page : Math.min(localPage, totalPages);
+  const setPage = serverPagination?.onPageChange ?? setLocalPage;
+  const pageRows = useMemo(() => {
+    if (serverPagination) return sorted;
+    return sorted.slice((current - 1) * effectivePageSize, current * effectivePageSize);
+  }, [sorted, current, effectivePageSize, serverPagination]);
 
   useEffect(() => {
     onVisibleRowsChange?.(pageRows);
@@ -183,8 +213,18 @@ export function DataTable<T>({
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div className="rounded-xl border border-error-200 bg-error-50 px-4 py-3 text-sm font-medium text-error-700">
+          {error}
+        </div>
+      )}
       {/* Top Filter & Toolbar Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-navy-100 shadow-sm">
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-navy-100 shadow-sm',
+          sticky && 'sticky top-0 z-20',
+        )}
+      >
         {/* Left: Search Bar */}
         {searchable && (
           <div className="relative min-w-[220px] flex-1 max-w-sm">
@@ -202,46 +242,48 @@ export function DataTable<T>({
         )}
 
         {/* Middle: Advanced Date Filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-navy-600 bg-navy-50 px-2.5 py-1.5 rounded-xl border border-navy-100">
-            <Calendar className="h-4 w-4 text-navy-500" />
-            <span>Date:</span>
-            <select
-              value={datePreset}
-              onChange={(e) => {
-                setDatePreset(e.target.value as DatePreset);
-                setPage(1);
-              }}
-              className="bg-transparent font-bold text-navy-900 focus:outline-none cursor-pointer pr-1"
-            >
-              <option value="all">All Time</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="7days">Last 7 Days</option>
-              <option value="30days">Last 30 Days</option>
-              <option value="this_month">This Month</option>
-              <option value="custom">Custom Range</option>
-            </select>
-          </div>
-
-          {datePreset === 'custom' && (
-            <div className="flex items-center gap-1.5 bg-navy-50 p-1 rounded-xl border border-navy-100 text-xs">
-              <input
-                type="date"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-                className="bg-white border border-navy-200 rounded px-2 py-1 text-xs"
-              />
-              <span className="text-navy-400">to</span>
-              <input
-                type="date"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-                className="bg-white border border-navy-200 rounded px-2 py-1 text-xs"
-              />
+        {dateFilterable && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-navy-600 bg-navy-50 px-2.5 py-1.5 rounded-xl border border-navy-100">
+              <Calendar className="h-4 w-4 text-navy-500" />
+              <span>Date:</span>
+              <select
+                value={datePreset}
+                onChange={(e) => {
+                  setDatePreset(e.target.value as DatePreset);
+                  setPage(1);
+                }}
+                className="bg-transparent font-bold text-navy-900 focus:outline-none cursor-pointer pr-1"
+              >
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="7days">Last 7 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="this_month">This Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
             </div>
-          )}
-        </div>
+
+            {datePreset === 'custom' && (
+              <div className="flex items-center gap-1.5 bg-navy-50 p-1 rounded-xl border border-navy-100 text-xs">
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  className="bg-white border border-navy-200 rounded px-2 py-1 text-xs"
+                />
+                <span className="text-navy-400">to</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  className="bg-white border border-navy-200 rounded px-2 py-1 text-xs"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Right: View Toggle Switcher (Table vs Card Grid) */}
         <div className="flex items-center gap-1 bg-navy-100/70 p-1 rounded-xl">
@@ -431,16 +473,16 @@ export function DataTable<T>({
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-navy-100 px-4 py-3 text-sm bg-white rounded-2xl border">
           <span className="text-navy-500">
-            Showing {(current - 1) * pageSize + 1}–{Math.min(current * pageSize, sorted.length)} of {sorted.length}
+            Showing {(current - 1) * effectivePageSize + 1}–{Math.min(current * effectivePageSize, totalCount)} of {totalCount}
           </span>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" disabled={current === 1} onClick={() => setPage((p) => p - 1)}>
+            <Button variant="ghost" size="sm" disabled={current === 1} onClick={() => setPage(current - 1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="px-2 font-semibold text-navy-700">
               {current} / {totalPages}
             </span>
-            <Button variant="ghost" size="sm" disabled={current === totalPages} onClick={() => setPage((p) => p + 1)}>
+            <Button variant="ghost" size="sm" disabled={current === totalPages} onClick={() => setPage(current + 1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

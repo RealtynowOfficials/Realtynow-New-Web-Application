@@ -29,6 +29,28 @@ import { formatPrice, formatDate, formatNumber , generatePropertyUrl} from '../.
 import { useRealtimeCount } from '../../lib/realtime';
 import { RemindersWidget } from '../../components/reminders-widget';
 import type { Property } from '../../lib/types';
+import { ExportMenu } from '../../components/export-menu';
+import { SavedFiltersMenu } from '../../components/saved-filters-menu';
+import { useSavedFilters } from '../../lib/saved-filters';
+
+const AGENT_PROPERTIES_EXPORT_COLUMNS = [
+  { key: 'id', label: 'ID' },
+  { key: 'title', label: 'Property' },
+  { key: 'locality_name', label: 'Locality' },
+  { key: 'city_name', label: 'City' },
+  { key: 'price', label: 'Price' },
+  { key: 'status', label: 'Status' },
+  { key: 'view_count', label: 'Views' },
+  { key: 'created_at', label: 'Created' },
+];
+
+interface AgentPropertiesFilterState {
+  status: string;
+  city: string;
+  type: string;
+  minPrice: string;
+  maxPrice: string;
+}
 
 const LEAD_STATUSES = ['new', 'contacted', 'closed', 'spam'] as const;
 const APPT_STATUSES = ['requested', 'confirmed', 'completed', 'cancelled'] as const;
@@ -204,8 +226,17 @@ export function AgentProperties() {
   const agentSections = getAgentSections(t);
   const { user } = useAuth();
   const realtimeTick = useRealtimeCount('properties', { column: 'assigned_agent_id', value: user?.id ?? '' });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState<AgentPropertiesFilterState>({
+    status: '',
+    city: '',
+    type: '',
+    minPrice: '',
+    maxPrice: '',
+  });
+  const savedFilters = useSavedFilters<AgentPropertiesFilterState>('agent-properties');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['agent-properties', user?.id, realtimeTick],
     queryFn: async () => {
       const { data } = await supabase
@@ -217,6 +248,34 @@ export function AgentProperties() {
     },
     enabled: !!user,
   });
+
+  // Filter option lists derived from the already-loaded set — this page's dataset (one
+  // agent's assigned properties) is small enough that a separate cities/types lookup query
+  // isn't worth the round trip.
+  const filterOptions = useMemo(() => {
+    const cities = new Map<string, string>();
+    const types = new Map<string, string>();
+    const statuses = new Set<string>();
+    (data ?? []).forEach((p) => {
+      if (p.city_id && p.city_name) cities.set(p.city_id, p.city_name);
+      if (p.property_type_id && p.property_type_name) types.set(p.property_type_id, p.property_type_name);
+      if (p.status) statuses.add(p.status);
+    });
+    return { cities: [...cities.entries()], types: [...types.entries()], statuses: [...statuses] };
+  }, [data]);
+
+  const filteredRows = useMemo(() => {
+    return (data ?? []).filter((p) => {
+      if (filters.status && p.status !== filters.status) return false;
+      if (filters.city && p.city_id !== filters.city) return false;
+      if (filters.type && p.property_type_id !== filters.type) return false;
+      if (filters.minPrice && p.price < Number(filters.minPrice)) return false;
+      if (filters.maxPrice && p.price > Number(filters.maxPrice)) return false;
+      return true;
+    });
+  }, [data, filters]);
+
+  const [visibleRows, setVisibleRows] = useState<Property[]>([]);
 
   const columns: Column<Property>[] = [
     {
@@ -254,14 +313,103 @@ export function AgentProperties() {
 
   return (
     <DashboardLayout sections={agentSections} title="Assigned Properties" badge="Agent">
-      <PageHeader title="Assigned properties" subtitle="Properties you're managing." />
+      <PageHeader
+        title="Assigned properties"
+        subtitle="Properties you're managing."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <SavedFiltersMenu
+              presets={savedFilters.presets}
+              onSave={(name) => savedFilters.save(name, filters)}
+              onRemove={savedFilters.remove}
+              onApply={setFilters}
+            />
+            <ExportMenu
+              filename="agent-properties"
+              rows={(selected.size > 0 ? visibleRows.filter((p) => selected.has(p.id)) : visibleRows) as unknown as Record<string, unknown>[]}
+              columns={AGENT_PROPERTIES_EXPORT_COLUMNS}
+            />
+          </div>
+        }
+      />
+
+      <div className="sticky top-0 z-20 -mx-1 mb-4 bg-navy-50/95 px-1 pb-1 pt-1 backdrop-blur-sm">
+        <Card className="p-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} className="text-sm">
+              <option value="">All statuses</option>
+              {filterOptions.statuses.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+            <Select value={filters.city} onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} className="text-sm">
+              <option value="">All cities</option>
+              {filterOptions.cities.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+            <Select value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))} className="text-sm">
+              <option value="">All types</option>
+              {filterOptions.types.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="number"
+              placeholder="Min price"
+              value={filters.minPrice}
+              onChange={(e) => setFilters((f) => ({ ...f, minPrice: e.target.value }))}
+              className="text-sm"
+            />
+            <Input
+              type="number"
+              placeholder="Max price"
+              value={filters.maxPrice}
+              onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value }))}
+              className="text-sm"
+            />
+          </div>
+          {selected.size > 0 && (
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-navy-50 px-3 py-2">
+              <span className="text-xs font-bold text-navy-600">{selected.size} selected</span>
+              <button onClick={() => setSelected(new Set())} className="text-xs font-semibold text-navy-400 hover:text-red-600">
+                Clear selection
+              </button>
+            </div>
+          )}
+        </Card>
+      </div>
+
       <DataTable
         columns={columns}
-        rows={data ?? []}
+        rows={filteredRows}
         loading={isLoading}
+        error={error instanceof Error ? error.message : null}
         getRowId={(p) => p.id}
         searchKeys={['title']}
         dateKey="created_at"
+        selectedIds={selected}
+        onToggleSelect={(id) =>
+          setSelected((s) => {
+            const n = new Set(s);
+            n.has(id) ? n.delete(id) : n.add(id);
+            return n;
+          })
+        }
+        onSelectAll={(ids) =>
+          setSelected((s) => {
+            const n = new Set(s);
+            ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
+            return n;
+          })
+        }
+        onVisibleRowsChange={setVisibleRows}
         cardRender={(p) => (
           <Card className="p-4 flex flex-col justify-between h-full hover:shadow-md transition-shadow">
             <div>

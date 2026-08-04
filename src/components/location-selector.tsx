@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocationContext } from '../contexts/location-context';
-import { MapPin, Search, Crosshair, ChevronDown, Check } from 'lucide-react';
+import { MapPin, Search, Crosshair, ChevronDown, Check, Loader2, LocateFixed } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useToast } from './toast';
 
 const topCities = [
   'Mumbai',
@@ -17,40 +18,41 @@ const topCities = [
 ];
 
 export function LocationSelector({ isTransparent }: { isTransparent: boolean }) {
-  const { city, isLocating, error, detectLocation, setCity } = useLocationContext();
+  const { city, isLocating, error, permissionDenied, detectLocation, setCity, dismissLocationPrompt } =
+    useLocationContext();
+  const { addToast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
+  const justRequestedRef = useRef(false);
 
   const filteredCities = topCities.filter((c) => c.toLowerCase().includes(search.toLowerCase()));
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [isOpen]);
 
   const handleSelect = (selectedCity: string) => {
     setCity(selectedCity);
     setIsOpen(false);
   };
 
+  const handleUseMyLocation = () => {
+    justRequestedRef.current = true;
+    detectLocation();
+  };
+
+  // Surface a toast once a location request triggered by the "Use My Location"
+  // button finishes — success or failure — without interrupting the silent
+  // auto-detect that runs on first page load.
+  useEffect(() => {
+    if (isLocating || !justRequestedRef.current) return;
+    justRequestedRef.current = false;
+    if (error) {
+      addToast('error', error);
+    } else if (city) {
+      addToast('success', `Location set to ${city}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLocating]);
+
   return (
-    <div ref={containerRef} className="relative z-50">
+    <div className="relative z-50 flex items-center gap-1.5">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border ${
@@ -66,6 +68,47 @@ export function LocationSelector({ isTransparent }: { isTransparent: boolean }) 
         <ChevronDown className={`h-3 w-3 opacity-60 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
+      {/* Use My Location — re-fetches live location anytime, bypassing the 24h cache */}
+      <button
+        type="button"
+        onClick={handleUseMyLocation}
+        disabled={isLocating}
+        title="Use my location"
+        aria-label="Use my location"
+        className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors disabled:opacity-60 ${
+          isTransparent
+            ? 'border-white/20 hover:bg-white/10 text-white'
+            : 'border-navy-700 hover:bg-navy-800 text-navy-200'
+        }`}
+      >
+        {isLocating ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <LocateFixed className="h-3.5 w-3.5 text-red-500" />
+        )}
+      </button>
+
+      {permissionDenied && (
+        <div className="hidden items-center gap-0.5 rounded-lg border border-red-300 bg-red-50 pl-2.5 pr-1 py-1.5 sm:flex">
+          <button
+            type="button"
+            onClick={handleUseMyLocation}
+            className="text-[11px] font-semibold text-red-600 transition-colors hover:text-red-700"
+            title="Location access is blocked. Enable it in your browser's site settings, then click to retry."
+          >
+            Enable Live Location
+          </button>
+          <button
+            type="button"
+            onClick={dismissLocationPrompt}
+            aria-label="Dismiss"
+            className="px-1 text-red-500 opacity-60 hover:opacity-100"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -78,7 +121,7 @@ export function LocationSelector({ isTransparent }: { isTransparent: boolean }) 
             {/* Auto detect button */}
             <button
               onClick={() => {
-                detectLocation();
+                handleUseMyLocation();
                 setIsOpen(false);
               }}
               className="flex w-full items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-100"

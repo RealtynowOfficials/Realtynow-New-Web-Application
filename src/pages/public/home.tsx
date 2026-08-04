@@ -59,7 +59,8 @@ import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl 
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useToast } from '../../components/toast';
 import { AppShowcase } from '../../components/app-showcase';
-import type { Advertisement, Property } from '../../lib/types';
+import type { HeroCampaign, Property } from '../../lib/types';
+import { useLocationContext } from '../../contexts/location-context';
 
 // Lightweight, localStorage-backed favorites — same minimal pattern as
 // components/property-card.tsx, kept local to this file (no new data-layer files).
@@ -297,63 +298,53 @@ const HERO_SLIDES: HeroSlide[] = [
 
 const HERO_SLIDE_INTERVAL_MS = 5000;
 
-function mapAdToHeroSlide(ad: Advertisement): HeroSlide {
-  // Mirrors the redirect_type resolution already baked into cta_link by the
-  // admin form (src/pages/admin/content.tsx), with the same property/category
-  // fallbacks used by AIAdBannerSection lower on this page.
-  const targetLink = ad.property_id
-    ? `/property/${ad.property_id}`
-    : ad.category_name
-      ? `/search?purpose=${ad.category_name}`
-      : ad.cta_link || ad.link_url || '/search';
-
+function mapCampaignToHeroSlide(c: HeroCampaign): HeroSlide {
   return {
-    id: ad.id,
-    title: ad.title,
-    subtitle: (ad.subtitle && ad.subtitle.trim()) || ad.description || '',
-    companyLogo: ad.company_logo,
-    priceText: ad.price_text,
-    locationText: ad.location_text,
-    imageDesktop: ad.image_desktop || ad.image_url || '',
-    imageMobile: ad.image_mobile || ad.image_desktop || ad.image_url || '',
-    ctaText: ad.cta_text || 'Explore Now',
-    ctaLink: targetLink,
+    id: c.id,
+    title: c.title,
+    subtitle: (c.subtitle && c.subtitle.trim()) || c.description || '',
+    companyLogo: c.logo,
+    // Reuses the existing "priceText" slide slot to surface a Sponsored badge for
+    // Paid campaigns — Free campaigns just show their location, same as before.
+    priceText: c.campaign_type === 'Paid' ? 'Sponsored' : null,
+    locationText: c.cities?.name ?? null,
+    imageDesktop: c.banner_image || '',
+    imageMobile: c.mobile_banner || c.banner_image || '',
+    ctaText: c.cta_text || 'Explore Now',
+    ctaLink: c.cta_url || '/search',
   };
 }
 
 function HeroSection() {
-  const realtimeTick = useRealtimeCount('advertisements');
   const [slideIndex, setSlideIndex] = useState(0);
+  const { cityId } = useLocationContext();
 
-  const { data: heroAds } = useQuery({
-    queryKey: ['home-hero-slides', realtimeTick],
+  const { data: campaigns } = useQuery({
+    queryKey: ['hero-campaigns'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('advertisements')
-        .select('*')
-        .eq('placement', 'Hero')
-        .eq('is_active', true)
-        .order('display_order', { ascending: true });
+        .from('hero_campaigns')
+        .select('*, cities(name)')
+        .eq('status', 'Active')
+        .order('order_no', { ascending: true });
       if (error) return [];
-      return (data ?? []) as Advertisement[];
+      return (data ?? []) as HeroCampaign[];
     },
   });
 
   const slides = useMemo(() => {
     const now = Date.now();
-    const live = (heroAds ?? []).filter((a) => {
-      const start = a.start_date
-        ? new Date(a.start_date).getTime()
-        : a.starts_at
-          ? new Date(a.starts_at).getTime()
-          : null;
-      if (start && start > now) return false;
-      const end = a.end_date ? new Date(a.end_date).getTime() : a.ends_at ? new Date(a.ends_at).getTime() : null;
-      if (end && end < now) return false;
+    const active = (campaigns ?? []).filter((c) => {
+      if (c.start_date && new Date(c.start_date).getTime() > now) return false;
+      if (c.end_date && new Date(c.end_date).getTime() < now) return false;
       return true;
     });
-    return live.length > 0 ? live.map(mapAdToHeroSlide) : HERO_SLIDES;
-  }, [heroAds]);
+    // City-scoped campaigns (city_id set) only show in that city; campaigns left on
+    // "All Cities" (city_id null) always show. Skip the city filter until a city is
+    // detected so slides aren't empty during the initial geolocation lookup.
+    const live = cityId ? active.filter((c) => !c.city_id || c.city_id === cityId) : active;
+    return live.length > 0 ? live.map(mapCampaignToHeroSlide) : HERO_SLIDES;
+  }, [campaigns, cityId]);
 
   // Keep slideIndex in range if the live slide list shrinks/refreshes.
   useEffect(() => {
@@ -410,7 +401,7 @@ function HeroSection() {
               type="button"
               onClick={prevSlide}
               aria-label="Previous slide"
-              className="absolute left-3 sm:left-5 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+              className="absolute left-3 top-4 sm:left-5 sm:top-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -418,7 +409,7 @@ function HeroSection() {
               type="button"
               onClick={nextSlide}
               aria-label="Next slide"
-              className="absolute right-3 sm:right-5 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+              className="absolute right-3 top-4 sm:right-5 sm:top-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -443,75 +434,71 @@ function HeroSection() {
           </div>
         )}
 
-        {/* Slide info panel — its own solid card, left-aligned, image stays fully clear */}
-        <div className="absolute inset-y-0 left-0 z-10 flex items-center">
-          <div className="container-wide w-full">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`panel-${activeSlide.id}`}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
-                transition={{ duration: 0.45, ease: 'easeOut' }}
-                className="w-[calc(100vw-2rem)] max-w-sm rounded-2xl bg-slate-900/95 p-4 shadow-2xl shadow-black/30 backdrop-blur-md sm:w-[420px] sm:p-5 lg:w-[460px] lg:p-6"
-              >
-                <div className="flex items-start gap-3">
-                  {activeSlide.companyLogo && (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1 sm:h-12 sm:w-12">
-                      <img
-                        src={activeSlide.companyLogo}
-                        alt=""
-                        className="max-h-full max-w-full object-contain"
-                        loading="lazy"
-                      />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <h2 className="font-display text-lg font-extrabold leading-tight text-white line-clamp-2 sm:text-xl lg:text-2xl">
-                      {activeSlide.title}
-                    </h2>
-                    {activeSlide.locationText && (
-                      <p className="mt-1 flex items-center gap-1 text-xs text-slate-300 sm:text-sm">
-                        <MapPin className="h-3.5 w-3.5 shrink-0 text-red-400" />
-                        <span className="truncate">{activeSlide.locationText}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
+        {/* Cinematic scrim — text sits directly on the image, no card, so this carries all the legibility */}
+        <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-t from-navy-950/85 via-navy-950/35 to-navy-950/10" />
 
-                {activeSlide.subtitle && (
-                  <p className="mt-3 text-xs leading-relaxed text-slate-300 line-clamp-2 sm:text-sm">
-                    {activeSlide.subtitle}
-                  </p>
+        {/* Slide info — centered directly over the banner image */}
+        <div className="absolute inset-0 z-10 flex items-center justify-center px-4 text-center sm:px-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`panel-${activeSlide.id}`}
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -18 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className="max-w-2xl"
+            >
+              {activeSlide.companyLogo && (
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white/95 p-1 shadow-lg sm:h-12 sm:w-12">
+                  <img src={activeSlide.companyLogo} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                </div>
+              )}
+
+              {activeSlide.locationText && (
+                <p className="mb-2 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 [text-shadow:0_1px_6px_rgba(0,0,0,0.6)] sm:text-sm">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                  {activeSlide.locationText}
+                </p>
+              )}
+
+              <h2 className="font-display text-2xl font-extrabold uppercase leading-[1.15] tracking-wide text-white [text-shadow:0_4px_24px_rgba(0,0,0,0.55)] sm:text-4xl lg:text-5xl">
+                {activeSlide.title}
+              </h2>
+
+              {activeSlide.subtitle && (
+                <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/90 [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base">
+                  {activeSlide.subtitle}
+                </p>
+              )}
+
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-5">
+                {activeSlide.priceText && (
+                  <span className="text-sm font-bold text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base">
+                    {activeSlide.priceText}
+                  </span>
                 )}
-
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  {activeSlide.priceText && (
-                    <span className="truncate text-sm font-bold text-white sm:text-base">{activeSlide.priceText}</span>
-                  )}
-                  {activeSlide.ctaLink.startsWith('http') ? (
-                    <a
-                      href={activeSlide.ctaLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-red-900/30 transition-all hover:shadow-red-900/50 sm:px-5 sm:text-sm"
-                    >
-                      {activeSlide.ctaText}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </a>
-                  ) : (
-                    <Link
-                      to={activeSlide.ctaLink}
-                      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-red-900/30 transition-all hover:shadow-red-900/50 sm:px-5 sm:text-sm"
-                    >
-                      {activeSlide.ctaText}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
-                  )}
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
+                {activeSlide.ctaLink.startsWith('http') ? (
+                  <a
+                    href={activeSlide.ctaLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
+                  >
+                    {activeSlide.ctaText}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </a>
+                ) : (
+                  <Link
+                    to={activeSlide.ctaLink}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
+                  >
+                    {activeSlide.ctaText}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </section>
@@ -681,7 +668,7 @@ function AISmartSearch() {
         <motion.div
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-          className="hidden lg:flex absolute -right-20 xl:-right-28 bottom-0 items-end justify-center shrink-0"
+          className="hidden lg:flex absolute left-full bottom-0 ml-6 xl:ml-10 items-end justify-center shrink-0"
         >
           <img
             src="/robot.png"
@@ -802,31 +789,45 @@ function CategoriesSection() {
 ============================================================ */
 function SponsoredPropertiesCarousel() {
   const { t } = useLanguageContext();
+  const { cityId } = useLocationContext();
 
   const { data } = useQuery({
-    queryKey: ['home-sponsored-properties'],
+    queryKey: ['home-sponsored-properties', cityId],
     queryFn: async () => {
-      const { data: campaignRows } = await supabase.rpc('fn_get_active_sponsored_property_ids', { p_limit: 6 });
+      // Over-fetch candidate ids so there's enough to work with after city-scoping below.
+      const { data: campaignRows } = await supabase.rpc('fn_get_active_sponsored_property_ids', { p_limit: 20 });
       const ids = ((campaignRows ?? []) as { property_id: string }[]).map((r) => r.property_id);
 
       if (ids.length > 0) {
         const { data: propertyRows } = await supabase.from('v_properties_search').select('*').in('id', ids);
         const byId = new Map((propertyRows ?? []).map((p) => [p.id, p]));
-        return ids
+        const ordered = ids
           .map((id) => byId.get(id))
-          .filter((p): p is NonNullable<typeof p> => Boolean(p))
-          .map((p) => ({ ...p, _isPaidCampaign: true }));
+          .filter((p): p is NonNullable<typeof p> => Boolean(p));
+        // Prefer campaigns for the detected city; widen back to all cities if none match there.
+        const scoped = cityId ? ordered.filter((p) => p.city_id === cityId) : ordered;
+        const picked = (scoped.length > 0 ? scoped : ordered).slice(0, 6);
+        if (picked.length > 0) return picked.map((p) => ({ ...p, _isPaidCampaign: true }));
       }
 
-      // No active paid campaigns — fall back to admin-marked Featured properties
-      const { data: featuredRows } = await supabase
-        .from('v_properties_search')
-        .select('*')
-        .or('status.eq.published,is_live.eq.true')
-        .eq('is_featured', true)
-        .order('created_at', { ascending: false })
-        .limit(6);
-      return (featuredRows ?? []).map((p) => ({ ...p, _isPaidCampaign: false }));
+      // No active paid campaigns — fall back to admin-marked Featured properties,
+      // scoped to the detected city when we have one (widen if that's empty).
+      const fetchFeatured = async (scopeToCity: boolean) => {
+        let q = supabase
+          .from('v_properties_search')
+          .select('*')
+          .or('status.eq.published,is_live.eq.true')
+          .eq('is_featured', true);
+        if (scopeToCity && cityId) q = q.eq('city_id', cityId);
+        const { data } = await q.order('created_at', { ascending: false }).limit(6);
+        return data ?? [];
+      };
+
+      let featuredRows = await fetchFeatured(true);
+      if (featuredRows.length === 0 && cityId) {
+        featuredRows = await fetchFeatured(false);
+      }
+      return featuredRows.map((p) => ({ ...p, _isPaidCampaign: false }));
     },
   });
 
@@ -950,15 +951,20 @@ const LOCALITY_CARD_IMAGES = [
 
 function TopCities() {
   const { t } = useLanguageContext();
+  const { city, cityId } = useLocationContext();
+  const activeCityName = city || 'Hyderabad';
+
   const { data: localities } = useQuery({
-    queryKey: ['home-hyderabad-localities'],
+    queryKey: ['home-top-cities-localities', cityId, activeCityName],
     queryFn: async () => {
-      const { data: city } = await supabase.from('cities').select('id').ilike('name', 'Hyderabad').maybeSingle();
-      if (!city) return [];
+      const cityRowId =
+        cityId ??
+        (await supabase.from('cities').select('id').ilike('name', activeCityName).maybeSingle()).data?.id;
+      if (!cityRowId) return [];
       const { data: localityRows } = await supabase
         .from('localities')
         .select('id, name')
-        .eq('city_id', city.id)
+        .eq('city_id', cityRowId)
         .order('name');
       if (!localityRows) return [];
 
@@ -992,7 +998,11 @@ function TopCities() {
     >
       <div className="flex items-center justify-end -mt-10 mb-4 sm:-mt-12">
         <Link
-          to="/hyderabad-localities"
+          to={
+            activeCityName.toLowerCase() === 'hyderabad'
+              ? '/hyderabad-localities'
+              : `/search?city=${encodeURIComponent(activeCityName)}`
+          }
           className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
         >
           {t('common.viewAll', 'View All')} <ArrowRight className="h-3.5 w-3.5" />
@@ -1009,7 +1019,7 @@ function TopCities() {
             whileHover={{ y: -5 }}
           >
             <Link
-              to={`/search?city=Hyderabad&locality=${encodeURIComponent(locality.name)}`}
+              to={`/search?city=${encodeURIComponent(activeCityName)}&locality=${encodeURIComponent(locality.name)}`}
               className="group relative block overflow-hidden rounded-2xl"
             >
               <div className="aspect-[4/3] w-full overflow-hidden">
@@ -1381,17 +1391,30 @@ function AIFeaturesSection() {
 ============================================================ */
 function SignatureCollection() {
   const { t } = useLanguageContext();
+  const { cityId } = useLocationContext();
   const { data } = useQuery({
-    queryKey: ['home-luxury'],
+    queryKey: ['home-luxury', cityId],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('properties')
-        .select('*, cities(name), localities(name), property_types(name)')
-        .eq('status', 'published')
-        .eq('is_luxury', true)
-        .order('price', { ascending: false })
-        .limit(9);
-      return (data ?? []).map((p) => {
+      // Scope to the detected city when we have one; if that comes back empty
+      // (e.g. little luxury inventory yet in that city), widen to all cities
+      // so the homepage never looks empty.
+      const fetchLuxury = async (scopeToCity: boolean) => {
+        let q = supabase
+          .from('properties')
+          .select('*, cities(name), localities(name), property_types(name)')
+          .eq('status', 'published')
+          .eq('is_luxury', true);
+        if (scopeToCity && cityId) q = q.eq('city_id', cityId);
+        const { data } = await q.order('price', { ascending: false }).limit(9);
+        return data ?? [];
+      };
+
+      let rows = await fetchLuxury(true);
+      if (rows.length === 0 && cityId) {
+        rows = await fetchLuxury(false);
+      }
+
+      return rows.map((p) => {
         const r = p as unknown as {
           cities?: { name: string };
           localities?: { name: string };
@@ -2828,11 +2851,11 @@ export function HomePage() {
       <HeroSection />
       <AISmartSearch />
       <TrustSection />
+      <ServicesSection />
       <CategoriesSection />
       <SponsoredPropertiesCarousel />
       <LuxuryAdBannersSection />
       <ThreeColumnAdBannersSection />
-      <ServicesSection />
       <TopCities />
       <TopAgents />
       <PostPropertyBanner />

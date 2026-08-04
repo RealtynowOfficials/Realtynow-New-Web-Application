@@ -7,9 +7,12 @@ interface SEOProps {
   type?: string;
   schema?: Record<string, any>;
   image?: string;
+  twitterTitle?: string;
+  twitterDescription?: string;
+  twitterImage?: string;
 }
 
-export function useSEO({ title, description, type = 'website', schema, image }: SEOProps) {
+export function useSEO({ title, description, type = 'website', schema, image, twitterTitle, twitterDescription, twitterImage }: SEOProps) {
   const location = useLocation();
 
   useEffect(() => {
@@ -61,6 +64,24 @@ export function useSEO({ title, description, type = 'website', schema, image }: 
     updateOG('og:type', type);
     if (image) updateOG('og:image', image);
 
+    // 4b. Update Twitter Card
+    const updateTwitter = (name: string, content: string) => {
+      let meta = document.querySelector(`meta[name="${name}"]`);
+      if (meta) {
+        meta.setAttribute('content', content);
+      } else {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', name);
+        meta.setAttribute('content', content);
+        document.head.appendChild(meta);
+      }
+    };
+    const twImage = twitterImage || image;
+    updateTwitter('twitter:card', twImage ? 'summary_large_image' : 'summary');
+    updateTwitter('twitter:title', twitterTitle || fullTitle);
+    updateTwitter('twitter:description', twitterDescription || descText);
+    if (twImage) updateTwitter('twitter:image', twImage);
+
     // 5. Update JSON-LD Schema
     let script = document.querySelector('#seo-schema');
     if (schema) {
@@ -74,5 +95,5 @@ export function useSEO({ title, description, type = 'website', schema, image }: 
     } else if (script) {
       script.remove();
     }
-  }, [title, description, type, schema, image, location.pathname, location.search]);
+  }, [title, description, type, schema, image, twitterTitle, twitterDescription, twitterImage, location.pathname, location.search]);
 }

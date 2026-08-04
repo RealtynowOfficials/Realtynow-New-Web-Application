@@ -99,16 +99,6 @@ export const propertyWizardSchema = z.object({
   ownership_type: z.string().optional(),
   rera_number: z.string().optional(),
   property_tax_id: z.string().optional(),
-
-  // SEO
-  seo_metadata: z
-    .object({
-      meta_title: z.string().optional(),
-      meta_description: z.string().optional(),
-      slug: z.string().optional(),
-      keywords: z.string().optional(),
-    })
-    .optional(),
 });
 
 export type PropertyWizardForm = z.infer<typeof propertyWizardSchema>;
@@ -124,7 +114,6 @@ export const WIZARD_STEPS = [
   'Pricing',
   'Availability',
   'Ownership',
-  'SEO',
   'Review',
   'Submit',
 ];

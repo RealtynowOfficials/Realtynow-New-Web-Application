@@ -23,6 +23,7 @@ import {
   Loader2,
   PlayCircle,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/dashboard-layout';
 import { getPortalSections } from './sections';
@@ -33,8 +34,11 @@ import { useAuth } from '../../lib/auth';
 import { useToast } from '../../hooks/useToast';
 import { LocationAutocomplete, type SelectedPlace } from '../../components/location-autocomplete';
 import { supabase } from '../../lib/supabase';
-import { triggerAiVerification } from '../../lib/properties';
+import { triggerAiVerification, triggerPropertySeoGeneration } from '../../lib/properties';
 import { uploadFile, deleteFile, type StorageBucket } from '../../lib/storage';
+import { DatePicker } from '../../components/ui/date-picker';
+import { TimePicker } from '../../components/ui/time-picker';
+import { DateTimePicker } from '../../components/ui/datetime-picker';
 
 export interface MediaItem {
   id: string;
@@ -472,7 +476,48 @@ export function ListPropertyWizard() {
         }
         return reindexMedia(prev.map((m) => (m.id === tempId ? { ...m, url, path, bucket, uploading: false } : m)));
       });
+      toast.addToast('success', `${rawFile.name} uploaded`);
     }
+  };
+
+  // Replaces a single item's file in place — keeps its position, cover flag, and order
+  // instead of the delete-then-re-add flow (which would drop it to the end of the gallery).
+  const replaceMediaFile = async (item: MediaItem, rawFile: File) => {
+    if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type)) {
+      toast.addToast('error', `${rawFile.name}: unsupported file type`);
+      return;
+    }
+    const isVideo = rawFile.type.startsWith('video/');
+    if (isVideo && rawFile.size > MAX_MEDIA_FILE_SIZE) {
+      toast.addToast('error', `${rawFile.name}: exceeds 5MB limit`);
+      return;
+    }
+    const file = isVideo ? rawFile : await compressImage(rawFile);
+    if (file.size > MAX_MEDIA_FILE_SIZE) {
+      toast.addToast('error', `${rawFile.name}: still exceeds 5MB after compression`);
+      return;
+    }
+
+    setMediaItems((prev) => prev.map((m) => (m.id === item.id ? { ...m, uploading: true } : m)));
+
+    const bucket: StorageBucket = isVideo ? 'property-videos' : 'property-images';
+    const { url, path, error } = await uploadFile(bucket, file);
+    if (error) {
+      toast.addToast('error', `${file.name}: ${error}`);
+      setMediaItems((prev) => prev.map((m) => (m.id === item.id ? { ...m, uploading: false } : m)));
+      return;
+    }
+
+    if (item.bucket && item.path) {
+      deleteFile(item.bucket, item.path).catch(() => {
+        /* best-effort — orphaned storage object is a minor cleanup issue, not a blocking error */
+      });
+    }
+
+    setMediaItems((prev) =>
+      prev.map((m) => (m.id === item.id ? { ...m, url, path, bucket, type: isVideo ? 'video' : 'image', uploading: false } : m)),
+    );
+    toast.addToast('success', `${rawFile.name} replaced`);
   };
 
   const addMediaUrl = () => {
@@ -766,10 +811,14 @@ export function ListPropertyWizard() {
         const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
         if (error) throw error;
         triggerAiVerification(draftId);
+        triggerPropertySeoGeneration(draftId);
       } else {
         const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
         if (error) throw error;
-        if (inserted?.id) triggerAiVerification(inserted.id);
+        if (inserted?.id) {
+          triggerAiVerification(inserted.id);
+          triggerPropertySeoGeneration(inserted.id);
+        }
       }
       toast.addToast('success', '🎉 Property submitted for admin review!');
       setTimeout(() => {
@@ -1469,6 +1518,22 @@ export function ListPropertyWizard() {
                                         <Star className="h-3.5 w-3.5" />
                                       </button>
                                     )}
+                                    <label
+                                      title="Replace"
+                                      className="grid h-7 w-7 cursor-pointer place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white"
+                                    >
+                                      <RefreshCw className="h-3.5 w-3.5" />
+                                      <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) replaceMediaFile(item, file);
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
                                     <button
                                       type="button"
                                       onClick={() => removeMedia(item)}
@@ -1620,10 +1685,12 @@ export function ListPropertyWizard() {
                           sub="When is the property available and how can it be visited?"
                         />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <FieldLabel>Available From</FieldLabel>
-                            <InputField {...register('availability_date')} type="date" />
-                          </div>
+                          <DatePicker
+                            label="Available From"
+                            disablePast
+                            value={watch('availability_date')}
+                            onChange={(v) => setValue('availability_date', v, { shouldDirty: true })}
+                          />
                           <div>
                             <FieldLabel>Construction Status</FieldLabel>
                             <SelectField {...register('construction_status')}>
@@ -1636,31 +1703,43 @@ export function ListPropertyWizard() {
                           <div>
                             <FieldLabel>Visiting Hours</FieldLabel>
                             <div className="flex items-center gap-2">
-                              <InputField 
-                                type="time" 
-                                className="flex-1 text-center"
+                              <TimePicker
+                                className="flex-1"
+                                placeholder="From"
                                 value={(watch('visiting_hours') || '').split(' to ')[0] || ''}
-                                onChange={(e) => {
+                                onChange={(v) => {
                                   const parts = (watch('visiting_hours') || '').split(' to ');
-                                  setValue('visiting_hours', `${e.target.value} to ${parts[1] || ''}`);
+                                  setValue('visiting_hours', `${v} to ${parts[1] || ''}`, { shouldDirty: true });
                                 }}
                               />
-                              <span className="text-navy-400 font-medium text-sm">to</span>
-                              <InputField 
-                                type="time" 
-                                className="flex-1 text-center"
+                              <span className="text-navy-400 font-medium text-sm shrink-0">to</span>
+                              <TimePicker
+                                className="flex-1"
+                                placeholder="To"
+                                minTime={(watch('visiting_hours') || '').split(' to ')[0] || undefined}
                                 value={(watch('visiting_hours') || '').split(' to ')[1] || ''}
-                                onChange={(e) => {
+                                onChange={(v) => {
                                   const parts = (watch('visiting_hours') || '').split(' to ');
-                                  setValue('visiting_hours', `${parts[0] || ''} to ${e.target.value}`);
+                                  setValue('visiting_hours', `${parts[0] || ''} to ${v}`, { shouldDirty: true });
                                 }}
                               />
                             </div>
+                            {(() => {
+                              const [from, to] = (watch('visiting_hours') || '').split(' to ');
+                              return from && to && to <= from ? (
+                                <p className="mt-1.5 text-xs font-medium text-red-600">
+                                  "To" time must be after "From" time.
+                                </p>
+                              ) : null;
+                            })()}
                           </div>
-                          <div>
-                            <FieldLabel>Open House Date</FieldLabel>
-                            <InputField {...register('open_house_schedule')} type="date" />
-                          </div>
+                          <DateTimePicker
+                            label="Open House"
+                            disablePast
+                            placeholder="Select open house date & time"
+                            value={watch('open_house_schedule')}
+                            onChange={(v) => setValue('open_house_schedule', v, { shouldDirty: true })}
+                          />
                         </div>
                       </div>
                     )}
@@ -1705,48 +1784,8 @@ export function ListPropertyWizard() {
                       </div>
                     )}
 
-                    {/* ─── STEP 10: SEO ─── */}
+                    {/* ─── STEP 10: Review ─── */}
                     {activeStep === 10 && (
-                      <div className="space-y-5 max-w-3xl mx-auto">
-                        <SectionTitle
-                          title="SEO & Discoverability"
-                          sub="Boost visibility in Google and property portals."
-                        />
-                        <div className="space-y-4">
-                          <div>
-                            <FieldLabel>SEO Title</FieldLabel>
-                            <InputField
-                              {...register('seo_metadata.meta_title')}
-                              placeholder="e.g. 3BHK Apartment for Sale in Bandra West, Mumbai"
-                            />
-                          </div>
-                          <div>
-                            <FieldLabel>Meta Description</FieldLabel>
-                            <TextAreaField
-                              {...register('seo_metadata.meta_description')}
-                              placeholder="A brief, compelling description for search engines..."
-                              rows={3}
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <FieldLabel>URL Slug</FieldLabel>
-                              <InputField {...register('seo_metadata.slug')} placeholder="3bhk-apartment-bandra-west" />
-                            </div>
-                            <div>
-                              <FieldLabel>Keywords</FieldLabel>
-                              <InputField
-                                {...register('seo_metadata.keywords')}
-                                placeholder="3BHK, Bandra, Mumbai apartment"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ─── STEP 11: Review ─── */}
-                    {activeStep === 11 && (
                       <div className="space-y-5 max-w-3xl mx-auto">
                         <SectionTitle title="Review Your Listing" sub="Verify all details before submitting." />
                         <div className="space-y-3">
@@ -1801,8 +1840,8 @@ export function ListPropertyWizard() {
                       </div>
                     )}
 
-                    {/* ─── STEP 12: Submit ─── */}
-                    {activeStep === 12 && (
+                    {/* ─── STEP 11: Submit ─── */}
+                    {activeStep === 11 && (
                       <div className="flex flex-col items-center justify-center py-12 space-y-6 text-center max-w-md mx-auto">
                         <motion.div
                           initial={{ scale: 0 }}
@@ -1873,7 +1912,7 @@ export function ListPropertyWizard() {
                   >
                     <Eye className="h-4 w-4" /> Preview
                   </button>
-                  {activeStep < 12 ? (
+                  {activeStep < 11 ? (
                     <button
                       type="button"
                       onClick={handleNext}
