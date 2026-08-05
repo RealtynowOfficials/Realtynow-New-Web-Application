@@ -9,6 +9,7 @@ import { isCompared, toggleCompareProperty } from '../lib/compare';
 import { useAuth } from '../lib/auth';
 import { useToast } from './toast';
 import { useLanguageContext } from '../lib/i18n/language-context';
+import { SharePropertyModal } from './share-property-modal';
 
 // Lightweight, localStorage-backed favorites — mirrors the pattern used by
 // lib/compare.ts but kept local to this component (no new data-layer files).
@@ -45,6 +46,8 @@ export function PropertyCard({ property, compact }: { property: Property; compac
     return () => window.removeEventListener('realtynow-compare-updated', handleSync);
   }, [property.id]);
 
+  const [showShareModal, setShowShareModal] = useState(false);
+
   const handleCompareClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -75,20 +78,10 @@ export function PropertyCard({ property, compact }: { property: Property; compac
     setFavorited(isNowFavorited);
   };
 
-  const handleShareClick = async (e: React.MouseEvent) => {
+  const handleShareClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}${generatePropertyUrl(property)}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: property.title, url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      addToast('success', t('notifications.linkCopied', 'Link copied to clipboard'));
-    } catch {
-      /* user cancelled share sheet — no-op */
-    }
+    setShowShareModal(true);
   };
 
   return (
@@ -189,6 +182,7 @@ export function PropertyCard({ property, compact }: { property: Property; compac
           )}
         </div>
       </Link>
+      <SharePropertyModal property={property} isOpen={showShareModal} onClose={() => setShowShareModal(false)} />
     </motion.div>
   );
 }

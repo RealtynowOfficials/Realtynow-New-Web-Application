@@ -97,6 +97,7 @@ export function OtpLoginPage() {
   const [mobileError, setMobileError] = useState<string | null>(null);
   const [mobileFocused, setMobileFocused] = useState(false);
   const [sending, setSending] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [otpError, setOtpError] = useState<string | null>(null);
@@ -117,13 +118,14 @@ export function OtpLoginPage() {
   const [requestSubmitted, setRequestSubmitted] = useState(false);
 
   useEffect(() => {
+    if (step !== 'mobile') return;
     // Pre-warm the widget so the H-Captcha checkbox is already rendered and
     // solvable before the user clicks "Send OTP", rather than only starting
     // init on click (which would leave sendOtp waiting on an unsolved captcha).
     initMsg91Widget().catch((err) => {
       console.error('[MSG91] pre-init failed', err);
     });
-  }, []);
+  }, [step]);
 
   useEffect(() => {
     if (step !== 'otp') return;
@@ -512,15 +514,64 @@ export function OtpLoginPage() {
                     )}
                   </div>
 
-                  {/* MSG91 renders its H-Captcha challenge into this element (captchaRenderId in src/lib/msg91.ts) */}
-                  <div className="rounded-2xl border border-navy-100 bg-navy-50/60 p-3">
-                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-navy-400">
-                      <ShieldCheck className="h-3.5 w-3.5" /> Quick human verification
-                    </p>
-                    <div id={MSG91_CAPTCHA_CONTAINER_ID} className="flex justify-center" />
-                  </div>
+                  {/* MSG91 renders its captcha challenge here — must stay visible/interactive,
+                      it may require a click to resolve depending on the widget's dashboard config */}
+                  <div id={MSG91_CAPTCHA_CONTAINER_ID} className="flex justify-center" />
 
-                  <button type="submit" disabled={sending} className={primaryBtnClass}>
+                  {/* ── Terms & Privacy Policy Consent Checkbox ── */}
+                  <label
+                    htmlFor="terms-checkbox"
+                    className="flex cursor-pointer items-start gap-3 rounded-xl border border-navy-100 bg-navy-50/60 px-3.5 py-3 transition-colors hover:bg-red-50/40 hover:border-red-200"
+                  >
+                    <div className="relative mt-0.5 shrink-0">
+                      <input
+                        id="terms-checkbox"
+                        type="checkbox"
+                        checked={agreedToTerms}
+                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      {/* Custom styled checkbox */}
+                      <div
+                        className={cn(
+                          'flex h-5 w-5 items-center justify-center rounded-md border-2 transition-all duration-200',
+                          agreedToTerms
+                            ? 'border-red-600 bg-red-600'
+                            : 'border-navy-300 bg-white',
+                        )}
+                      >
+                        {agreedToTerms && (
+                          <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[12px] leading-relaxed text-navy-600">
+                      {t('auth.termsConsent', 'I accept the')}{' '}
+                      <a
+                        href="/privacy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-semibold text-red-600 underline underline-offset-2 hover:text-red-700"
+                      >
+                        {t('auth.privacyPolicy', 'Privacy Policy')}
+                      </a>
+                      {' & '}
+                      <a
+                        href="/terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-semibold text-red-600 underline underline-offset-2 hover:text-red-700"
+                      >
+                        {t('auth.termsConditions', 'Terms and Conditions')}
+                      </a>
+                    </span>
+                  </label>
+
+                  <button type="submit" disabled={sending || !agreedToTerms} className={primaryBtnClass}>
                     {sending ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> {t('auth.sendingOtp', 'Sending OTP…')}
@@ -534,16 +585,9 @@ export function OtpLoginPage() {
                   </button>
                 </form>
 
-                <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-[11px] text-navy-400">
+                <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-navy-400">
                   <Lock className="h-3 w-3" />
-                  {t('auth.privacyNote', 'Protected by industry-standard encryption.')}{' '}
-                  <a href="/privacy" className="font-semibold text-navy-500 hover:text-red-600">
-                    Privacy Policy
-                  </a>
-                  {' & '}
-                  <a href="/terms" className="font-semibold text-navy-500 hover:text-red-600">
-                    Terms
-                  </a>
+                  {t('auth.privacyNote', 'Protected by industry-standard encryption.')}
                 </p>
               </motion.div>
             ) : (

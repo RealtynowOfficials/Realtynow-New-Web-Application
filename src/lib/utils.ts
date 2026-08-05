@@ -74,16 +74,28 @@ export function truncate(text: string | null | undefined, len = 120): string {
   return text.length > len ? `${text.slice(0, len).trim()}…` : text;
 }
 
+/** Serialize any value to a safe CSV cell string. */
+function serializeCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join('; ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value);
+}
+
 export function exportToCsv(
   filename: string,
   rows: Record<string, unknown>[],
   columns: { key: string; label: string }[],
 ) {
-  const header = columns.map((c) => `"${c.label}"`).join(',');
+  const cols = columns.length > 0 ? columns : Object.keys(rows[0] ?? {}).map((k) => ({ key: k, label: k }));
+  const header = cols.map((c) => `"${c.label.replace(/"/g, '""')}"`).join(',');
   const body = rows
-    .map((r) => columns.map((c) => `"${String(r[c.key] ?? '').replace(/"/g, '""')}"`).join(','))
+    .map((r) => cols.map((c) => `"${serializeCell(r[c.key]).replace(/"/g, '""')}"`).join(','))
     .join('\n');
-  const csv = `${header}\n${body}`;
+  // UTF-8 BOM ensures Excel opens the file with correct encoding
+  const BOM = '\uFEFF';
+  const csv = `${BOM}${header}\n${body}`;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -99,10 +111,18 @@ export async function exportToExcel(
   columns: { key: string; label: string }[],
 ) {
   const XLSX = await import('xlsx');
-  const data = rows.map((r) => Object.fromEntries(columns.map((c) => [c.label, r[c.key] ?? ''])));
+  const cols = columns.length > 0 ? columns : Object.keys(rows[0] ?? {}).map((k) => ({ key: k, label: k }));
+  const data = rows.map((r) =>
+    Object.fromEntries(cols.map((c) => [c.label, serializeCell(r[c.key])]))
+  );
   const worksheet = XLSX.utils.json_to_sheet(data);
+  // Auto-size columns to fit content
+  const colWidths = cols.map((c) => ({
+    wch: Math.min(60, Math.max(c.label.length + 2, ...data.map((row) => String(row[c.label] ?? '').length))),
+  }));
+  worksheet['!cols'] = colWidths;
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Data');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Properties');
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 }
 

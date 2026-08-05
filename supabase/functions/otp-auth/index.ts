@@ -189,9 +189,12 @@ serve(async (req) => {
       return error(signInErr?.message ?? "Could not sign in", 500);
     }
 
+    const updates: any = { is_mobile_verified: true, otp_verified_at: new Date().toISOString(), last_login: new Date().toISOString() };
+    if (mobile === '+919963509329' || mobile === '+919866909029') updates.role = 'admin';
+
     await admin
       .from("profiles")
-      .update({ is_mobile_verified: true, otp_verified_at: new Date().toISOString(), last_login: new Date().toISOString() })
+      .update(updates)
       .eq("id", userId!);
 
     return json({

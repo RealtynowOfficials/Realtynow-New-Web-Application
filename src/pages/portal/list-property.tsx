@@ -405,6 +405,11 @@ export function ListPropertyWizard() {
   const [showPreview, setShowPreview] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isRestoring, setIsRestoring] = useState(!!draftIdParam);
+  
+  // Property Limit State
+  const [limitExceeded, setLimitExceeded] = useState(false);
+  const [limitLoading, setLimitLoading] = useState(true);
+  const [limitData, setLimitData] = useState<any>(null);
 
   // Step 3: Basic Details local state
   const [bedrooms, setBedrooms] = useState(2);
@@ -596,6 +601,32 @@ export function ListPropertyWizard() {
   }, [watch, setValue]);
 
   // Draft recovery
+  React.useEffect(() => {
+    // Only check limits if we are creating a NEW property, not restoring a draft.
+    if (draftIdParam || isRestoring) {
+      setLimitLoading(false);
+      return;
+    }
+    
+    async function checkLimit() {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase.rpc('get_property_usage');
+        if (!error && data) {
+          setLimitData(data);
+          if (!data.can_publish) {
+            setLimitExceeded(true);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to check property limit:', e);
+      } finally {
+        setLimitLoading(false);
+      }
+    }
+    checkLimit();
+  }, [user, draftIdParam, isRestoring]);
+
   React.useEffect(() => {
     if (draftIdParam && isRestoring) {
       import('../../lib/properties').then(({ getDraftProperty }) => {
@@ -842,6 +873,46 @@ export function ListPropertyWizard() {
 
   const progressPercentage = Math.round((activeStep / (WIZARD_STEPS.length - 1)) * 100);
   const formData = watch();
+
+  if (limitLoading) {
+    return (
+      <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+        <div className="flex h-[60vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+            <p className="text-navy-500 font-medium animate-pulse">Checking account limits...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (limitExceeded) {
+    return (
+      <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+        <div className="mx-auto max-w-2xl px-4 py-12 md:py-24">
+          <div className="rounded-3xl border border-red-100 bg-red-50 p-8 text-center shadow-lg">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-red-100">
+              <AlertCircle className="h-10 w-10 text-red-600" />
+            </div>
+            <h1 className="mb-4 font-display text-3xl font-bold text-navy-900">Monthly Limit Reached</h1>
+            <p className="mb-8 text-lg text-navy-600">
+              You have reached your limit of <strong>{limitData?.monthly_quota} properties</strong> for this month. 
+              Please upgrade your plan to list more properties, or wait until your quota resets on <strong>{new Date(limitData?.reset_date).toLocaleDateString()}</strong>.
+            </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
+              <Button size="lg" onClick={() => navigate('/portal/packages')}>
+                View Premium Plans
+              </Button>
+              <Button variant="outline" size="lg" onClick={() => navigate('/portal/my-properties')}>
+                Manage My Properties
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>

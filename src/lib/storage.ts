@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const PRIVATE_BUCKETS = new Set(['property-documents', 'agent-documents', 'customer-documents', 'company-assets']);
+const PRIVATE_BUCKETS = new Set(['property-documents', 'agent-documents', 'customer-documents', 'company-assets', 'bulk-import-files']);
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'image/heic', 'image/heif'];
 const ALLOWED_DOC_TYPES = [
@@ -9,6 +9,11 @@ const ALLOWED_DOC_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+const ALLOWED_IMPORT_TYPES = [
+  'text/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export type StorageBucket =
@@ -20,7 +25,8 @@ export type StorageBucket =
   | 'profile-images'
   | 'blog-images'
   | 'advertisements'
-  | 'company-assets';
+  | 'company-assets'
+  | 'bulk-import-files';
 
 function validateFile(bucket: StorageBucket, file: File) {
   if (file.size > MAX_FILE_SIZE) {
@@ -28,7 +34,9 @@ function validateFile(bucket: StorageBucket, file: File) {
   }
 
   let allowedTypes: string[] = [];
-  if (bucket.endsWith('-images') || bucket === 'profile-images') {
+  if (bucket === 'bulk-import-files') {
+    allowedTypes = ALLOWED_IMPORT_TYPES;
+  } else if (bucket.endsWith('-images') || bucket === 'profile-images') {
     allowedTypes = ALLOWED_IMAGE_TYPES;
   } else if (bucket.endsWith('-videos')) {
     allowedTypes = ALLOWED_VIDEO_TYPES;

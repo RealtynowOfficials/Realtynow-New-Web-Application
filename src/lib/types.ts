@@ -10,7 +10,17 @@ export type PropertyStatus =
   | 'rejected'
   | 'archived';
 
-export type PropertyPurpose = 'Sale' | 'Rent';
+export type PropertyPurpose =
+  | 'Sale'
+  | 'Resale'
+  | 'Rent'
+  | 'Lease'
+  | 'PG'
+  | 'CoLiving'
+  | 'Hostel'
+  | 'Short Stay'
+  | 'Vacation Rental'
+  | 'Commercial';
 
 export type Furnishing = 'Unfurnished' | 'Semi-Furnished' | 'Fully Furnished';
 

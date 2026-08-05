@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation, ScrollRestoration } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
+import { AdminAuthProvider } from './contexts/admin-auth-context';
+import { AdminProtectedRoute } from './components/admin-protected-route';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PublicLayout } from './components/public-layout';
@@ -29,6 +31,27 @@ const FaqPage = lazy(() => import('./pages/public/static').then((m) => ({ defaul
 const ContactPage = lazy(() => import('./pages/public/static').then((m) => ({ default: m.ContactPage })));
 const StaticPage = lazy(() => import('./pages/public/static').then((m) => ({ default: m.StaticPage })));
 const NotFoundPage = lazy(() => import('./pages/public/static').then((m) => ({ default: m.NotFoundPage })));
+const PrivacyPolicyPage = lazy(() =>
+  import('./pages/public/privacy-policy').then((m) => ({ default: m.PrivacyPolicyPage })),
+);
+const TermsAndConditionsPage = lazy(() =>
+  import('./pages/public/terms-and-conditions').then((m) => ({ default: m.TermsAndConditionsPage })),
+);
+const RefundPolicyPage = lazy(() =>
+  import('./pages/public/refund-policy').then((m) => ({ default: m.RefundPolicyPage })),
+);
+const PropertyListingPolicyPage = lazy(() =>
+  import('./pages/public/listing-policy').then((m) => ({ default: m.PropertyListingPolicyPage })),
+);
+const UserAgreementPage = lazy(() =>
+  import('./pages/public/user-agreement').then((m) => ({ default: m.UserAgreementPage })),
+);
+const CookiePolicyPage = lazy(() =>
+  import('./pages/public/cookie-policy').then((m) => ({ default: m.CookiePolicyPage })),
+);
+const SecurityStatementPage = lazy(() =>
+  import('./pages/public/security-statement').then((m) => ({ default: m.SecurityStatementPage })),
+);
 const AboutUsPage = lazy(() => import('./pages/public/about').then((m) => ({ default: m.AboutUsPage })));
 const ComparePage = lazy(() => import('./pages/public/compare').then((m) => ({ default: m.ComparePage })));
 const AIHubPage = lazy(() => import('./pages/public/ai-hub').then((m) => ({ default: m.AIHubPage })));
@@ -70,6 +93,11 @@ const PortalMyProperties = lazy(() =>
 const ListPropertyWizard = lazy(() =>
   import('./pages/portal/list-property').then((m) => ({ default: m.ListPropertyWizard })),
 );
+const NewListingWizard = lazy(() =>
+  import('./pages/portal/dynamic-listing').then((m) => ({ default: m.NewListingWizard })),
+);
+const BulkUpload = lazy(() => import('./pages/portal/bulk-upload').then((m) => ({ default: m.BulkUpload })));
+const AdminBulkImport = lazy(() => import('./pages/admin/bulk-import').then((m) => ({ default: m.AdminBulkImport })));
 const PortalEnquiries = lazy(() =>
   import('./pages/portal/enquiries-settings').then((m) => ({ default: m.PortalEnquiries })),
 );
@@ -230,7 +258,6 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   }
   return (
     <ErrorBoundary>
-      <ScrollRestoration />
       <Suspense fallback={<PageLoader />}>
         <Outlet />
       </Suspense>
@@ -261,8 +288,16 @@ function AppRoutes() {
                 { path: '/blog/:slug', element: <BlogDetailPage /> },
                 { path: '/about', element: <AboutUsPage /> },
                 { path: '/about-us', element: <AboutUsPage /> },
-                { path: '/terms', element: <StaticPage slug="terms" title="Terms" /> },
-                { path: '/privacy', element: <StaticPage slug="privacy" title="Privacy" /> },
+                { path: '/terms', element: <TermsAndConditionsPage /> },
+                { path: '/terms-and-conditions', element: <TermsAndConditionsPage /> },
+                { path: '/privacy', element: <PrivacyPolicyPage /> },
+                { path: '/privacy-policy', element: <PrivacyPolicyPage /> },
+                { path: '/refund-policy', element: <RefundPolicyPage /> },
+                { path: '/listing-policy', element: <PropertyListingPolicyPage /> },
+                { path: '/user-agreement', element: <UserAgreementPage /> },
+                { path: '/cookie-policy', element: <CookiePolicyPage /> },
+                { path: '/security-statement', element: <SecurityStatementPage /> },
+                { path: '/security', element: <SecurityStatementPage /> },
                 { path: '/faq', element: <FaqPage /> },
                 { path: '/contact', element: <ContactPage /> },
                 { path: '/compare', element: <ComparePage /> },
@@ -330,6 +365,8 @@ function AppRoutes() {
                 { path: '/portal', element: <PortalDashboard /> },
                 { path: '/portal/profile-setup', element: <ProfileSetupPage /> },
                 { path: '/portal/list-property', element: <ListPropertyWizard /> },
+                { path: '/portal/list-property/new', element: <NewListingWizard /> },
+                { path: '/portal/bulk-upload', element: <BulkUpload /> },
                 { path: '/portal/my-properties', element: <PortalMyProperties /> },
                 { path: '/portal/saved', element: <PortalSaved /> },
                 { path: '/portal/compare', element: <PortalCompare /> },
@@ -349,6 +386,8 @@ function AppRoutes() {
                 { path: '/agent/appointments', element: <AgentAppointments /> },
                 { path: '/agent/analytics', element: <AgentAnalytics /> },
                 { path: '/agent/settings', element: <AgentSettings /> },
+                { path: '/agent/notifications', element: <PortalNotifications /> },
+                { path: '/agent/bulk-upload', element: <BulkUpload /> },
               ],
             },
             { path: '/agents', element: <Navigate to="/agent/login" replace /> },
@@ -358,10 +397,11 @@ function AppRoutes() {
               children: [{ path: '/builder', element: <BuilderDashboard /> }],
             },
             {
-              element: <ProtectedRoute allowRoles={['admin']} />,
+              element: <AdminProtectedRoute />,
               children: [
                 { path: '/admin', element: <AdminDashboard /> },
                 { path: '/admin/properties', element: <AdminProperties /> },
+                { path: '/admin/bulk-import', element: <AdminBulkImport /> },
                 { path: '/admin/approvals', element: <AdminApprovals /> },
                 { path: '/admin/agent-applications', element: <AdminAgentApplications /> },
                 { path: '/admin/builder-applications', element: <AdminBuilderApplications /> },
@@ -386,6 +426,7 @@ function AppRoutes() {
                 { path: '/admin/invoices', element: <AdminInvoicesPage /> },
                 { path: '/admin/settings', element: <AdminSettings /> },
                 { path: '/admin/property-page-settings', element: <AdminPropertyPageSettings /> },
+                { path: '/admin/notifications', element: <PortalNotifications /> },
               ],
             },
             {
@@ -412,11 +453,13 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <AuthProvider>
-          <LanguageProvider>
-            <LocationProvider>
-              <AppRoutes />
-            </LocationProvider>
-          </LanguageProvider>
+          <AdminAuthProvider>
+            <LanguageProvider>
+              <LocationProvider>
+                <AppRoutes />
+              </LocationProvider>
+            </LanguageProvider>
+          </AdminAuthProvider>
         </AuthProvider>
       </ToastProvider>
     </QueryClientProvider>

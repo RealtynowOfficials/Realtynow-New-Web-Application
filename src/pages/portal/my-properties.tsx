@@ -317,6 +317,14 @@ export function PortalMyProperties() {
               rows={visibleRows as unknown as Record<string, unknown>[]}
               columns={MY_PROPERTIES_EXPORT_COLUMNS}
             />
+            <Link to="/portal/bulk-upload">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
+              >
+                Bulk Upload
+              </button>
+            </Link>
             <Link to="/portal/list-property">
               <button
                 type="button"
@@ -326,6 +334,14 @@ export function PortalMyProperties() {
                 <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
                   FREE
                 </span>
+              </button>
+            </Link>
+            <Link to="/portal/list-property/new">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
+              >
+                New Listing (Beta)
               </button>
             </Link>
           </div>

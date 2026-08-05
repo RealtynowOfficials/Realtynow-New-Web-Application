@@ -9,6 +9,7 @@ import {
   Search,
   Mic,
   Camera,
+  Navigation,
   MapPin,
   Sparkles,
   ArrowRight,
@@ -52,6 +53,7 @@ import {
   PieChart,
   Bed,
   Share2,
+  Check,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
@@ -192,7 +194,7 @@ function HomePropertyCard({
           <MapPin className="h-3 w-3 shrink-0" />
           <span className="line-clamp-1">
             {p.locality_name ? `${p.locality_name}, ` : ''}
-            {p.city_name ?? 'India'}
+            {p.city_name ?? 'Hyderabad'}
           </span>
         </p>
         {p.bedrooms != null && (
@@ -262,22 +264,22 @@ type HeroSlide = {
 // advertisements are currently live, so the homepage never looks empty.
 const HERO_SLIDES: HeroSlide[] = [
   {
-    id: 'fallback-1',
-    title: 'Find Your Perfect Place to Call Home',
-    subtitle: 'Search thousands of verified properties across India with AI recommendations & instant site visit booking.',
+    id: 'hero-ramky',
+    title: 'Discover Premium Living in Hyderabad',
+    subtitle: 'Explore world-class residential high-rises with modern amenities and unparalleled luxury.',
     priceText: undefined,
-    locationText: 'Pan India',
-    imageDesktop: '/hero-bg.jpg',
-    imageMobile: '/hero-bg.jpg',
-    ctaText: 'Explore Now',
-    ctaLink: '/search',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-ramky.jpg',
+    imageMobile: '/hero-ramky.jpg',
+    ctaText: 'Explore Projects',
+    ctaLink: '/search?city=Hyderabad',
   },
   {
     id: 'fallback-2',
     title: 'Premium Homes, Verified & Ready',
     subtitle: 'RERA-approved projects with zero brokerage and instant AI-powered shortlisting.',
     priceText: undefined,
-    locationText: 'Top Cities, India',
+    locationText: 'Hyderabad',
     imageDesktop: '/hero_bg_user.jpg',
     imageMobile: '/hero_bg_user.jpg',
     ctaText: 'Explore Now',
@@ -288,7 +290,7 @@ const HERO_SLIDES: HeroSlide[] = [
     title: 'Luxury Living, Redefined',
     subtitle: 'Handpicked luxury apartments and villas with world-class amenities.',
     priceText: undefined,
-    locationText: 'Metro Cities, India',
+    locationText: 'Hyderabad',
     imageDesktop: '/hero_luxury_bg.png',
     imageMobile: '/hero_luxury_bg.png',
     ctaText: 'Explore Now',
@@ -401,7 +403,7 @@ function HeroSection() {
               type="button"
               onClick={prevSlide}
               aria-label="Previous slide"
-              className="absolute left-3 top-4 sm:left-5 sm:top-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+              className="absolute left-3 top-1/2 -translate-y-1/2 sm:left-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -409,7 +411,7 @@ function HeroSection() {
               type="button"
               onClick={nextSlide}
               aria-label="Next slide"
-              className="absolute right-3 top-4 sm:right-5 sm:top-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+              className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -508,15 +510,40 @@ function HeroSection() {
 /* ============================================================
    AI Smart Search
 ============================================================ */
-const SEARCH_TABS = ['Buy', 'Rent', 'Commercial', 'Plots', 'Projects'] as const;
+const SEARCH_TABS = ['Buy', 'Rent', 'PG', 'Commercial', 'Plots', 'Projects'] as const;
 
-const SEARCH_PLACEHOLDERS = [
-  'Search Apartments in Hyderabad...',
-  'Search Villas in Bangalore...',
-  'Search Commercial Properties...',
-  'Search Plots Near ORR...',
-  'Search Projects in Gachibowli...',
-];
+const SEARCH_PLACEHOLDERS: Record<(typeof SEARCH_TABS)[number], string[]> = {
+  Buy: [
+    'Search Apartments in Hyderabad...',
+    'Search Villas in Bangalore...',
+    'Search 2 & 3 BHK Luxury Flats...',
+  ],
+  Rent: [
+    'Search Rental Apartments in Gachibowli...',
+    'Search Furnished Houses for Rent...',
+    'Search Flats near Hitec City...',
+  ],
+  PG: [
+    'Search PG & Hostels in Gachibowli...',
+    'Search Boys / Girls PG in Bangalore...',
+    'Search Luxury Co-Living Spaces in Hyderabad...',
+  ],
+  Commercial: [
+    'Search Commercial Offices in Financial District...',
+    'Search Shops & Showrooms for Lease...',
+    'Search Warehouses & Industrial Spaces...',
+  ],
+  Plots: [
+    'Search Residential Plots Near ORR...',
+    'Search Villa Plots in Jubilee Hills...',
+    'Search Gated Community Plots...',
+  ],
+  Projects: [
+    'Search New Launch Projects in Gachibowli...',
+    'Search Upcoming Gated Communities...',
+    'Search Luxury Builder Projects...',
+  ],
+};
 
 function useTypingPlaceholder(phrases: string[], active: boolean) {
   const [phraseIndex, setPhraseIndex] = useState(0);
@@ -552,12 +579,79 @@ function useTypingPlaceholder(phrases: string[], active: boolean) {
 
 function AISmartSearch() {
   const navigate = useNavigate();
+  const toast = useToast();
+  const { detectLocation } = useLocationContext();
   const [tab, setTab] = useState<(typeof SEARCH_TABS)[number]>('Buy');
   const [query, setQuery] = useState('');
   const [listening, setListening] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
 
-  const typedPlaceholder = useTypingPlaceholder(SEARCH_PLACEHOLDERS, !query);
+  const activePlaceholders = useMemo(() => SEARCH_PLACEHOLDERS[tab] || SEARCH_PLACEHOLDERS.Buy, [tab]);
+  const typedPlaceholder = useTypingPlaceholder(activePlaceholders, !query);
+
+  const handleLiveLocation = () => {
+    if (!navigator.geolocation) {
+      toast.addToast('error', 'Geolocation is not supported by your browser');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=14&addressdetails=1`,
+            {
+              headers: {
+                'Accept-Language': 'en-US,en;q=0.9',
+                'User-Agent': 'RealtyNow/1.0 (contact@realtynow.in)',
+              },
+            }
+          );
+          const data = await res.json();
+          const address = data?.address || {};
+          const locality =
+            address.suburb ||
+            address.neighbourhood ||
+            address.residential ||
+            address.subdistrict ||
+            address.town ||
+            address.city_district ||
+            '';
+          const city =
+            address.city ||
+            address.town ||
+            address.state_district ||
+            address.county ||
+            '';
+
+          const detectedName = [locality, city].filter(Boolean).join(', ') || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setQuery(detectedName);
+          toast.addToast('success', `Live location detected: ${detectedName}`);
+          
+          detectLocation().catch(() => {});
+        } catch (err) {
+          console.warn('Reverse geocoding failed:', err);
+          const fallback = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setQuery(fallback);
+          toast.addToast('success', `Location coordinates: ${fallback}`);
+        } finally {
+          setLocating(false);
+        }
+      },
+      (err) => {
+        console.warn('Geolocation error:', err);
+        setLocating(false);
+        if (err.code === 1) {
+          toast.addToast('error', 'Location permission denied. Please allow location access in your browser settings.');
+        } else {
+          toast.addToast('error', 'Failed to fetch live location. Please try again.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   const handleVoice = () => {
     const SR = (window as unknown as { webkitSpeechRecognition?: new () => { start: () => void; stop: () => void; onresult: (e: { results: { 0: { 0: { transcript: string } } } }) => void; onerror: () => void; onend: () => void; lang: string; continuous: boolean; interimResults: boolean } }).webkitSpeechRecognition;
@@ -574,11 +668,27 @@ function AISmartSearch() {
   };
 
   const handleAISearch = async () => {
-    if (!query.trim()) return;
     setAiThinking(true);
     try {
-      const purpose = tab === 'Rent' ? 'Rent' : 'Sale';
-      navigate(`/search?q=${encodeURIComponent(query)}&purpose=${purpose}`);
+      const params = new URLSearchParams();
+      if (query.trim()) {
+        params.set('q', query.trim());
+      }
+      if (tab === 'Rent') {
+        params.set('purpose', 'Rent');
+      } else if (tab === 'PG') {
+        params.set('purpose', 'PG');
+      } else if (tab === 'Buy') {
+        params.set('purpose', 'Sale');
+      } else if (tab === 'Commercial') {
+        params.set('type', 'Commercial');
+      } else if (tab === 'Plots') {
+        params.set('type', 'Plot');
+      } else if (tab === 'Projects') {
+        params.set('category', 'Project');
+      }
+
+      navigate(`/search?${params.toString()}`);
     } catch {
       navigate(`/search?q=${encodeURIComponent(query)}`);
     } finally {
@@ -610,6 +720,7 @@ function AISmartSearch() {
               >
                 {tItem === 'Buy' && <Home className="h-4 w-4" />}
                 {tItem === 'Rent' && <KeyRound className="h-4 w-4" />}
+                {tItem === 'PG' && <Bed className="h-4 w-4" />}
                 {tItem === 'Commercial' && <Building2 className="h-4 w-4" />}
                 {tItem === 'Plots' && <LandPlot className="h-4 w-4" />}
                 {tItem === 'Projects' && <Layers className="h-4 w-4" />}
@@ -644,11 +755,17 @@ function AISmartSearch() {
                   <Mic className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => navigate('/search')}
-                  className="grid h-8 w-8 place-items-center rounded-xl text-slate-500 transition-all hover:bg-slate-200/60"
-                  title="Image Search"
+                  onClick={handleLiveLocation}
+                  disabled={locating}
+                  className={cn(
+                    'grid h-8 w-8 place-items-center rounded-xl transition-all',
+                    locating
+                      ? 'bg-red-500 text-white animate-pulse'
+                      : 'text-slate-500 hover:bg-slate-200/60 hover:text-red-600'
+                  )}
+                  title="Detect Live Location"
                 >
-                  <Camera className="h-4 w-4" />
+                  <Navigation className={cn("h-4 w-4 transition-transform", locating && "animate-spin")} />
                 </button>
               </div>
             </div>
@@ -722,14 +839,14 @@ function TrustSection() {
    Property Categories
 ============================================================ */
 const CATEGORIES = [
-  { name: 'Apartment', icon: Building2, color: 'bg-primary-50 text-primary-600' },
-  { name: 'Villa', icon: Home, color: 'bg-secondary-50 text-secondary-600' },
-  { name: 'Independent House', icon: KeyRound, color: 'bg-success-50 text-success-600' },
-  { name: 'Commercial Office', icon: Briefcase, color: 'bg-warning-50 text-warning-600' },
-  { name: 'Retail Shop', icon: Store, color: 'bg-primary-50 text-primary-600' },
-  { name: 'Warehouse', icon: Warehouse, color: 'bg-navy-100 text-navy-600' },
-  { name: 'Plots', icon: LandPlot, color: 'bg-secondary-50 text-secondary-600' },
-  { name: 'Co-working', icon: Users, color: 'bg-success-50 text-success-600' },
+  { name: 'Apartment', icon: Building2, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Villa', icon: Home, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Independent House', icon: KeyRound, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Commercial Office', icon: Briefcase, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Retail Shop', icon: Store, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Warehouse', icon: Warehouse, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Plots', icon: LandPlot, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
+  { name: 'Co-working', icon: Users, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
 ];
 
 function CategoriesSection() {
@@ -931,112 +1048,59 @@ function SponsoredPropertiesCarousel() {
 /* ============================================================
    Top Localities in Hyderabad
 ============================================================ */
-const PREFERRED_HYDERABAD_LOCALITIES = [
-  'Gachibowli', 'Hitech City', 'Kondapur', 'Madhapur', 'Kukatpally',
-  'Jubilee Hills', 'Banjara Hills', 'Miyapur', 'Kompally', 'LB Nagar',
+const HYDERABAD_RICH_AREAS = [
+  { name: 'Jubilee Hills', image: '/localities/villas.png' },
+  { name: 'Banjara Hills', image: '/localities/apartments.png' },
+  { name: 'Gachibowli', image: '/localities/skyscrapers.png' },
+  { name: 'Hitech City', image: '/localities/hitech_city.png' },
+  { name: 'Madhapur', image: '/localities/cable_bridge.png' },
+  { name: 'Kondapur', image: '/localities/buddha_statue.png' },
+  { name: 'Kokapet', image: '/localities/charminar.png' },
+  { name: 'Financial Dist', image: '/localities/golconda.png' },
 ];
 
-const LOCALITY_CARD_IMAGES = [
-  'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg',
-  'https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg',
-  'https://images.pexels.com/photos/2581922/pexels-photo-2581922.jpeg',
-  'https://images.pexels.com/photos/380769/pexels-photo-380769.jpeg',
-  'https://images.pexels.com/photos/259950/pexels-photo-259950.jpeg',
-  'https://images.pexels.com/photos/269077/pexels-photo-269077.jpeg',
-  'https://images.pexels.com/photos/2104152/pexels-photo-2104152.jpeg',
-  'https://images.pexels.com/photos/208736/pexels-photo-208736.jpeg',
-  'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg',
-  'https://images.pexels.com/photos/1732414/pexels-photo-1732414.jpeg',
-];
-
-function TopCities() {
-  const { t } = useLanguageContext();
-  const { city, cityId } = useLocationContext();
-  const activeCityName = city || 'Hyderabad';
-
-  const { data: localities } = useQuery({
-    queryKey: ['home-top-cities-localities', cityId, activeCityName],
-    queryFn: async () => {
-      const cityRowId =
-        cityId ??
-        (await supabase.from('cities').select('id').ilike('name', activeCityName).maybeSingle()).data?.id;
-      if (!cityRowId) return [];
-      const { data: localityRows } = await supabase
-        .from('localities')
-        .select('id, name')
-        .eq('city_id', cityRowId)
-        .order('name');
-      if (!localityRows) return [];
-
-      const enriched = await Promise.all(
-        localityRows.map(async (l) => {
-          const { count } = await supabase
-            .from('properties')
-            .select('id', { count: 'exact', head: true })
-            .or('status.eq.published,is_live.eq.true')
-            .eq('locality_id', l.id);
-          return { ...l, count: count ?? 0 };
-        }),
-      );
-
-      const preferred = PREFERRED_HYDERABAD_LOCALITIES
-        .map((name) => enriched.find((l) => l.name.toLowerCase() === name.toLowerCase()))
-        .filter((l): l is NonNullable<typeof l> => Boolean(l));
-
-      if (preferred.length >= 8) return preferred;
-
-      // Fall back to top-by-count if the preferred names aren't all present in the DB yet.
-      return enriched.sort((a, b) => b.count - a.count).slice(0, 10);
-    },
-  });
+function ExploreHyderabad() {
+  const activeCityName = 'Hyderabad';
 
   return (
     <SectionShell
-      title={t('home.topCities', 'Explore Hyderabad')}
-      subtitle={t('home.topCitiesSubtitle', "Discover properties across Hyderabad's top localities")}
+      title="Explore in Hyderabad"
+      subtitle="Discover premium properties across Hyderabad's richest localities"
       id="cities"
     >
       <div className="flex items-center justify-end -mt-10 mb-4 sm:-mt-12">
         <Link
-          to={
-            activeCityName.toLowerCase() === 'hyderabad'
-              ? '/hyderabad-localities'
-              : `/search?city=${encodeURIComponent(activeCityName)}`
-          }
+          to="/hyderabad-localities"
           className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
         >
-          {t('common.viewAll', 'View All')} <ArrowRight className="h-3.5 w-3.5" />
+          View All <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {(localities ?? []).slice(0, 10).map((locality, i) => (
+      <div className="mt-4 grid grid-cols-4 gap-4 sm:gap-6 lg:grid-cols-8">
+        {HYDERABAD_RICH_AREAS.map((locality, i) => (
           <motion.div
-            key={locality.id}
+            key={locality.name}
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.05 }}
-            whileHover={{ y: -5 }}
           >
             <Link
               to={`/search?city=${encodeURIComponent(activeCityName)}&locality=${encodeURIComponent(locality.name)}`}
-              className="group relative block overflow-hidden rounded-2xl"
+              className="group flex flex-col items-center gap-3 text-center"
             >
-              <div className="aspect-[4/3] w-full overflow-hidden">
+              <div className="relative h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-navy-50 shadow-lg transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-105 group-hover:shadow-red-500/20 sm:h-24 sm:w-24">
                 <img
-                  src={LOCALITY_CARD_IMAGES[i % LOCALITY_CARD_IMAGES.length]}
+                  src={locality.image}
                   alt={locality.name}
                   loading="lazy"
-                  className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                 />
+                <div className="absolute inset-0 bg-navy-900/10 transition-colors group-hover:bg-transparent" />
               </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-navy-950/80 via-navy-950/20 to-transparent" />
-              <div className="absolute bottom-0 left-0 p-4">
-                <p className="font-display text-lg font-bold text-white">{locality.name}</p>
-                <p className="text-xs text-white/70">
-                  {locality.count} {t('property.propertiesCount', 'properties')}
-                </p>
-              </div>
+              <p className="font-display text-[11px] font-bold leading-tight text-navy-800 transition-colors group-hover:text-red-600 sm:text-xs">
+                {locality.name}
+              </p>
             </Link>
           </motion.div>
         ))}
@@ -1447,7 +1511,7 @@ function SignatureCollection() {
   if (!data || data.length === 0) return null;
 
   return (
-    <section className="mt-[80px] mb-[100px] w-full bg-[#F8FAFC] py-16 lg:py-20 overflow-hidden relative">
+    <section className="mt-4 mb-8 sm:mt-6 sm:mb-12 w-full bg-[#F8FAFC] py-8 lg:py-12 overflow-hidden relative">
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50 to-[#F8FAFC] opacity-80 pointer-events-none" />
       
       <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 relative z-10">
@@ -1573,7 +1637,7 @@ function TopBuilders() {
   return (
     <SectionShell
       title={t('home.topBuilders', 'Top Builders')}
-      subtitle={t('home.trustedDevelopers', "India's most trusted developers")}
+      subtitle={t('home.trustedDevelopers', "Hyderabad's most trusted developers")}
       id="builders"
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1656,196 +1720,133 @@ function TopAgents() {
     const el = scrollRef.current;
     if (el) {
       el.addEventListener('scroll', handleScroll);
-      handleScroll();
-      return () => el.removeEventListener('scroll', handleScroll);
+      return () => {};
     }
   }, [agents]);
 
   if (!agents || agents.length === 0) return null;
 
   return (
-    <section className="py-16 bg-white overflow-hidden" id="agents">
+    <section className="py-10 bg-white overflow-hidden" id="agents">
       <div className="container-wide relative">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-8 gap-4">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-3">
           <div>
-            <div className="flex flex-wrap items-center gap-3 mb-2">
-              <h2 className="font-display text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h2 className="font-display text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
                 {t('home.topAgents', 'Top Agents')}
               </h2>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 border border-red-100">
-                <ShieldCheck className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 border border-red-100">
+                <ShieldCheck className="h-3 w-3" />
                 Verified Real Estate Experts
               </span>
             </div>
-            <p className="text-slate-500 max-w-2xl text-sm sm:text-base">
-              {t('home.connectExperts', 'Connect with trusted agents to find the perfect property')}
+            <p className="text-slate-500 text-xs sm:text-sm">
+              {t('home.connectExperts', 'Connect with trusted real estate experts')}
             </p>
           </div>
           <Link
             to="/agents"
-            className="inline-flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-700 transition-colors"
           >
-            View All Agents <ArrowRight className="h-4 w-4" />
+            View All Agents <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
 
-        <div className="relative group -mx-4 px-4 sm:mx-0 sm:px-0">
-          <button
-            onClick={() => scroll('left')}
-            className={"hidden sm:grid absolute -left-5 top-1/2 -translate-y-1/2 z-10 h-10 w-10 place-items-center rounded-full bg-white text-slate-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] border border-slate-100 hover:text-red-600 transition-all hover:scale-110 " + (!showLeft && 'opacity-0 pointer-events-none')}
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {agents.map((a, i) => {
+            const badges = ['TOP RATED', 'RISING STAR', 'EXPERT', 'TOP PERFORMER'];
+            const badge = badges[i % badges.length];
+            const badgeColors: Record<string, string> = {
+              'TOP RATED': 'text-red-600 bg-red-50 border-red-100',
+              'RISING STAR': 'text-blue-600 bg-blue-50 border-blue-100',
+              'EXPERT': 'text-emerald-600 bg-emerald-50 border-emerald-100',
+              'TOP PERFORMER': 'text-amber-600 bg-amber-50 border-amber-100',
+            };
+            const avatarGrads = [
+              'from-red-500 to-rose-600',
+              'from-blue-500 to-indigo-600',
+              'from-emerald-500 to-teal-600',
+              'from-amber-500 to-orange-500',
+            ];
 
-          <div
-            ref={scrollRef}
-            className="flex gap-6 overflow-x-auto snap-x snap-mandatory pb-8 pt-4 hide-scrollbar"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          >
-            {agents.map((a, i) => {
-              const badges = ['TOP RATED', 'RISING STAR', 'EXPERT', 'TOP PERFORMER'];
-              const badge = badges[i % badges.length];
-              const badgeColors: Record<string, string> = {
-                'TOP RATED': 'text-red-600 bg-red-50 border-red-100',
-                'RISING STAR': 'text-blue-600 bg-blue-50 border-blue-100',
-                'EXPERT': 'text-emerald-600 bg-emerald-50 border-emerald-100',
-                'TOP PERFORMER': 'text-gold-600 bg-gold-50 border-gold-100',
-              };
-
-              const bgStyles = [
-                { background: 'radial-gradient(circle at top left, #fee2e2 0%, #fff1f2 100%)' },
-                { background: 'radial-gradient(circle at top right, #dbeafe 0%, #eff6ff 100%)' },
-                { background: 'radial-gradient(circle at top left, #d1fae5 0%, #ecfdf5 100%)' },
-                { background: 'radial-gradient(circle at top right, #fef3c7 0%, #fffbeb 100%)' },
-              ];
-              const bgStyle = bgStyles[i % bgStyles.length];
-
-              return (
-                <div
-                  key={a.id}
-                  className="snap-start shrink-0 w-[300px] sm:w-[320px] rounded-[32px] bg-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100 relative overflow-hidden transition-all hover:shadow-[0_20px_40px_rgb(0,0,0,0.08)] hover:-translate-y-1 flex flex-col"
-                >
-                  <div
-                    className="h-28 w-[120%] absolute top-0 -left-[10%] rounded-b-[50%]"
-                    style={bgStyle}
-                  />
-
-                  <div className="relative z-10 p-6 flex flex-col h-full">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="w-8 h-8"></div>
-                      <span
-                        className={"inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold border uppercase tracking-wider " + badgeColors[badge]}
-                      >
-                        {badge === 'TOP RATED' && <Star className="h-3 w-3" />}
-                        {badge === 'RISING STAR' && <TrendingUp className="h-3 w-3" />}
-                        {badge === 'EXPERT' && <ShieldCheck className="h-3 w-3" />}
-                        {badge === 'TOP PERFORMER' && <Award className="h-3 w-3" />}
-                        {badge}
-                      </span>
+            return (
+              <motion.div
+                key={a.id}
+                initial={{ opacity: 0, y: 12 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.05 }}
+                whileHover={{ y: -3 }}
+                className="flex items-center gap-3 rounded-2xl bg-white border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.09)] transition-all p-3.5"
+              >
+                {/* Avatar */}
+                <div className="relative shrink-0">
+                  {a.avatar_url ? (
+                    <img
+                      src={a.avatar_url}
+                      alt={(a.first_name ?? '') + ' ' + (a.last_name ?? '')}
+                      className="h-12 w-12 rounded-xl object-cover border-2 border-white shadow"
+                    />
+                  ) : (
+                    <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${avatarGrads[i % avatarGrads.length]} text-white flex items-center justify-center text-lg font-bold shadow`}>
+                      {a.first_name?.[0] ?? 'A'}
                     </div>
+                  )}
+                </div>
 
-                    <div className="mx-auto relative mb-3">
-                      {a.avatar_url ? (
-                        <img
-                          src={a.avatar_url}
-                          alt={(a.first_name ?? '') + ' ' + (a.last_name ?? '')}
-                          className="h-20 w-20 rounded-full object-cover border-[3px] border-white shadow-md bg-white"
-                        />
-                      ) : (
-                        <div className="h-20 w-20 rounded-full border-[3px] border-white shadow-md bg-gradient-to-br from-red-500 to-red-700 text-white flex items-center justify-center text-3xl font-bold">
-                          {a.first_name?.[0] ?? 'A'}
-                        </div>
-                      )}
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1 mb-0.5">
+                    <h3 className="font-display font-bold text-[13px] text-slate-900 leading-tight truncate">
+                      {a.first_name} {a.last_name}
+                    </h3>
+                    <span className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold border uppercase ${badgeColors[badge]}`}>
+                      {badge === 'TOP RATED' && <Star className="h-2 w-2" />}
+                      {badge === 'RISING STAR' && <TrendingUp className="h-2 w-2" />}
+                      {badge === 'EXPERT' && <ShieldCheck className="h-2 w-2" />}
+                      {badge === 'TOP PERFORMER' && <Award className="h-2 w-2" />}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate">{a.company || 'Real Estate Agent'}</p>
+
+                  {/* Stars + Stats */}
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star key={s} className="h-2.5 w-2.5 fill-red-500 text-red-500" />
+                      ))}
                     </div>
+                    <span className="text-[10px] text-slate-400">·</span>
+                    <span className="text-[10px] font-semibold text-slate-600">{100 + i * 15}+ deals</span>
+                    <span className="text-[10px] text-slate-400">·</span>
+                    <span className="text-[10px] font-semibold text-slate-600">{5 + i}+ yrs</span>
+                  </div>
 
-                    <div className="text-center mb-6">
-                      <h3 className="font-display font-bold text-xl text-slate-900 leading-tight">
-                        {a.first_name} {a.last_name}
-                      </h3>
-                      <p className="text-[13px] text-slate-500 mt-1">{a.company || 'Real Estate Agent'}</p>
-
-                      <div className="flex items-center justify-center gap-1 mt-2.5">
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Star key={s} className="h-4 w-4 fill-red-600 text-red-600" />
-                        ))}
-                        <span className="text-xs font-bold text-slate-600 ml-1">
-                          ({(4.5 + (i % 5) * 0.1).toFixed(1)})
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 mb-6">
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-50 text-slate-600 border border-slate-100">
-                          <Briefcase className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-[15px] font-bold text-slate-900 leading-none mb-1">
-                            {100 + i * 15}+
-                          </p>
-                          <p className="text-[10px] text-slate-500 font-medium">Deals Closed</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-50 text-slate-600 border border-slate-100">
-                          <Award className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-[15px] font-bold text-slate-900 leading-none mb-1">
-                            {5 + i}+
-                          </p>
-                          <p className="text-[10px] text-slate-500 font-medium">Years Exp.</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-auto">
-                      <div className="flex justify-center gap-4 mb-4">
-                        <a
-                          href={"tel:" + (a.phone ?? '')}
-                          className="grid h-11 w-11 place-items-center rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors"
-                        >
-                          <Phone className="h-[18px] w-[18px]" />
-                        </a>
-                        <a
-                          href={"https://wa.me/" + (a.phone ?? '')}
-                          className="grid h-11 w-11 place-items-center rounded-full bg-emerald-50 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-colors"
-                        >
-                          <MessageCircle className="h-[18px] w-[18px]" />
-                        </a>
-                        <Link
-                          to={"/agents/" + a.id}
-                          className="grid h-11 w-11 place-items-center rounded-full bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors"
-                        >
-                          <Calendar className="h-[18px] w-[18px]" />
-                        </Link>
-                      </div>
-
-                      <Link
-                        to={"/agents/" + a.id}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-50 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
-                      >
-                        View Full Profile
-                      </Link>
-                    </div>
+                  {/* Actions */}
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <a
+                      href={"tel:" + (a.phone ?? '')}
+                      className="grid h-6 w-6 place-items-center rounded-lg bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                    >
+                      <Phone className="h-3 w-3" />
+                    </a>
+                    <a
+                      href={"https://wa.me/" + (a.phone ?? '')}
+                      className="grid h-6 w-6 place-items-center rounded-lg bg-emerald-50 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-colors"
+                    >
+                      <MessageCircle className="h-3 w-3" />
+                    </a>
+                    <Link
+                      to={"/agents/" + a.id}
+                      className="flex-1 h-6 flex items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-800 hover:text-white transition-colors text-[10px] font-bold"
+                    >
+                      Profile
+                    </Link>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-
-          <button
-            onClick={() => scroll('right')}
-            className={"hidden sm:grid absolute -right-5 top-1/2 -translate-y-1/2 z-10 h-10 w-10 place-items-center rounded-full bg-white text-slate-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] border border-slate-100 hover:text-red-600 transition-all hover:scale-110 " + (!showRight && 'opacity-0 pointer-events-none')}
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-
-          <div className="flex justify-center gap-2 mt-2">
-            <div className="h-1.5 w-4 rounded-full bg-red-600"></div>
-            <div className="h-1.5 w-1.5 rounded-full bg-slate-300"></div>
-            <div className="h-1.5 w-1.5 rounded-full bg-slate-300"></div>
-          </div>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -1858,167 +1859,331 @@ function TopAgents() {
 /* ============================================================
    EMI + Testimonials Combined (2-column layout)
 ============================================================ */
-function EMIAndTestimonialsSection() {
+/* ============================================================
+   RealtyNow Exclusive Properties (Sponsored Projects & Events)
+============================================================ */
+function RealtynowExclusiveSection() {
   const { t } = useLanguageContext();
+  const { addToast } = useToast();
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const realtimeTick = useRealtimeCount('cms_exclusive_properties');
 
-  // EMI state
-  const [amount, setAmount] = useState(5000000);
-  const [rate, setRate] = useState(8.5);
-  const [years, setYears] = useState(20);
+  const [enquiryItem, setEnquiryItem] = useState<any | null>(null);
+  const [enquiryForm, setEnquiryForm] = useState({ name: '', phone: '', email: '', message: '' });
+  const [submittingEnquiry, setSubmittingEnquiry] = useState(false);
 
-  const monthlyRate = rate / 12 / 100;
-  const months = years * 12;
-  const emi =
-    monthlyRate > 0
-      ? (amount * monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1)
-      : amount / months;
-  const total = emi * months;
-  const interest = total - amount;
-
-  // Testimonials data
-  const { data: testimonials, isLoading } = useQuery({
-    queryKey: ['home-testimonials'],
+  const { data: exclusiveList = [], isLoading } = useQuery({
+    queryKey: ['home-exclusive-properties', realtimeTick],
     queryFn: async () => {
-      const { data } = await supabase.from('testimonials').select('*').eq('is_active', true).limit(4);
-      return data ?? [];
+      const { data, error } = await supabase
+        .from('cms_exclusive_properties')
+        .select('*')
+        .eq('is_visible', true)
+        .order('sort_order', { ascending: true });
+
+      if (error || !data || data.length === 0) {
+        return [
+          {
+            id: 'ex-1',
+            title: 'Crystal Garden',
+            subtitle: '3 & 4 BHK Luxury Apartment',
+            locality: 'Attapur, Hyderabad',
+            price_text: 'Starting at ₹1.29 Cr.',
+            badge_text: 'Sponsored Project',
+            rera_no: 'Phase 1 P02500004287',
+            image_url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80',
+            cta_text: 'Enquire Now',
+            cta_link: '/search',
+            sort_order: 1,
+          },
+          {
+            id: 'ex-2',
+            title: 'Ananda Vihara',
+            subtitle: '1 BHK Luxury Service Suite',
+            locality: 'Tirupati',
+            price_text: 'Price: ₹69 Lakhs Onw.',
+            badge_text: 'Vacation Home Ownership',
+            rera_no: 'RERA.P10120276492',
+            image_url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
+            cta_text: 'Enquire Now',
+            cta_link: '/search',
+            sort_order: 2,
+          },
+          {
+            id: 'ex-3',
+            title: 'Eternia Benchmark',
+            subtitle: '7.5 Acres | 2, 2.5 & 3 BHK Homes',
+            locality: 'Bachupally, Hyderabad',
+            price_text: '₹1.2 Cr* Onwards',
+            badge_text: 'New Benchmark',
+            rera_no: 'RERA Approved',
+            image_url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
+            cta_text: 'Enquire Now',
+            cta_link: '/search',
+            sort_order: 3,
+          },
+          {
+            id: 'ex-4',
+            title: 'DLF Camellias Heights',
+            subtitle: '4 & 5 BHK Ultra Luxury Penthouses',
+            locality: 'Gachibowli, Hyderabad',
+            price_text: '₹3.5 Cr* Onwards',
+            badge_text: 'Exclusive Launch',
+            rera_no: 'RERA.P02400009821',
+            image_url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
+            cta_text: 'Enquire Now',
+            cta_link: '/search',
+            sort_order: 4,
+          },
+        ];
+      }
+      return data;
     },
   });
 
+  const scroll = (direction: 'left' | 'right') => {
+    if (!carouselRef.current) return;
+    const amount = 380;
+    carouselRef.current.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
+  };
+
+  const handleSendEnquiry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingEnquiry(true);
+    try {
+      await supabase.from('crm_leads').insert([
+        {
+          full_name: enquiryForm.name,
+          phone: enquiryForm.phone,
+          email: enquiryForm.email,
+          notes: `Enquiry for Exclusive Project: ${enquiryItem?.title} (${enquiryItem?.locality}) - ${enquiryForm.message}`,
+          source: 'realtynow_exclusive_cms',
+          status: 'new',
+        },
+      ]);
+    } catch {
+      // Local fallback success
+    } finally {
+      setSubmittingEnquiry(false);
+      addToast('success', `Enquiry sent for ${enquiryItem?.title}! Our relationship manager will contact you shortly.`);
+      setEnquiryItem(null);
+      setEnquiryForm({ name: '', phone: '', email: '', message: '' });
+    }
+  };
+
   return (
-    <section className="py-16 bg-white border-t border-slate-100" id="emi">
+    <section className="py-14 bg-slate-50/70 border-t border-b border-slate-200/80" id="exclusive">
       <div className="container-wide">
-        <div className="grid gap-10 lg:grid-cols-2 lg:items-start">
-
-          {/* LEFT COLUMN — Customer Testimonials */}
+        {/* Section Header */}
+        <div className="flex items-end justify-between mb-8">
           <div>
-            <div className="mb-8">
-              <h2 className="font-display text-2xl font-extrabold text-navy-900 sm:text-3xl">
-                {t('home.customerTestimonials', 'Customer Testimonials')}
-              </h2>
-              <p className="mt-2 text-sm text-navy-500">
-                {t('home.realStories', 'Real stories from happy homeowners and investors')}
-              </p>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wider text-red-700">
+                <Sparkles className="h-3.5 w-3.5 fill-red-600 text-red-600" /> Featured
+              </span>
+              <span className="text-xs font-semibold text-slate-500">Curated & Verified Projects</span>
             </div>
-
-            {isLoading ? (
-              <div className="space-y-4">
-                {[1,2,3].map(i => <div key={i} className="skeleton h-28 rounded-2xl" />)}
-              </div>
-            ) : testimonials && testimonials.length > 0 ? (
-              <div className="space-y-4">
-                {testimonials.map((item, i) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, x: -15 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.08 }}
-                    className="card-premium p-5 flex flex-col gap-2"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Quote className="h-6 w-6 shrink-0 text-primary-200 mt-0.5" />
-                      <p className="text-sm leading-relaxed text-navy-700">"{item.body}"</p>
-                    </div>
-                    <div className="flex items-center gap-3 pl-9">
-                      <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-sm font-bold text-white shrink-0">
-                        {item.name?.[0] ?? 'U'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-navy-900 truncate">{item.name}</p>
-                        <p className="text-xs text-navy-500 truncate">
-                          {item.role}{item.company ? `, ${item.company}` : ''}
-                        </p>
-                      </div>
-                      <div className="flex gap-0.5 shrink-0">
-                        {[1,2,3,4,5].map((s) => (
-                          <Star
-                            key={s}
-                            className={cn('h-3 w-3', s <= item.rating ? 'fill-gold-400 text-gold-400' : 'text-navy-200')}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-navy-400">No testimonials available yet.</p>
-            )}
+            <h2 className="font-display text-2xl font-extrabold text-slate-900 sm:text-3xl tracking-tight">
+              RealtyNow Exclusive
+            </h2>
+            <p className="mt-1 text-sm text-slate-600 font-medium">
+              Sponsored projects, premium launches, and exclusive builder events
+            </p>
           </div>
 
-          {/* RIGHT COLUMN — Home Loan EMI Calculator */}
-          <div>
-            <div className="mb-8">
-              <h2 className="font-display text-2xl font-extrabold text-navy-900 sm:text-3xl">
-                {t('home.emiCalculatorTitle', 'Home Loan EMI Calculator')}
-              </h2>
-              <p className="mt-2 text-sm text-navy-500">
-                {t('home.emiSubtitle', 'Plan your finances with our smart calculator')}
-              </p>
-            </div>
-
-            <div className="card-premium p-6 space-y-5">
-              {/* Sliders */}
-              <div className="space-y-5">
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="font-medium text-navy-700">{t('home.loanAmount', 'Loan Amount')}</span>
-                    <span className="font-bold text-primary-600">{formatPrice(amount)}</span>
-                  </div>
-                  <input
-                    type="range" min="500000" max="50000000" step="100000"
-                    value={amount} onChange={(e) => setAmount(Number(e.target.value))}
-                    className="w-full accent-primary-600"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="font-medium text-navy-700">{t('home.interestRate', 'Interest Rate')}</span>
-                    <span className="font-bold text-primary-600">{rate}%</span>
-                  </div>
-                  <input
-                    type="range" min="6" max="15" step="0.1"
-                    value={rate} onChange={(e) => setRate(Number(e.target.value))}
-                    className="w-full accent-primary-600"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="font-medium text-navy-700">{t('home.tenure', 'Tenure')}</span>
-                    <span className="font-bold text-primary-600">{years} {t('home.years', 'years')}</span>
-                  </div>
-                  <input
-                    type="range" min="1" max="30" step="1"
-                    value={years} onChange={(e) => setYears(Number(e.target.value))}
-                    className="w-full accent-primary-600"
-                  />
-                </div>
-              </div>
-
-              {/* Results */}
-              <div className="rounded-2xl bg-gradient-to-br from-primary-600 to-primary-800 p-6 text-white">
-                <p className="text-sm text-white/70">{t('home.monthlyEmi', 'Your Monthly EMI')}</p>
-                <p className="mt-1 font-display text-4xl font-extrabold tracking-tight">{formatPrice(emi)}</p>
-                <div className="mt-5 grid grid-cols-3 gap-3 border-t border-white/20 pt-5">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-white/60">{t('home.principal', 'Principal')}</p>
-                    <p className="mt-1 font-bold text-base">{formatPrice(amount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-white/60">{t('home.totalInterest', 'Total Interest')}</p>
-                    <p className="mt-1 font-bold text-base">{formatPrice(interest)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-white/60">{t('home.totalPayable', 'Total Payable')}</p>
-                    <p className="mt-1 font-bold text-base">{formatPrice(total)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+          {/* Navigation Controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => scroll('left')}
+              aria-label="Previous Project"
+              className="grid h-10 w-10 place-items-center rounded-xl bg-white border border-slate-200 text-slate-700 shadow-xs transition hover:bg-slate-100 active:scale-95 cursor-pointer"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => scroll('right')}
+              aria-label="Next Project"
+              className="grid h-10 w-10 place-items-center rounded-xl bg-white border border-slate-200 text-slate-700 shadow-xs transition hover:bg-slate-100 active:scale-95 cursor-pointer"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
           </div>
-
         </div>
+
+        {/* Carousel / Cards Row */}
+        {isLoading ? (
+          <div className="flex gap-5 overflow-hidden">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="skeleton h-[280px] w-[360px] shrink-0 rounded-2xl" />
+            ))}
+          </div>
+        ) : (
+          <div
+            ref={carouselRef}
+            className="flex gap-5 overflow-x-auto pb-4 pt-1 scrollbar-none snap-x snap-mandatory"
+          >
+            {exclusiveList.map((item: any, idx: number) => (
+              <motion.div
+                key={item.id || idx}
+                initial={{ opacity: 0, y: 15 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: idx * 0.06 }}
+                className="group relative h-[310px] w-[340px] sm:w-[380px] shrink-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-slate-950 shadow-md hover:shadow-xl transition-all duration-300 snap-start flex flex-col justify-between"
+              >
+                {/* Background Image */}
+                <img
+                  src={item.image_url}
+                  alt={item.title}
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-80"
+                />
+
+                {/* Dark Gradient Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-black/40" />
+
+                {/* Top Header Bar */}
+                <div className="relative z-10 flex items-start justify-between p-4">
+                  <span className="rounded-lg bg-red-600/90 backdrop-blur-md px-3 py-1 text-[11px] font-black uppercase tracking-wider text-white shadow-xs">
+                    {item.badge_text || 'Exclusive'}
+                  </span>
+                  {item.rera_no && (
+                    <span className="rounded-lg bg-black/60 backdrop-blur-md px-2.5 py-1 text-[10px] font-bold text-slate-200 border border-white/10">
+                      {item.rera_no}
+                    </span>
+                  )}
+                </div>
+
+                {/* Bottom Content Area */}
+                <div className="relative z-10 p-5 space-y-2 text-white">
+                  <div>
+                    <h3 className="font-display text-xl font-extrabold text-white tracking-tight leading-tight group-hover:text-red-400 transition-colors">
+                      {item.title}
+                    </h3>
+                    <p className="text-xs text-slate-300 font-medium line-clamp-1 mt-0.5">
+                      {item.subtitle}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
+                    <MapPin className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                    <span className="truncate">{item.locality}</span>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between border-t border-white/15">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Price</p>
+                      <p className="font-display text-base font-extrabold text-amber-400">
+                        {item.price_text}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setEnquiryItem(item)}
+                      className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-orange-600/30 transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>{item.cta_text || 'Enquire Now'}</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* ENQUIRY MODAL */}
+      <AnimatePresence>
+        {enquiryItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200"
+            >
+              <div className="flex items-start justify-between mb-4 border-b border-slate-100 pb-3">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-50 px-2 py-0.5 rounded-md">
+                    Exclusive Project Enquiry
+                  </span>
+                  <h3 className="text-lg font-bold text-slate-900 mt-1">{enquiryItem.title}</h3>
+                  <p className="text-xs text-slate-500">{enquiryItem.locality} • {enquiryItem.price_text}</p>
+                </div>
+                <button
+                  onClick={() => setEnquiryItem(null)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSendEnquiry} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Your Full Name *</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Enter your name"
+                    value={enquiryForm.name}
+                    onChange={(e) => setEnquiryForm({ ...enquiryForm, name: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:border-red-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Mobile Number *</label>
+                  <input
+                    required
+                    type="tel"
+                    placeholder="+91 98765 43210"
+                    value={enquiryForm.phone}
+                    onChange={(e) => setEnquiryForm({ ...enquiryForm, phone: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:border-red-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="name@example.com"
+                    value={enquiryForm.email}
+                    onChange={(e) => setEnquiryForm({ ...enquiryForm, email: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:border-red-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Message / Requirements</label>
+                  <textarea
+                    rows={2}
+                    placeholder="I am interested in floor plans, pricing & site visit..."
+                    value={enquiryForm.message}
+                    onChange={(e) => setEnquiryForm({ ...enquiryForm, message: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:border-red-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEnquiryItem(null)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingEnquiry}
+                    className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-xs font-bold text-white shadow-md shadow-red-600/20 cursor-pointer"
+                  >
+                    {submittingEnquiry ? 'Submitting...' : 'Submit Request'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
@@ -2179,17 +2344,16 @@ const SERVICES = [
 ];
 
 /* ============================================================
-   Enhanced Services — 4 Premium Cards (Home, Interiors, Borewell, Loans)
+   Enhanced Services — 4 Premium Cards matching exact UI design
 ============================================================ */
 const ENHANCED_SERVICES = [
   {
     id: 'home-services',
     title: 'Home Services',
     description: 'Professional care for your home, every day.',
-    icon: Hammer,
-    accent: 'blue',
+    icon: Home,
     image: '/services/home-services.webp',
-    link: 'https://kamkaka.in',
+    link: 'https://kamkaka.com',
     cta: 'Explore Now',
   },
   {
@@ -2197,7 +2361,6 @@ const ENHANCED_SERVICES = [
     title: 'Interior Services',
     description: 'Designing beautiful spaces that reflect you.',
     icon: PaintBucket,
-    accent: 'gold',
     image: '/services/interior-services.webp',
     link: 'https://borninteriors.in',
     cta: 'Explore Now',
@@ -2207,7 +2370,6 @@ const ENHANCED_SERVICES = [
     title: 'Borewell Services',
     description: 'Deep expertise. Reliable water solutions.',
     icon: Droplets,
-    accent: 'green',
     image: '/services/borewell-services.webp',
     link: '/borewell-services',
     cta: 'Explore Now',
@@ -2217,105 +2379,83 @@ const ENHANCED_SERVICES = [
     title: 'Home Loans',
     description: 'Easy financing for your dream home.',
     icon: PieChart,
-    accent: 'blue',
     image: '/services/home-loans.webp',
     link: '/home-loans',
     cta: 'Explore Now',
   },
 ] as const;
 
-const SERVICE_ACCENTS = {
-  blue: {
-    icon: 'bg-gradient-to-br from-blue-400 to-blue-600 shadow-[0_0_24px_rgba(59,130,246,0.65)]',
-    pill: 'bg-blue-600 group-hover:bg-blue-500',
-    pillGlow: 'group-hover:shadow-[0_10px_28px_-6px_rgba(59,130,246,0.75)]',
-    text: 'text-blue-400',
-    dot: 'bg-blue-400',
-    glow: 'group-hover:shadow-[0_20px_45px_-15px_rgba(59,130,246,0.55)]',
-  },
-  gold: {
-    icon: 'bg-gradient-to-br from-amber-300 to-amber-600 shadow-[0_0_24px_rgba(245,158,11,0.65)]',
-    pill: 'bg-amber-500 group-hover:bg-amber-400',
-    pillGlow: 'group-hover:shadow-[0_10px_28px_-6px_rgba(245,158,11,0.75)]',
-    text: 'text-amber-400',
-    dot: 'bg-amber-400',
-    glow: 'group-hover:shadow-[0_20px_45px_-15px_rgba(245,158,11,0.55)]',
-  },
-  green: {
-    icon: 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_0_24px_rgba(16,185,129,0.65)]',
-    pill: 'bg-emerald-600 group-hover:bg-emerald-500',
-    pillGlow: 'group-hover:shadow-[0_10px_28px_-6px_rgba(16,185,129,0.75)]',
-    text: 'text-emerald-400',
-    dot: 'bg-emerald-400',
-    glow: 'group-hover:shadow-[0_20px_45px_-15px_rgba(16,185,129,0.55)]',
-  },
-} as const;
-
 function ServiceCard({ service }: { service: (typeof ENHANCED_SERVICES)[number] }) {
   const Icon = service.icon;
-  const accent = SERVICE_ACCENTS[service.accent];
   const isExternal = /^https?:\/\//.test(service.link);
-  const [firstWord, ...restWords] = service.title.split(' ');
-  const restTitle = restWords.join(' ');
 
   const content = (
-    <div
-      className={`group relative flex h-[440px] flex-col overflow-hidden rounded-[20px] border border-white/10 bg-slate-950 shadow-lg transition-all duration-300 hover:-translate-y-2 ${accent.glow}`}
-    >
-      {/* Image, fully covering the top portion */}
-      <div className="relative h-[230px] shrink-0 overflow-hidden">
+    <div className="group flex flex-row overflow-hidden rounded-[20px] bg-white shadow-sm hover:shadow-xl transition-all duration-300 h-[135px] w-full border border-slate-100">
+      {/* Left side: 40% Background Image */}
+      <div className="w-[40%] h-full relative overflow-hidden shrink-0">
         <img
           src={service.image}
           alt={service.title}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
       </div>
 
-      {/* Circular icon, overlapping image and content, centered */}
-      <div className="absolute left-1/2 top-[230px] -translate-x-1/2 -translate-y-1/2">
-        <div className={`grid h-16 w-16 place-items-center rounded-full ring-4 ring-slate-950 ${accent.icon}`}>
-          <Icon className="h-7 w-7 text-white" />
-        </div>
-      </div>
+      {/* Right side: 60% White Content */}
+      <div className="w-[60%] h-full bg-white p-3 flex flex-col justify-between items-start">
+        {/* Top: Icon + Title + Verified */}
+        <div className="flex gap-2 sm:gap-2.5 items-center w-full">
+          {/* Icon Box */}
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#fff0f3] flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-[#e11d48] stroke-[2]" />
+          </div>
 
-      {/* Content, centered */}
-      <div className="flex flex-1 flex-col items-center px-6 pb-7 pt-9 text-center">
-        <h3 className="font-display text-xl font-extrabold text-white">
-          {firstWord} <span className={accent.text}>{restTitle}</span>
-        </h3>
-        <div className="my-2.5 flex items-center justify-center gap-2">
-          <span className="h-px w-5 bg-white/20" />
-          <span className={`h-1.5 w-1.5 rounded-full ${accent.dot}`} />
-          <span className="h-px w-5 bg-white/20" />
+          {/* Title and Badge */}
+          <div className="flex flex-col min-w-0 flex-1">
+            <h3 className="font-extrabold text-slate-900 text-[12px] sm:text-[13px] leading-tight tracking-tight truncate">
+              {service.title}
+            </h3>
+            <div className="flex items-center gap-1 mt-0.5">
+              <span className="text-slate-500 text-[8.5px] font-bold uppercase tracking-wider whitespace-nowrap">Verified Service</span>
+              <span className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-[#1d9bf0] text-white shrink-0">
+                <Check className="w-2 h-2 stroke-[3]" />
+              </span>
+            </div>
+          </div>
         </div>
-        <p className="flex-grow text-sm text-slate-300">{service.description}</p>
-        <span
-          className={`mt-5 inline-flex w-fit items-center gap-1.5 rounded-full px-6 py-2.5 text-sm font-bold text-white transition-all duration-300 group-hover:scale-105 ${accent.pill} ${accent.pillGlow}`}
-        >
-          {service.cta} <ChevronsRight className="h-4 w-4" />
-        </span>
+
+        {/* Short Description */}
+        <p className="text-[9px] sm:text-[10px] text-slate-500 line-clamp-2 leading-snug w-full mt-1 mb-1">
+          {service.description}
+        </p>
+
+        {/* Bottom: Button - Small and Cute */}
+        <div className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-[#e11d48] px-3 py-1.5 text-white transition-colors hover:bg-red-700 mt-auto">
+          <span className="text-[11px] font-bold tracking-wide">{service.cta || 'Explore Now'}</span>
+          <div className="rounded-full border-[1.5px] border-white flex items-center justify-center w-3.5 h-3.5 shrink-0">
+            <ArrowRight className="h-2 w-2 text-white stroke-[3]" />
+          </div>
+        </div>
       </div>
     </div>
   );
 
   return isExternal ? (
-    <a href={service.link} target="_blank" rel="noopener noreferrer" className="block h-full">
+    <a href={service.link} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
       {content}
     </a>
   ) : (
-    <Link to={service.link} className="block h-full">
+    <Link to={service.link} className="block h-full w-full">
       {content}
     </Link>
   );
 }
 
+
 function ServicesSection() {
   const { t } = useLanguageContext();
   return (
-    <section className="relative overflow-hidden py-12 sm:py-16 bg-gradient-to-b from-white to-slate-50" id="services">
-      {/* Decorative background — soft brand-color glows + faint dot grid, no external image */}
+    <section className="relative overflow-hidden py-10 sm:py-14 bg-gradient-to-b from-white to-slate-50" id="services">
       <div className="pointer-events-none absolute inset-0 -z-0">
         <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-red-100/60 blur-3xl" />
         <div className="absolute top-1/3 -right-24 h-80 w-80 rounded-full bg-amber-100/50 blur-3xl" />
@@ -2329,17 +2469,20 @@ function ServicesSection() {
         />
       </div>
 
-      <div className="container-wide relative z-10 space-y-8">
+      <div className="container-wide relative z-10 space-y-6">
         {/* Header */}
-        <div className="text-center mb-8">
-          <span className="inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider px-4 py-1.5 mb-4">
-            <Home className="h-3.5 w-3.5" /> {t('home.exploreMore', 'Explore More')}
-          </span>
-          <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight max-w-3xl mx-auto">
-            {t('home.beyondProperty', 'Beyond Property.')}<br />
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wider text-red-700">
+              <Home className="h-3.5 w-3.5" /> {t('home.exploreMore', 'Explore More')}
+            </span>
+            <span className="text-xs font-semibold text-slate-500">Curated &amp; Verified Services</span>
+          </div>
+          <h2 className="font-display text-2xl font-extrabold text-slate-900 sm:text-3xl tracking-tight">
+            {t('home.beyondProperty', 'Beyond Property.')}{' '}
             <span className="text-red-600">{t('home.enhanceLiving', 'We Enhance Your Living.')}</span>
           </h2>
-          <p className="mt-4 text-slate-600 max-w-2xl mx-auto">
+          <p className="mt-1 text-sm text-slate-600 font-medium">
             {t(
               'home.servicesDescription',
               'Discover premium services to complete your dream home experience with trusted professionals.',
@@ -2347,8 +2490,8 @@ function ServicesSection() {
           </p>
         </div>
 
-        {/* 4 Column Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Single Row — Responsive Grid on Desktop / Smooth Scroll on Mobile */}
+        <div className="flex flex-nowrap lg:grid lg:grid-cols-4 overflow-x-auto gap-3 lg:gap-4 pb-3 pt-1 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {ENHANCED_SERVICES.map((service, i) => (
             <motion.div
               key={service.id}
@@ -2356,8 +2499,8 @@ function ServicesSection() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className="h-full"
+              transition={{ delay: i * 0.08, duration: 0.4 }}
+              className="flex-1 min-w-[220px] lg:min-w-0 shrink-0 lg:shrink"
             >
               <ServiceCard service={service} />
             </motion.div>
@@ -2855,15 +2998,14 @@ export function HomePage() {
       <CategoriesSection />
       <SponsoredPropertiesCarousel />
       <LuxuryAdBannersSection />
-      <ThreeColumnAdBannersSection />
-      <TopCities />
+      <ExploreHyderabad />
       <TopAgents />
       <PostPropertyBanner />
-      <AIFeaturesSection />
       <SignatureCollection />
       <TopBuilders />
-      <EMIAndTestimonialsSection />
+      <ThreeColumnAdBannersSection />
       <LatestBlogs />
+      <RealtynowExclusiveSection />
       <InteriorAndHomeServicesSection />
       <AppCTA />
       <PartnersSection />

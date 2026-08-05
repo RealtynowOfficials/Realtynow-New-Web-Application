@@ -125,6 +125,7 @@ function loadWidgetScript(): Promise<void> {
 }
 
 let initPromise: Promise<void> | null = null;
+let initSettled = false;
 
 function waitForExposedMethods(timeoutMs: number): Promise<void> {
   const start = Date.now();
@@ -150,8 +151,24 @@ function waitForExposedMethods(timeoutMs: number): Promise<void> {
 // using) — they don't reliably fire just because init finished. So instead
 // of trusting them, we call initSendOTP (fire-and-forget) and poll for
 // window.sendOtp to actually exist, which is the real precondition we need.
-export function initMsg91Widget(): Promise<void> {
-  if (initPromise) return initPromise;
+export function initMsg91Widget(forceRemount = false): Promise<void> {
+  // If we already have a successful promise, we only return it if the captcha
+  // iframe is actually still in the DOM. If the user navigated between pages,
+  // the container was destroyed and recreated, so MSG91 must be re-initialized
+  // into the new container element.
+  if (initPromise && !forceRemount) {
+    // Still starting up — never let a second caller (e.g. React Strict Mode's
+    // double effect-invocation in dev) trigger a second initSendOTP call
+    // before the first one's iframe even exists. MSG91's widget isn't
+    // re-entrant: two overlapping init calls leave a stray captcha instance
+    // that the visible one isn't actually wired to, so sendOtp hangs forever
+    // waiting on a challenge nobody can complete.
+    if (!initSettled) return initPromise;
+    const container = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
+    if (container && container.querySelector('iframe')) {
+      return initPromise;
+    }
+  }
 
   const widgetId = import.meta.env.VITE_MSG91_WIDGET_ID as string | undefined;
   const tokenAuth = import.meta.env.VITE_MSG91_TOKEN_AUTH as string | undefined;
@@ -161,8 +178,8 @@ export function initMsg91Widget(): Promise<void> {
     );
   }
 
+  initSettled = false;
   const run = loadWidgetScript().then(() => {
-    if (window.sendOtp) return; // already exposed, e.g. from a previous mount
     if (!window.initSendOTP) {
       console.error('[MSG91] window.initSendOTP is not defined after script load');
       throw new Error('MSG91 widget script loaded but initSendOTP is unavailable');
@@ -179,19 +196,23 @@ export function initMsg91Widget(): Promise<void> {
     return waitForExposedMethods(INIT_TIMEOUT_MS);
   });
 
-  initPromise = withTimeout(run, INIT_TIMEOUT_MS, 'MSG91 widget initialization').catch((err) => {
-    initPromise = null; // allow retrying init on next call
-    throw err;
-  });
+  initPromise = withTimeout(run, INIT_TIMEOUT_MS, 'MSG91 widget initialization')
+    .then(() => {
+      initSettled = true;
+    })
+    .catch((err) => {
+      initPromise = null; // allow retrying init on next call
+      initSettled = false;
+      throw err;
+    });
   return initPromise;
 }
 
 export async function sendMsg91Otp(mobileE164: string): Promise<string> {
   await initMsg91Widget();
-  if (!window.sendOtp) throw new Error('MSG91 widget did not expose sendOtp — check widget config');
-  // MSG91's sendOtp expects "country code + number" with no leading "+".
+  if (!window.sendOtp) throw new Error('MSG91 widget did not expose sendOtp — please refresh and try again.');
   const identifier = mobileE164.replace(/^\+/, '');
-  console.log('[MSG91] calling sendOtp for', identifier);
+  console.log('[MSG91] Sending OTP for', identifier);
   const run = new Promise<string>((resolve, reject) => {
     window.sendOtp!(
       identifier,
@@ -201,22 +222,25 @@ export async function sendMsg91Otp(mobileE164: string): Promise<string> {
       },
       (err) => {
         console.error('[MSG91] sendOtp failure', err);
-        reject(new Error(extractErrorMessage(err, 'Failed to send OTP')));
+        reject(new Error(extractErrorMessage(err, 'Failed to send OTP. Please try again.')));
       },
     );
   });
-  return withTimeout(run, SEND_TIMEOUT_MS, 'Sending OTP');
+  return await withTimeout(run, SEND_TIMEOUT_MS, 'Sending OTP');
 }
 
 export async function verifyMsg91Otp(otp: string, reqId?: string): Promise<string> {
-  if (!window.verifyOtp) throw new Error('MSG91 widget is not initialized — please resend the OTP');
+  if (!window.verifyOtp) {
+    throw new Error('OTP session expired. Please go back and request a new OTP.');
+  }
+
   return new Promise((resolve, reject) => {
     window.verifyOtp!(
       otp,
       (data) => resolve(data.message),
       (err) => {
         console.error('[MSG91] verifyOtp failure', err);
-        reject(new Error(extractErrorMessage(err, 'Invalid or expired OTP')));
+        reject(new Error(extractErrorMessage(err, 'Invalid or expired OTP. Please try again.')));
       },
       reqId,
     );
@@ -224,14 +248,16 @@ export async function verifyMsg91Otp(otp: string, reqId?: string): Promise<strin
 }
 
 export async function retryMsg91Otp(reqId?: string): Promise<void> {
-  if (!window.retryOtp) throw new Error('MSG91 widget is not initialized — please refresh and try again');
+  if (!window.retryOtp) {
+    throw new Error('OTP session expired. Please go back and request a new OTP.');
+  }
   return new Promise((resolve, reject) => {
     window.retryOtp!(
       '11', // SMS
       () => resolve(),
       (err) => {
         console.error('[MSG91] retryOtp failure', err);
-        reject(new Error(extractErrorMessage(err, 'Failed to resend OTP')));
+        reject(new Error(extractErrorMessage(err, 'Could not resend OTP. Please try again.')));
       },
       reqId,
     );

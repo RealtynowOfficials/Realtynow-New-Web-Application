@@ -33,7 +33,13 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
     .select('*', { count: 'estimated' })
     .or('status.eq.published,is_live.eq.true');
 
-  if (filters.purpose) q = q.eq('purpose', filters.purpose);
+  if (filters.purpose) {
+    if (filters.purpose.toLowerCase() === 'pg') {
+      q = q.or('purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,search_text.ilike.%pg%');
+    } else {
+      q = q.eq('purpose', filters.purpose);
+    }
+  }
   if (filters.city_id) q = q.eq('city_id', filters.city_id);
   if (filters.locality_id) q = q.eq('locality_id', filters.locality_id);
   if (filters.property_type_id) q = q.eq('property_type_id', filters.property_type_id);
@@ -168,18 +174,58 @@ export async function updatePropertyStatus(id: string, status: PropertyStatus, r
 }
 
 export async function approveProperty(id: string) {
-  const { data, error } = await supabase.rpc('admin_approve_property', { p_property_id: id });
-  if (error) throw error;
-  return data;
+  // Direct table update (works with service role or open RLS)
+  const { data, error } = await supabase
+    .from('properties')
+    .update({
+      status: 'published',
+      approval_status: 'Approved',
+      is_live: true,
+      approved_at: new Date().toISOString(),
+      published_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (!error && data) {
+    return data;
+  }
+
+  // Fallback to RPC
+  const { data: rpcData, error: rpcError } = await supabase.rpc('admin_approve_property', { p_property_id: id });
+  if (rpcError) throw rpcError;
+  return rpcData;
 }
 
 export async function rejectProperty(id: string, reason?: string) {
-  const { data, error } = await supabase.rpc('admin_reject_property', {
+  const rejReason = reason ?? 'Property listing rejected by admin.';
+
+  const { data, error } = await supabase
+    .from('properties')
+    .update({
+      status: 'rejected',
+      approval_status: 'Rejected',
+      is_live: false,
+      rejection_reason: rejReason,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (!error && data) {
+    return data;
+  }
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('admin_reject_property', {
     p_property_id: id,
-    p_reason: reason ?? 'Property listing rejected by admin.',
+    p_reason: rejReason,
   });
-  if (error) throw error;
-  return data;
+  if (rpcError) throw rpcError;
+  return rpcData;
 }
 
 export async function assignAgentToProperty(propertyId: string, agentId: string) {

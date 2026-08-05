@@ -16,22 +16,90 @@ import { formatPrice, formatDate, cn, generatePropertyUrl } from '../../lib/util
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
 import type { Property, AiVerification } from '../../lib/types';
-import { ExportMenu } from '../../components/export-menu';
+import { ExportMenu, ExportMenuAsync } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
 
 const ADMIN_PROPERTIES_PAGE_SIZE = 12;
 const ADMIN_PROPERTIES_EXPORT_COLUMNS = [
-  { key: 'id', label: 'ID' },
-  { key: 'title', label: 'Property' },
-  { key: 'locality_name', label: 'Locality' },
-  { key: 'city_name', label: 'City' },
-  { key: 'price', label: 'Price' },
+  // Identification
+  { key: 'id', label: 'Property ID' },
+  { key: 'title', label: 'Title' },
+  { key: 'slug', label: 'Slug' },
+  { key: 'description', label: 'Description' },
+  // Classification
   { key: 'purpose', label: 'Purpose' },
+  { key: 'property_type_name', label: 'Property Type' },
+  { key: 'category', label: 'Category' },
+  { key: 'sub_type', label: 'Sub Type' },
+  // Status
   { key: 'status', label: 'Status' },
+  { key: 'approval_status', label: 'Approval Status' },
+  { key: 'is_featured', label: 'Featured' },
+  { key: 'is_verified', label: 'Verified' },
+  { key: 'is_negotiable', label: 'Negotiable' },
+  // Pricing
+  { key: 'price', label: 'Price (₹)' },
+  { key: 'rent_amount', label: 'Rent Amount (₹)' },
+  { key: 'security_deposit', label: 'Security Deposit (₹)' },
+  { key: 'maintenance_charges', label: 'Maintenance Charges (₹)' },
+  { key: 'price_per_sqft', label: 'Price Per Sqft (₹)' },
+  // Location
+  { key: 'city_name', label: 'City' },
+  { key: 'locality_name', label: 'Locality' },
+  { key: 'address', label: 'Address' },
+  { key: 'landmark', label: 'Landmark' },
+  { key: 'pincode', label: 'Pincode' },
+  { key: 'state', label: 'State' },
+  { key: 'latitude', label: 'Latitude' },
+  { key: 'longitude', label: 'Longitude' },
+  // Dimensions
+  { key: 'area_sqft', label: 'Area (sqft)' },
+  { key: 'carpet_area', label: 'Carpet Area (sqft)' },
+  { key: 'built_up_area', label: 'Built Up Area (sqft)' },
+  { key: 'plot_area', label: 'Plot Area (sqft)' },
+  // Rooms
+  { key: 'bedrooms', label: 'Bedrooms' },
+  { key: 'bathrooms', label: 'Bathrooms' },
+  { key: 'balconies', label: 'Balconies' },
+  { key: 'parking', label: 'Parking' },
+  { key: 'floor_number', label: 'Floor Number' },
+  { key: 'total_floors', label: 'Total Floors' },
+  // Furnishing & Condition
+  { key: 'furnishing_status', label: 'Furnishing Status' },
+  { key: 'possession_status', label: 'Possession Status' },
+  { key: 'age_of_property', label: 'Age of Property (yrs)' },
+  { key: 'facing', label: 'Facing' },
+  // Amenities & Media
+  { key: 'amenities', label: 'Amenities' },
+  { key: 'images', label: 'Image URLs' },
+  { key: 'nearby_locations', label: 'Nearby Locations & Landmarks' },
+  { key: 'features', label: 'Features & Specifications' },
+  // Owner / Agent
+  { key: 'owner_name', label: 'Owner Name' },
+  { key: 'owner_email', label: 'Owner Email' },
+  { key: 'owner_phone', label: 'Owner Phone' },
+  { key: 'agent_name', label: 'Agent Name' },
+  { key: 'listed_by', label: 'Listed By' },
+  // Analytics & Verification
+  { key: 'legal_approved', label: 'Legal Approved' },
+  { key: 'ai_score', label: 'AI Quality Score' },
   { key: 'view_count', label: 'Views' },
-  { key: 'created_at', label: 'Created' },
+  { key: 'inquiry_count', label: 'Inquiries' },
+  { key: 'shortlist_count', label: 'Shortlists' },
+  // SEO
+  { key: 'seo_title', label: 'SEO Title' },
+  { key: 'seo_description', label: 'SEO Description' },
+  { key: 'seo_keywords', label: 'SEO Keywords' },
+  // Dates & System
+  { key: 'country', label: 'Country' },
+  { key: 'rejection_reason', label: 'Rejection Reason' },
+  { key: 'created_at', label: 'Created At' },
+  { key: 'updated_at', label: 'Updated At' },
+  { key: 'published_at', label: 'Published At' },
+  { key: 'available_from', label: 'Available From' },
 ];
+
 
 interface AdminPropertiesFilterState {
   tab: string;
@@ -142,12 +210,10 @@ export function AdminApprovals() {
         throw error;
       }
 
-      const nonPublished = ['submitted', 'pending_verification', 'changes_requested', 'approved', 'rejected'];
+      // Sorted properties
       const properties = (allProps ?? [])
         .filter((p: any) => nonPublished.includes(p.status))
         .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      console.log('✅ admin_get_properties total:', allProps?.length, 'filtered:', properties.length);
 
       const ownerIds = [...new Set(properties.map((p: any) => p.owner_id))].filter(Boolean);
 
@@ -824,10 +890,79 @@ export function AdminProperties() {
   const toast = useToast();
   const [tab, setTab] = useState('all');
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState({
+    city: '',
+    minPrice: '',
+    maxPrice: '',
+    purpose: '',
+    type: '',
+    dateFrom: '',
+    dateTo: '',
+  });
   const [toDelete, setToDelete] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleRows, setVisibleRows] = useState<PendingProperty[]>([]);
   const handleVisibleRowsChange = useCallback((rows: PendingProperty[]) => setVisibleRows(rows), []);
+  const [exportAllRows, setExportAllRows] = useState<PendingProperty[]>([]);
+
+  // Fetch ALL records (no pagination) for export — runs on demand
+  const fetchAllForExport = useCallback(async (): Promise<PendingProperty[]> => {
+    let q = supabase
+      .from('v_properties_search')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (tab !== 'all') {
+      if (tab === 'pending') q = q.in('status', ['submitted', 'pending_verification']);
+      else if (tab === 'published' || tab === 'approved') q = q.in('status', ['published', 'approved']);
+      else q = q.eq('status', tab);
+    }
+    if (search) q = q.ilike('search_text', `%${search}%`);
+    if (filters.city) q = q.eq('city_id', filters.city);
+    if (filters.minPrice) q = q.gte('price', Number(filters.minPrice));
+    if (filters.maxPrice) q = q.lte('price', Number(filters.maxPrice));
+    if (filters.purpose) q = q.eq('purpose', filters.purpose);
+    if (filters.type) q = q.eq('property_type_id', filters.type);
+    if (filters.dateFrom) q = q.gte('created_at', filters.dateFrom);
+    if (filters.dateTo) q = q.lte('created_at', `${filters.dateTo}T23:59:59Z`);
+
+    const { data: allData } = await q;
+    const rows = (allData ?? []) as unknown as PendingProperty[];
+    // Flatten owner info from owner_id
+    const ownerIds = [...new Set(rows.map((p: any) => p.owner_id))].filter(Boolean);
+    let profilesMap: Record<string, any> = {};
+    if (ownerIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email, first_name, last_name, phone')
+        .in('id', ownerIds);
+      if (profiles) {
+        profilesMap = profiles.reduce((acc, p) => { acc[p.id] = p; return acc; }, {} as Record<string, any>);
+      }
+    }
+    const enriched = rows.map((p: any) => {
+      const owner = profilesMap[p.owner_id] || null;
+      return {
+        ...p,
+        owner_name: owner ? `${owner.first_name ?? ''} ${owner.last_name ?? ''}`.trim() : (p.owner_name ?? ''),
+        owner_email: owner?.email ?? p.owner_email ?? '',
+        owner_phone: owner?.phone ?? p.owner_phone ?? '',
+        amenities: Array.isArray(p.amenities) ? p.amenities.join('; ') : (p.amenities ?? ''),
+        images: Array.isArray(p.images) ? p.images.map((img: any) => (typeof img === 'string' ? img : img.url || JSON.stringify(img))).join('; ') : (p.images ?? ''),
+        nearby_locations: Array.isArray(p.nearby_locations) ? p.nearby_locations.join('; ') : (typeof p.nearby_locations === 'object' ? JSON.stringify(p.nearby_locations) : (p.nearby_locations ?? p.landmark ?? '')),
+        features: typeof p.features === 'object' ? JSON.stringify(p.features) : (p.features ?? ''),
+        latitude: p.latitude ?? '',
+        longitude: p.longitude ?? '',
+        legal_approved: p.legal_approved ? 'Yes' : 'No',
+        is_featured: p.is_featured ? 'Yes' : 'No',
+        is_verified: p.is_verified ? 'Yes' : 'No',
+        is_negotiable: p.is_negotiable ? 'Yes' : 'No',
+        country: p.country ?? 'India',
+      };
+    });
+    setExportAllRows(enriched);
+    return enriched;
+  }, [tab, search, filters]);
+
   const [editing, setEditing] = useState<PendingProperty | null>(null);
   const [editForm, setEditForm] = useState({
     title: '',
@@ -843,15 +978,6 @@ export function AdminProperties() {
     seo_keywords: '',
   });
   const [regeneratingSeo, setRegeneratingSeo] = useState(false);
-  const [filters, setFilters] = useState({
-    city: '',
-    minPrice: '',
-    maxPrice: '',
-    purpose: '',
-    type: '',
-    dateFrom: '',
-    dateTo: '',
-  });
   const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
   const [propertyTypes, setPropertyTypes] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1245,7 +1371,7 @@ export function AdminProperties() {
                 });
               }}
             />
-            <ExportMenu filename="admin-properties" rows={visibleRows as unknown as Record<string, unknown>[]} columns={ADMIN_PROPERTIES_EXPORT_COLUMNS} />
+            <ExportMenuAsync filename="admin-properties" columns={ADMIN_PROPERTIES_EXPORT_COLUMNS} fetchRows={fetchAllForExport} />
           </div>
         }
       />

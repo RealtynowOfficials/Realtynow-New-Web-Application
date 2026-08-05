@@ -929,7 +929,13 @@ export function SearchPage() {
         .from('properties')
         .select('*, cities!inner(name), localities(name), property_types(name)', { count: 'estimated' })
         .eq('status', 'published');
-      if (filters.purpose) q = q.eq('purpose', filters.purpose);
+      if (filters.purpose) {
+        if (filters.purpose.toLowerCase() === 'pg') {
+          q = q.or('purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,title.ilike.%pg%,description.ilike.%pg%');
+        } else {
+          q = q.eq('purpose', filters.purpose);
+        }
+      }
       if (filters.city_id) q = q.eq('city_id', filters.city_id);
       // Phase 11: Apply resolved locality filter
       if ((filters as any).locality_id) q = q.eq('locality_id', (filters as any).locality_id);
@@ -1371,11 +1377,11 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
 
   // SEO
   const seoTitle = {
-    buy: t('search.forSaleTitle', 'Properties for Sale in India'),
-    rent: t('search.forRentTitle', 'Properties for Rent in India'),
-    commercial: t('menu.commercialSpaces', 'Commercial Properties in India'),
-    plots: t('menu.plotsTitle', 'Plots & Land in India'),
-    luxury: t('home.signatureCollection', 'Luxury Homes in India'),
+    buy: t('search.forSaleTitle', 'Properties for Sale in Hyderabad'),
+    rent: t('search.forRentTitle', 'Properties for Rent in Hyderabad'),
+    commercial: t('menu.commercialSpaces', 'Commercial Properties in Hyderabad'),
+    plots: t('menu.plotsTitle', 'Plots & Land in Hyderabad'),
+    luxury: t('home.signatureCollection', 'Luxury Homes in Hyderabad'),
   }[category];
 
   useSEO({

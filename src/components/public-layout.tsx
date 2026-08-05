@@ -567,12 +567,12 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      {/* ── Main header (68px) ── */}
-      <header className="sticky top-0 z-50 border-b border-navy-100 bg-white text-navy-900">
+      {/* ── Main header (56px) ── */}
+      <header className="sticky top-0 z-50 border-b border-navy-100 bg-white text-navy-900 shadow-xs">
         <div className="container-wide">
-          <div className="grid h-[68px] grid-cols-[auto_1fr_auto] items-center gap-3">
+          <div className="grid h-[56px] grid-cols-[auto_1fr_auto] items-center gap-3">
             {/* Logo */}
-            <Logo to="/" size={175} className="shrink-0" />
+            <Logo to="/" size={140} className="shrink-0" />
 
             {/* Desktop / tablet nav — centered, compact on lg, spacious on xl */}
             <nav
@@ -605,7 +605,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                         aria-haspopup="true"
                         aria-expanded={isOpen}
                         className={cn(
-                          'nav-link flex items-center gap-1 rounded-xl py-2 text-base font-medium transition-all duration-200 lg:px-3 xl:px-5',
+                          'nav-link flex items-center gap-1 rounded-xl py-2 text-[13px] font-medium transition-all duration-200 lg:px-2.5 xl:px-4',
                           isOpen || isActive
                             ? 'bg-[#D8232A]/5 text-[#D8232A]'
                             : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
@@ -695,7 +695,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                     key={item.label}
                     to={item.to}
                     className={cn(
-                      'nav-link rounded-xl py-2 text-base font-medium transition-colors lg:px-3 xl:px-5',
+                      'nav-link rounded-xl py-2 text-[13px] font-medium transition-colors lg:px-2.5 xl:px-4',
                       isActive ? 'bg-[#D8232A]/5 text-[#D8232A]' : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
                     )}
                   >
@@ -723,7 +723,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                   aria-haspopup="true"
                   aria-expanded={hoveredMenu === 'Services'}
                   className={cn(
-                    'nav-link flex items-center gap-1 rounded-xl py-2 text-base font-medium transition-all duration-200 lg:px-3 xl:px-5',
+                    'nav-link flex items-center gap-1 rounded-xl py-2 text-[13px] font-medium transition-all duration-200 lg:px-2.5 xl:px-4',
                     hoveredMenu === 'Services'
                       ? 'bg-[#D8232A]/5 text-[#D8232A]'
                       : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
@@ -939,18 +939,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                             </div>
                             <ChevronRight className="h-3.5 w-3.5" />
                           </Link>
-
-                          <Link
-                            to="/signup"
-                            onClick={() => setUserMenu(false)}
-                            className="flex items-center justify-between rounded-xl border border-navy-200 bg-white px-3.5 py-2.5 text-xs font-bold text-navy-800 transition-all hover:bg-navy-50 active:scale-95"
-                          >
-                            <div className="flex items-center gap-2">
-                              <UserPlus className="h-4 w-4 text-[#D8232A]" />
-                              <span>{t('common.register', 'Create Account')}</span>
-                            </div>
-                            <ChevronRight className="h-3.5 w-3.5 text-navy-400" />
-                          </Link>
                         </>
                       )}
                     </motion.div>
@@ -1123,9 +1111,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                       <Link to="/login" className="btn-outline-red w-full text-center">
                         {t('common.login', 'Sign In')}
                       </Link>
-                      <Link to="/signup" className="btn-primary w-full text-center">
-                        {t('common.register', 'Sign Up')}
-                      </Link>
                     </>
                   )}
                   <Link
@@ -1263,20 +1248,23 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               </ul>
             </div>
 
-            {/* Column 4 */}
+            {/* Column 4 - Company & Legal Policies */}
             <div className="lg:col-span-2">
               <h4 className="font-display text-sm font-bold tracking-widest text-white uppercase flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-                {t('footer.company', 'Company')}
+                {t('footer.legalPolicies', 'Company & Legal')}
               </h4>
-              <ul className="mt-6 space-y-4 text-sm text-white/50">
+              <ul className="mt-6 space-y-3 text-xs sm:text-sm text-white/50">
                 {[
-                  { label: t('home.aiAdvisor', 'AI Property Advisor'), path: '/ai-property-advisor' },
                   { label: t('common.aboutUs', 'About Us'), path: '/about-us' },
-                  { label: t('common.blog', 'Blog & News'), path: '/blog' },
                   { label: t('common.contactUs', 'Contact Us'), path: '/contact' },
-                  { label: t('common.terms', 'Terms of Service'), path: '/terms' },
-                  { label: t('common.privacy', 'Privacy Policy'), path: '/privacy' },
+                  { label: t('footer.privacy', 'Privacy Policy'), path: '/privacy' },
+                  { label: t('footer.terms', 'Terms & Conditions'), path: '/terms' },
+                  { label: t('footer.refundPolicy', 'Refund & Cancellation Policy'), path: '/refund-policy' },
+                  { label: t('footer.listingPolicy', 'Property Listing Policy'), path: '/listing-policy' },
+                  { label: t('footer.userAgreement', 'User Agreement'), path: '/user-agreement' },
+                  { label: t('footer.cookiePolicy', 'Cookie Policy'), path: '/cookie-policy' },
+                  { label: t('footer.securityStatement', 'Security Statement'), path: '/security-statement' },
                 ].map((link, idx) => (
                   <li key={idx}>
                     <Link to={link.path} className="group flex items-center gap-2 hover:text-white transition-colors">
@@ -1293,9 +1281,26 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
         {/* Bottom Bar */}
         <div className="border-t border-white/10 bg-black/20 backdrop-blur-sm relative z-10">
           <div className="container-wide py-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/40 font-light">
-            <p>
-              &copy; {new Date().getFullYear()} Realtynow Properties Private limited. {t('footer.rightsReserved', 'All rights reserved.')}
-            </p>
+            <div className="flex flex-col gap-2">
+              <p>
+                &copy; {new Date().getFullYear()} Realtynow Properties Private limited. {t('footer.rightsReserved', 'All rights reserved.')}
+              </p>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/40">
+                <Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+                <span>•</span>
+                <Link to="/terms" className="hover:text-white transition-colors">Terms & Conditions</Link>
+                <span>•</span>
+                <Link to="/refund-policy" className="hover:text-white transition-colors">Refund & Cancellation</Link>
+                <span>•</span>
+                <Link to="/listing-policy" className="hover:text-white transition-colors">Listing Policy</Link>
+                <span>•</span>
+                <Link to="/user-agreement" className="hover:text-white transition-colors">User Agreement</Link>
+                <span>•</span>
+                <Link to="/cookie-policy" className="hover:text-white transition-colors">Cookie Policy</Link>
+                <span>•</span>
+                <Link to="/security-statement" className="hover:text-white transition-colors">Security Statement</Link>
+              </div>
+            </div>
             
             <div className="flex gap-4 items-center">
               {[

@@ -13,9 +13,9 @@ interface AdvancedFiltersProps {
   cities?: { id: string; name: string }[];
 }
 
-const PROPERTY_CATEGORIES = ['Buy', 'Rent', 'Commercial', 'Projects', 'Plots'];
+const PROPERTY_CATEGORIES = ['Buy', 'Rent', 'PG', 'Commercial', 'Projects', 'Plots'];
 const PROPERTY_TYPES = [
-  'Apartment', 'Villa', 'Independent House', 'Penthouse', 'Studio', 
+  'PG / Co-Living', 'Hostel', 'Apartment', 'Villa', 'Independent House', 'Penthouse', 'Studio', 
   'Farm Land', 'Office Space', 'Warehouse', 'Shop', 'Builder Floor'
 ];
 const BHK_OPTIONS = [1, 2, 3, 4, 5];
@@ -101,7 +101,7 @@ export function AdvancedFilters({ filters, onFilterChange, onCloseMobile, cities
                   onClick={() => onFilterChange({ purpose: cat === 'Buy' ? 'Sale' : cat })}
                   className={cn(
                     "px-3 py-1.5 rounded-full text-xs font-bold transition-all border",
-                    (filters.purpose === cat || (filters.purpose === 'Sale' && cat === 'Buy'))
+                    (filters.purpose === cat || (filters.purpose === 'Sale' && cat === 'Buy') || (filters.purpose?.toLowerCase() === 'pg' && cat === 'PG'))
                       ? "bg-navy-900 text-white border-navy-900 shadow-md shadow-navy-900/20"
                       : "bg-white text-slate-600 border-slate-200 hover:border-navy-300 hover:bg-slate-50"
                   )}

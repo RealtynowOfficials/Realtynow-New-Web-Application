@@ -5,16 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './toast';
 
 const topCities = [
-  'Mumbai',
-  'Delhi',
-  'Bengaluru',
-  'Hyderabad',
-  'Ahmedabad',
-  'Chennai',
-  'Kolkata',
-  'Surat',
-  'Pune',
-  'Jaipur',
+  'Hyderabad'
 ];
 
 export function LocationSelector({ isTransparent }: { isTransparent: boolean }) {

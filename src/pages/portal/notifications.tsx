@@ -5,9 +5,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, CheckCheck, Archive, Trash2, X, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
+import { useAdminAuth } from '../../contexts/admin-auth-context';
 import { useRealtimeNotifications } from '../../lib/realtime';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
-import { getPortalSections, getAdminSections } from './sections';
+import { getPortalSections, getAgentSections, getAdminSections } from './sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Button, Card, EmptyState } from '../../components/ui';
 import { useToast } from '../../components/toast';
@@ -52,7 +53,11 @@ function dateFilterRange(filter: DateFilter): { gte?: string; lt?: string } {
 }
 
 export function PortalNotifications() {
-  const { user, profile } = useAuth();
+  const { user: portalUser, profile } = useAuth();
+  const { admin } = useAdminAuth();
+
+  const user = portalUser || (admin ? { id: admin.id, email: admin.email || '' } : null);
+  const userRole = profile?.role || (admin ? 'admin' : 'customer');
   const { t } = useLanguageContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -200,17 +205,17 @@ export function PortalNotifications() {
     });
   };
 
-  const sections = profile?.role === 'admin' ? getAdminSections(t) : getPortalSections(t);
+  const sections = userRole === 'admin' ? getAdminSections(t) : userRole === 'agent' ? getAgentSections(t) : getPortalSections(t);
   const selectedArray = [...selectedIds];
 
   return (
-    <DashboardLayout sections={sections} title={t('portal.notifications', 'Notifications')} badge={profile?.role}>
+    <DashboardLayout sections={sections} title={t('portal.notifications', 'Notifications')} badge={userRole}>
       <PageHeader
         title={t('portal.notifications', 'Notifications')}
         subtitle={t('portal.notificationsDesc', 'Stay updated with your latest alerts and reminders.')}
       />
 
-      {profile?.role === 'admin' && <BroadcastPanel />}
+      {userRole === 'admin' && <BroadcastPanel />}
 
       <NotificationToolbar
         search={search}

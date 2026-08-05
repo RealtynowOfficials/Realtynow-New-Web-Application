@@ -45,6 +45,7 @@ import { fetchProperty, trackPropertyView } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
+import { SharePropertyModal } from '../../components/share-property-modal';
 import { Button, Card, Input, Textarea, Badge, Avatar, EmptyState, Spinner, Modal, Select } from '../../components/ui';
 import { PropertyCard, StatusBadge, RatingStars } from '../../components/property-card';
 import { formatCompactPrice, formatNumber, cn } from '../../lib/utils';
@@ -411,9 +412,20 @@ export function PropertyDetailPage() {
     try {
       await navigator.clipboard.writeText(window.location.href);
       addToast('success', 'Link copied to clipboard');
+      if (id) {
+        supabase.rpc('log_property_share', { p_property_id: id, p_platform: 'copy_link' }).catch(console.error);
+      }
     } catch {
       addToast('error', 'Could not copy link');
     }
+    setShowShare(false);
+  };
+
+  const handleShareClick = (platform: string, href: string) => {
+    if (id) {
+      supabase.rpc('log_property_share', { p_property_id: id, p_platform: platform.toLowerCase() }).catch(console.error);
+    }
+    window.open(href, '_blank', 'noopener,noreferrer');
     setShowShare(false);
   };
 
@@ -523,7 +535,7 @@ export function PropertyDetailPage() {
     description:
       property?.seo_description ||
       property?.description ||
-      `${property?.property_type_name ?? 'Property'} for ${property?.purpose === 'Rent' ? 'rent' : 'sale'} in ${property?.locality_name ?? property?.city_name ?? 'India'} — RealtyNow`,
+      `${property?.property_type_name ?? 'Property'} for ${property?.purpose === 'Rent' ? 'rent' : 'sale'} in ${property?.locality_name ?? property?.city_name ?? 'Hyderabad'} — RealtyNow`,
     type: 'product',
     image: property?.og_image || images[0],
     twitterTitle: property?.twitter_title || undefined,
@@ -617,9 +629,52 @@ export function PropertyDetailPage() {
         {/* LEFT COLUMN */}
         <div className="space-y-6 min-w-0">
           {/* Hero carousel */}
-          <div className="relative overflow-hidden rounded-2xl bg-navy-100 group">
-            <div className="overflow-hidden" ref={emblaRef}>
-              <div className="flex aspect-video sm:aspect-[16/8]">
+          {/* Premium Hero Gallery (Grid on Desktop, Carousel on Mobile) */}
+          <div className="relative group rounded-3xl overflow-hidden bg-navy-100 shadow-sm border border-navy-50">
+            {/* Desktop Grid (Hidden on Mobile) */}
+            <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-2 h-[450px] lg:h-[500px]">
+              {/* Main Large Image */}
+              <button
+                className="col-span-2 row-span-2 relative h-full w-full cursor-pointer overflow-hidden group/main"
+                onClick={() => { setActiveImg(0); setLightbox(true); }}
+              >
+                <img
+                  src={images[0]}
+                  alt={`${property.title} main`}
+                  className="h-full w-full object-cover transition-transform duration-700 group-hover/main:scale-105"
+                  loading="eager"
+                />
+                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover/main:opacity-100 transition-opacity" />
+              </button>
+
+              {/* 4 Smaller Images */}
+              {Array.from({ length: 4 }).map((_, i) => {
+                const imgIndex = i + 1;
+                // If there aren't enough images, reuse the last one or early exit
+                const imgSrc = images[imgIndex] || images[images.length - 1];
+                if (!imgSrc && imgIndex > 0) return null; // Edge case where property has only 1 image
+
+                return (
+                  <button
+                    key={imgIndex}
+                    className="relative h-full w-full cursor-pointer overflow-hidden group/sub"
+                    onClick={() => { setActiveImg(imgIndex % images.length); setLightbox(true); }}
+                  >
+                    <img
+                      src={imgSrc}
+                      alt={`${property.title} view ${imgIndex + 1}`}
+                      className="h-full w-full object-cover transition-transform duration-700 group-hover/sub:scale-110"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-black/10 opacity-0 group-hover/sub:opacity-100 transition-opacity" />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Mobile Carousel (Hidden on Desktop) */}
+            <div className="md:hidden overflow-hidden" ref={emblaRef}>
+              <div className="flex aspect-square sm:aspect-video">
                 {images.map((img, i) => (
                   <button key={i} className="relative min-w-0 flex-[0_0_100%] cursor-pointer" onClick={() => { setActiveImg(i); setLightbox(true); }}>
                     <img src={img} alt={`${property.title} ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} className="h-full w-full object-cover" />
@@ -628,96 +683,52 @@ export function PropertyDetailPage() {
               </div>
             </div>
 
-            {images.length > 1 && (
-              <>
-                <button
-                  onClick={(e) => { e.stopPropagation(); emblaApi?.scrollPrev(); }}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/80 text-navy-800 opacity-0 shadow transition-opacity group-hover:opacity-100 hover:bg-white"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); emblaApi?.scrollNext(); }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/80 text-navy-800 opacity-0 shadow transition-opacity group-hover:opacity-100 hover:bg-white"
-                >
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </>
-            )}
+            {/* Floating Top Bar (Badges & Actions) */}
+            <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none">
+              <div className="flex flex-col gap-2 pointer-events-auto">
+                <Badge variant={property.purpose === 'Rent' ? 'info' : 'gold'} className="shadow-lg backdrop-blur-md bg-opacity-90 w-fit">
+                  {t('common.for', 'For')} {property.purpose === 'Rent' ? t('common.rent', 'Rent') : t('common.sale', 'Sale')}
+                </Badge>
+              </div>
 
-            <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-              <Badge variant={property.purpose === 'Rent' ? 'info' : 'gold'}>
-                {t('common.for', 'For')} {property.purpose === 'Rent' ? t('common.rent', 'Rent') : t('common.sale', 'Sale')}
-              </Badge>
-              {property.verified_status && property.verified_status !== 'Unverified' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow">
-                  <ShieldCheck className="h-3 w-3" /> Verified
-                </span>
-              )}
-              {property.ai_score != null && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white shadow">
-                  <Sparkles className="h-3 w-3" /> AI Score {property.ai_score}
-                </span>
-              )}
-              {property.verification_status === 'AI Verified' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white shadow-sm">
-                  <ShieldCheck className="h-3.5 w-3.5" /> {t('common.aiVerified', 'AI Verified')}
-                </span>
-              )}
-            </div>
-
-            <div className="absolute right-4 top-4 flex gap-2">
-              <button onClick={(e) => { e.stopPropagation(); toggleSave(); }} className={cn('grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur transition hover:scale-110', saved ? 'text-error-500' : 'text-navy-400')} title="Save property">
-                <Heart className={cn('h-4 w-4', saved && 'fill-error-500')} />
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); toggleCompare(); }} className={cn('grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur transition hover:scale-110', compared ? 'text-secondary-600' : 'text-navy-400')} title="Compare">
-                <GitCompare className="h-4 w-4" />
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); handlePrint(); }} className="grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur transition hover:scale-110 text-navy-500" title="Print">
-                <Printer className="h-4 w-4" />
-              </button>
-              <div className="relative">
-                <button onClick={(e) => { e.stopPropagation(); setShowShare((s) => !s); }} className="grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur transition hover:scale-110 text-navy-500" title="Share">
-                  <Share2 className="h-4 w-4" />
+              <div className="flex gap-2 pointer-events-auto">
+                <button onClick={(e) => { e.stopPropagation(); toggleSave(); }} className={cn('grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur transition-transform hover:scale-110', saved ? 'text-error-500' : 'text-navy-600 hover:text-navy-900')} title="Save property">
+                  <Heart className={cn('h-5 w-5', saved && 'fill-error-500')} />
                 </button>
-                {showShare && (
-                  <div className="absolute right-0 top-11 z-20 rounded-xl bg-white p-2 shadow-xl" onClick={(e) => e.stopPropagation()}>
-                    {shareLinks.map((s) =>
-                      s.href ? (
-                        <a key={s.name} href={s.href} target="_blank" rel="noopener" className="block whitespace-nowrap rounded-lg px-3 py-2 text-sm hover:bg-navy-50 text-navy-700">
-                          {s.name}
-                        </a>
-                      ) : (
-                        <button key={s.name} onClick={handleCopyLink} className="block w-full whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm hover:bg-navy-50 text-navy-700">
-                          {s.name}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                )}
+                <div className="relative">
+                  <button onClick={(e) => { e.stopPropagation(); setShowShare(true); }} className="grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur transition-transform hover:scale-110 text-navy-600 hover:text-navy-900" title="Share">
+                    <Share2 className="h-5 w-5" />
+                  </button>
+                  <SharePropertyModal property={property} isOpen={showShare} onClose={() => setShowShare(false)} />
+                </div>
               </div>
             </div>
 
-            <div className="absolute bottom-4 left-4 flex gap-2">
-              <button className="flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-navy-800 shadow backdrop-blur hover:bg-white transition-colors" onClick={(e) => { e.stopPropagation(); setLightbox(true); }}>
-                <Images className="h-4 w-4" /> {images.length} Photos
-              </button>
+            {/* Floating Bottom Bar (Show all photos & Media toggles) */}
+            <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 flex items-center gap-2">
               {!!tours?.length && (
-                <button className="flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-navy-800 shadow backdrop-blur hover:bg-white transition-colors" onClick={(e) => { e.stopPropagation(); setShowVirtualTour(true); }}>
-                  <Box className="h-4 w-4" /> 360° Tour
+                <button className="flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2.5 text-sm font-bold text-navy-900 shadow-lg backdrop-blur hover:bg-white hover:scale-105 transition-all" onClick={(e) => { e.stopPropagation(); setShowVirtualTour(true); }}>
+                  <Box className="h-4 w-4 text-red-600" /> <span className="hidden sm:inline">360° Tour</span>
                 </button>
               )}
               {!!property.videos?.length && (
-                <button className="flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-navy-800 shadow backdrop-blur hover:bg-white transition-colors" onClick={(e) => { e.stopPropagation(); setActiveTab('videos'); }}>
-                  <Play className="h-4 w-4" /> Video
+                <button className="flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2.5 text-sm font-bold text-navy-900 shadow-lg backdrop-blur hover:bg-white hover:scale-105 transition-all" onClick={(e) => { e.stopPropagation(); setActiveTab('videos'); }}>
+                  <Play className="h-4 w-4 text-red-600" /> <span className="hidden sm:inline">Video</span>
                 </button>
               )}
+              <button
+                className="flex items-center gap-2 rounded-xl bg-navy-900/90 px-5 py-2.5 text-sm font-bold text-white shadow-lg backdrop-blur hover:bg-navy-900 hover:scale-105 transition-all border border-white/10"
+                onClick={(e) => { e.stopPropagation(); setLightbox(true); }}
+              >
+                <Images className="h-4 w-4" /> Show all photos
+              </button>
             </div>
-
+            
+            {/* Mobile Dots */}
             {images.length > 1 && (
-              <div className="absolute bottom-4 right-4 flex gap-1.5">
+              <div className="md:hidden absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 bg-black/20 px-2 py-1 rounded-full backdrop-blur-md">
                 {images.slice(0, 8).map((_, i) => (
-                  <span key={i} className="h-1.5 w-1.5 rounded-full bg-white/70" />
+                  <span key={i} className="h-1.5 w-1.5 rounded-full bg-white/90 shadow-sm" />
                 ))}
               </div>
             )}
@@ -1089,7 +1100,9 @@ export function PropertyDetailPage() {
                     <Button variant="secondary" icon={<Send className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-emerald-700" title="WhatsApp" />
                   </a>
                 )}
-                <Button variant="secondary" icon={<Calendar className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700" onClick={() => (user ? setApptOpen(true) : navigate('/login'))} title="Schedule visit" />
+                <Button variant="secondary" icon={<Calendar className="h-4 w-4 shrink-0" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700 text-[11px] whitespace-nowrap" onClick={() => (user ? setApptOpen(true) : navigate('/login'))}>
+                  Schedule Visit
+                </Button>
               </div>
             </div>
 
@@ -1176,20 +1189,20 @@ export function PropertyDetailPage() {
       {/* Lightbox Modal */}
       {lightbox && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/98 backdrop-blur-xl" onClick={() => setLightbox(false)}>
-          <button className="absolute right-6 top-6 z-50 grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white hover:bg-white/25 transition-all shadow-lg" onClick={() => setLightbox(false)}>
+          <button className="absolute right-6 top-6 z-50 grid h-12 w-12 place-items-center rounded-full bg-black/50 text-white hover:bg-black/70 backdrop-blur-md transition-all shadow-lg" onClick={() => setLightbox(false)}>
             <X className="h-6 w-6" />
           </button>
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md text-white font-semibold text-sm px-5 py-2 rounded-full shadow-md tracking-wide">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md text-white font-semibold text-sm px-5 py-2 rounded-full shadow-md tracking-wide">
             {activeImg + 1} / {images.length}
           </div>
           {images.length > 1 && (
-            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev - 1 + images.length) % images.length); }} className="absolute left-4 sm:left-8 top-1/2 -translate-y-1/2 z-50 grid h-14 w-14 place-items-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
+            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev - 1 + images.length) % images.length); }} className="absolute left-4 sm:left-8 top-1/2 -translate-y-1/2 z-50 grid h-14 w-14 place-items-center rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
               <ChevronLeft className="h-8 w-8" />
             </button>
           )}
           <img src={images[activeImg]} alt={`Property image ${activeImg + 1}`} className="max-h-[85vh] max-w-[90vw] object-contain shadow-2xl rounded-lg" onClick={(e) => e.stopPropagation()} />
           {images.length > 1 && (
-            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev + 1) % images.length); }} className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 z-50 grid h-14 w-14 place-items-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
+            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev + 1) % images.length); }} className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 z-50 grid h-14 w-14 place-items-center rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
               <ChevronRight className="h-8 w-8" />
             </button>
           )}

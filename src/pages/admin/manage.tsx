@@ -1263,15 +1263,54 @@ export function AdminBlogs() {
   );
 }
 
+type MasterTab = 'cities' | 'localities' | 'types' | 'amenities' | 'statuses' | 'furnishing' | 'lead_sources' | 'builders';
+
+const MASTER_TABS: { key: MasterTab; label: string; subtitle: string }[] = [
+  { key: 'cities', label: 'Cities & States', subtitle: 'Manage operating cities and state locations' },
+  { key: 'localities', label: 'Localities & Areas', subtitle: 'Manage neighborhoods, localities, and pin codes' },
+  { key: 'types', label: 'Property Types', subtitle: 'Manage property categories (Residential, Commercial, PG, Land)' },
+  { key: 'amenities', label: 'Amenities & Features', subtitle: 'Manage lifestyle amenities and property features' },
+  { key: 'statuses', label: 'Construction Statuses', subtitle: 'Manage project stages (Ready to Move, Under Construction, etc.)' },
+  { key: 'furnishing', label: 'Furnishing Types', subtitle: 'Manage furnishing status options' },
+  { key: 'lead_sources', label: 'Lead Channels', subtitle: 'Manage lead acquisition channels & referral sources' },
+  { key: 'builders', label: 'Builders & Developers', subtitle: 'Manage builder directory and developer branding' },
+];
+
 export function AdminMasterData() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'cities' | 'types' | 'amenities'>('cities');
+  const [tab, setTab] = useState<MasterTab>('cities');
   const [newName, setNewName] = useState('');
   const [extra, setExtra] = useState('');
+  const [extra2, setExtra2] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
+  // Custom static initial fallbacks for business flow tabs if DB table empty
+  const [customStatuses, setCustomStatuses] = useState([
+    { id: 'st-1', name: 'Ready to Move', category: 'Immediate Possession' },
+    { id: 'st-2', name: 'Under Construction', category: 'Possession in 1-3 Years' },
+    { id: 'st-3', name: 'New Launch', category: 'Upcoming Project' },
+    { id: 'st-4', name: 'Resale', category: 'Secondary Market' },
+    { id: 'st-5', name: 'Under Renovation', category: 'Refurbishing' },
+  ]);
+
+  const [customFurnishing, setCustomFurnishing] = useState([
+    { id: 'fr-1', name: 'Fully Furnished', category: 'Includes Furniture & Appliances' },
+    { id: 'fr-2', name: 'Semi-Furnished', category: 'Includes Wardrobes & Lights' },
+    { id: 'fr-3', name: 'Unfurnished', category: 'Bare Shell Structure' },
+  ]);
+
+  const [customLeadSources, setCustomLeadSources] = useState([
+    { id: 'ls-1', name: 'Website Direct Inquiry', category: 'Organic Web' },
+    { id: 'ls-2', name: 'WhatsApp AI Assistant', category: 'Chatbot Automated' },
+    { id: 'ls-3', name: 'Google Search PPC', category: 'Paid Performance' },
+    { id: 'ls-4', name: 'Facebook & Instagram Campaign', category: 'Social Media' },
+    { id: 'ls-5', name: 'Agent Network Referral', category: 'Partner Network' },
+    { id: 'ls-6', name: 'Direct Telecalling Walk-in', category: 'Offline Sales' },
+  ]);
+
+  // DB Queries for dynamic master tables
   const { data: cities } = useQuery({
     queryKey: ['admin-cities', search],
     queryFn: async () => {
@@ -1280,6 +1319,16 @@ export function AdminMasterData() {
     },
     enabled: tab === 'cities',
   });
+
+  const { data: localities } = useQuery({
+    queryKey: ['admin-localities', search],
+    queryFn: async () => {
+      const { data } = await supabase.from('localities').select('*, cities(name)').ilike('name', `%${search}%`).order('name');
+      return data ?? [];
+    },
+    enabled: tab === 'localities',
+  });
+
   const { data: types } = useQuery({
     queryKey: ['admin-ptypes', search],
     queryFn: async () => {
@@ -1288,6 +1337,7 @@ export function AdminMasterData() {
     },
     enabled: tab === 'types',
   });
+
   const { data: amenities } = useQuery({
     queryKey: ['admin-amenities', search],
     queryFn: async () => {
@@ -1297,135 +1347,308 @@ export function AdminMasterData() {
     enabled: tab === 'amenities',
   });
 
-  const items = tab === 'cities' ? cities : tab === 'types' ? types : amenities;
-  const totalPages = items ? Math.max(1, Math.ceil(items.length / pageSize)) : 1;
-  const pageItems = items ? items.slice((page - 1) * pageSize, page * pageSize) : [];
+  const { data: builders } = useQuery({
+    queryKey: ['admin-builders', search],
+    queryFn: async () => {
+      const { data } = await supabase.from('builders').select('*').ilike('name', `%${search}%`).order('name');
+      return data ?? [];
+    },
+    enabled: tab === 'builders',
+  });
+
+  // Calculate items based on current tab
+  const getItems = () => {
+    let raw: Array<Record<string, unknown>> = [];
+    if (tab === 'cities') raw = (cities || []) as Array<Record<string, unknown>>;
+    else if (tab === 'localities') raw = (localities || []) as Array<Record<string, unknown>>;
+    else if (tab === 'types') raw = (types || []) as Array<Record<string, unknown>>;
+    else if (tab === 'amenities') raw = (amenities || []) as Array<Record<string, unknown>>;
+    else if (tab === 'builders') raw = (builders || []) as Array<Record<string, unknown>>;
+    else if (tab === 'statuses') raw = customStatuses as Array<Record<string, unknown>>;
+    else if (tab === 'furnishing') raw = customFurnishing as Array<Record<string, unknown>>;
+    else if (tab === 'lead_sources') raw = customLeadSources as Array<Record<string, unknown>>;
+
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      raw = raw.filter((i) => String(i.name || '').toLowerCase().includes(s) || String(i.category || i.state || '').toLowerCase().includes(s));
+    }
+    return raw;
+  };
+
+  const items = getItems();
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const pageItems = items.slice((page - 1) * pageSize, page * pageSize);
 
   const add = async () => {
     if (!newName.trim()) return;
     if (tab === 'cities') {
       await supabase.from('cities').insert({ name: newName, state: extra || null, country: 'India' });
+      queryClient.invalidateQueries({ queryKey: ['admin-cities'] });
+    } else if (tab === 'localities') {
+      const selectedCityId = extra || (cities && cities[0]?.id);
+      await supabase.from('localities').insert({ name: newName, city_id: selectedCityId, pincode: extra2 || null });
+      queryClient.invalidateQueries({ queryKey: ['admin-localities'] });
     } else if (tab === 'types') {
-      await supabase
-        .from('property_types')
-        .insert({
-          name: newName,
-          category: (extra || 'Residential') as 'Residential' | 'Commercial' | 'Plot' | 'Luxury',
-        });
-    } else {
+      await supabase.from('property_types').insert({
+        name: newName,
+        category: (extra || 'Residential') as 'Residential' | 'Commercial' | 'Plot' | 'Luxury',
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin-ptypes'] });
+    } else if (tab === 'amenities') {
       await supabase.from('amenities').insert({ name: newName });
+      queryClient.invalidateQueries({ queryKey: ['admin-amenities'] });
+    } else if (tab === 'builders') {
+      await supabase.from('builders').insert({ name: newName, established_year: extra ? Number(extra) : null });
+      queryClient.invalidateQueries({ queryKey: ['admin-builders'] });
+    } else if (tab === 'statuses') {
+      setCustomStatuses((prev) => [...prev, { id: `st-${Date.now()}`, name: newName, category: extra || 'General Stage' }]);
+    } else if (tab === 'furnishing') {
+      setCustomFurnishing((prev) => [...prev, { id: `fr-${Date.now()}`, name: newName, category: extra || 'General Option' }]);
+    } else if (tab === 'lead_sources') {
+      setCustomLeadSources((prev) => [...prev, { id: `ls-${Date.now()}`, name: newName, category: extra || 'Channel Source' }]);
     }
+
     setNewName('');
     setExtra('');
-    queryClient.invalidateQueries({ queryKey: [`admin-${tab === 'types' ? 'ptypes' : tab}`] });
+    setExtra2('');
   };
 
   const remove = async (id: string) => {
-    const table = tab === 'cities' ? 'cities' : tab === 'types' ? 'property_types' : 'amenities';
-    await supabase.from(table).delete().eq('id', id);
-    queryClient.invalidateQueries({ queryKey: [`admin-${tab === 'types' ? 'ptypes' : tab}`] });
+    if (tab === 'cities') {
+      await supabase.from('cities').delete().eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['admin-cities'] });
+    } else if (tab === 'localities') {
+      await supabase.from('localities').delete().eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['admin-localities'] });
+    } else if (tab === 'types') {
+      await supabase.from('property_types').delete().eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['admin-ptypes'] });
+    } else if (tab === 'amenities') {
+      await supabase.from('amenities').delete().eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['admin-amenities'] });
+    } else if (tab === 'builders') {
+      await supabase.from('builders').delete().eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['admin-builders'] });
+    } else if (tab === 'statuses') {
+      setCustomStatuses((prev) => prev.filter((i) => i.id !== id));
+    } else if (tab === 'furnishing') {
+      setCustomFurnishing((prev) => prev.filter((i) => i.id !== id));
+    } else if (tab === 'lead_sources') {
+      setCustomLeadSources((prev) => prev.filter((i) => i.id !== id));
+    }
   };
 
   const { t } = useLanguageContext();
   const adminSections = getAdminSections(t);
+  const currentTabObj = MASTER_TABS.find((t) => t.key === tab) || MASTER_TABS[0];
 
   return (
     <DashboardLayout sections={adminSections} title={t('dashboard:masterData', 'Master Data')}>
-      <PageHeader title="Master data" subtitle="Manage cities, property types, and amenities." />
-      <div className="mb-4 flex gap-1">
-        {(['cities', 'types', 'amenities'] as const).map((t) => (
+      <PageHeader
+        title="Master Data Management"
+        subtitle={currentTabObj.subtitle}
+      />
+
+      {/* Scrollable Master Data Tabs Row */}
+      <div className="mb-6 flex gap-2 overflow-x-auto pb-2 border-b border-slate-200">
+        {MASTER_TABS.map((tItem) => (
           <button
-            key={t}
+            key={tItem.key}
             onClick={() => {
-              setTab(t);
+              setTab(tItem.key);
               setPage(1);
               setSearch('');
+              setNewName('');
+              setExtra('');
+              setExtra2('');
             }}
             className={cn(
-              'rounded-lg px-3 py-1.5 text-sm font-medium capitalize',
-              tab === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50',
+              'rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap transition-all border',
+              tab === tItem.key
+                ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300',
             )}
           >
-            {t === 'types' ? 'Property types' : t}
+            {tItem.label}
           </button>
         ))}
       </div>
-      <Card className="p-4">
+
+      <Card className="p-5 rounded-2xl shadow-sm border border-slate-200">
+        {/* Search Bar */}
         <div className="mb-4">
           <Input
-            placeholder="Search..."
+            placeholder={`Search ${currentTabObj.label.toLowerCase()}...`}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }}
-            className="max-w-xs"
+            className="max-w-sm rounded-xl text-xs"
           />
         </div>
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+
+        {/* Add Entry Input Form Bar */}
+        <div className="mb-5 p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row gap-3">
           <Input
-            placeholder={tab === 'cities' ? 'City name' : tab === 'types' ? 'Type name' : 'Amenity name'}
+            placeholder={
+              tab === 'cities'
+                ? 'City name (e.g. Hyderabad)'
+                : tab === 'localities'
+                  ? 'Locality name (e.g. Gachibowli)'
+                  : tab === 'types'
+                    ? 'Property type name (e.g. PG / Co-Living)'
+                    : tab === 'amenities'
+                      ? 'Amenity name (e.g. EV Charging Station)'
+                      : tab === 'statuses'
+                        ? 'Status name (e.g. Under Renovation)'
+                        : tab === 'furnishing'
+                          ? 'Furnishing name (e.g. Semi-Furnished)'
+                          : tab === 'lead_sources'
+                            ? 'Channel name (e.g. Instagram Ads)'
+                            : 'Developer name (e.g. Prestige Group)'
+            }
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
+            className="flex-1 rounded-xl text-xs bg-white"
           />
+
           {tab === 'cities' && (
             <Input
-              placeholder="State"
+              placeholder="State (e.g. Telangana)"
               value={extra}
               onChange={(e) => setExtra(e.target.value)}
-              className="sm:max-w-[200px]"
+              className="sm:max-w-[200px] rounded-xl text-xs bg-white"
             />
           )}
+
+          {tab === 'localities' && (
+            <>
+              <Select
+                value={extra || (cities?.[0]?.id || '')}
+                onChange={(e) => setExtra(e.target.value)}
+                className="sm:max-w-[180px] rounded-xl text-xs bg-white"
+              >
+                {cities?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                placeholder="Pincode (e.g. 500032)"
+                value={extra2}
+                onChange={(e) => setExtra2(e.target.value)}
+                className="sm:max-w-[140px] rounded-xl text-xs bg-white"
+              />
+            </>
+          )}
+
           {tab === 'types' && (
             <Select
               value={extra || 'Residential'}
               onChange={(e) => setExtra(e.target.value)}
-              className="sm:max-w-[200px]"
+              className="sm:max-w-[200px] rounded-xl text-xs bg-white"
             >
-              {['Residential', 'Commercial', 'Plot', 'Luxury'].map((c) => (
+              {['Residential', 'Commercial', 'PG / Co-Living', 'Plot', 'Luxury', 'Industrial'].map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
               ))}
             </Select>
           )}
-          <Button onClick={add} icon={<Plus className="h-4 w-4" />}>
-            Add
+
+          {(tab === 'statuses' || tab === 'furnishing' || tab === 'lead_sources') && (
+            <Input
+              placeholder="Category / Description"
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              className="sm:max-w-[220px] rounded-xl text-xs bg-white"
+            />
+          )}
+
+          {tab === 'builders' && (
+            <Input
+              placeholder="Est. Year (e.g. 1995)"
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              className="sm:max-w-[160px] rounded-xl text-xs bg-white"
+            />
+          )}
+
+          <Button
+            onClick={add}
+            icon={<Plus className="h-4 w-4" />}
+            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-sm shadow-red-600/20"
+          >
+            Add Item
           </Button>
         </div>
-        <div className="divide-y divide-navy-50">
-          {pageItems?.map((item) => (
-            <div key={item.id} className="flex items-center justify-between py-2.5">
-              <div>
-                <p className="text-sm font-medium text-navy-900">{item.name}</p>
-                {(tab === 'cities' || tab === 'types') && (item as Record<string, unknown>).state ? (
-                  <p className="text-xs text-navy-500">{String((item as Record<string, unknown>).state)}</p>
-                ) : null}
-                {tab === 'types' && (item as Record<string, unknown>).category ? (
-                  <p className="text-xs text-navy-500">{String((item as Record<string, unknown>).category)}</p>
-                ) : null}
+
+        {/* Items List Table */}
+        <div className="divide-y divide-slate-100">
+          {pageItems.map((item) => {
+            const cityName = tab === 'localities' && (item as any).cities?.name ? (item as any).cities.name : null;
+            return (
+              <div key={String(item.id)} className="flex items-center justify-between py-3 px-2 hover:bg-slate-50/80 rounded-xl transition-colors">
+                <div>
+                  <p className="text-xs font-bold text-black">{String(item.name)}</p>
+                  {tab === 'cities' && item.state ? (
+                    <p className="text-[11px] font-semibold text-slate-400">{String(item.state)}, India</p>
+                  ) : null}
+                  {tab === 'localities' ? (
+                    <p className="text-[11px] font-semibold text-slate-400">
+                      {cityName ? `City: ${cityName}` : ''} {item.pincode ? `• PIN: ${item.pincode}` : ''}
+                    </p>
+                  ) : null}
+                  {tab === 'types' && item.category ? (
+                    <p className="text-[11px] font-semibold text-red-600">{String(item.category)}</p>
+                  ) : null}
+                  {tab === 'builders' && item.established_year ? (
+                    <p className="text-[11px] font-semibold text-slate-400">Est. {String(item.established_year)}</p>
+                  ) : null}
+                  {(tab === 'statuses' || tab === 'furnishing' || tab === 'lead_sources') && item.category ? (
+                    <p className="text-[11px] font-semibold text-slate-400">{String(item.category)}</p>
+                  ) : null}
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg p-1.5"
+                  icon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => remove(String(item.id))}
+                />
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-error-600"
-                icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => remove(item.id)}
-              />
-            </div>
-          ))}
-          {items && items.length === 0 && <p className="py-6 text-center text-sm text-navy-400">No entries yet.</p>}
+            );
+          })}
+          {pageItems.length === 0 && (
+            <p className="py-8 text-center text-xs font-semibold text-slate-400">No master data entries found for {currentTabObj.label}.</p>
+          )}
         </div>
+
+        {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div className="mt-4 flex items-center justify-between border-t border-navy-100 px-4 py-3 text-sm">
-            <span className="text-navy-500">
-              Page {page} of {totalPages}
+          <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
+            <span className="text-slate-500 font-medium">
+              Page {page} of {totalPages} ({items.length} total)
             </span>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-                Prev
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="text-xs font-bold rounded-lg"
+              >
+                Previous
               </Button>
-              <Button variant="ghost" size="sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="text-xs font-bold rounded-lg"
+              >
                 Next
               </Button>
             </div>
@@ -1435,3 +1658,4 @@ export function AdminMasterData() {
     </DashboardLayout>
   );
 }
+
