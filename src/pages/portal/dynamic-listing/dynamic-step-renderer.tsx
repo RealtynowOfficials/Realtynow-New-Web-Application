@@ -5,11 +5,25 @@ import { supabase } from '../../../lib/supabase';
 import { cn } from '../../../lib/utils';
 import type { WorkflowField } from '../../../lib/listing-config';
 import type { StorageBucket } from '../../../lib/storage';
+import { MapPin, Loader2, Search } from 'lucide-react';
+import { useGooglePlaces, type GooglePlacePrediction } from '../../../hooks/useGooglePlaces';
 
 interface LocationValue {
   city_id?: string;
   locality_id?: string;
   address?: string;
+  location_name?: string;
+  area?: string;
+  locality?: string;
+  city?: string;
+  district?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_place_id?: string;
+  formatted_address?: string;
 }
 
 interface DynamicStepRendererProps {
@@ -206,65 +220,158 @@ function LocationField({
   error?: string;
   onChange: (value: LocationValue) => void;
 }) {
-  const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
-  const [localities, setLocalities] = useState<{ id: string; name: string }[]>([]);
+  const { isReady, getPredictions, getPlaceDetails } = useGooglePlaces();
+  const [searchTerm, setSearchTerm] = useState(value.formatted_address || value.location_name || value.address || '');
+  const [predictions, setPredictions] = useState<GooglePlacePrediction[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    supabase
-      .from('cities')
-      .select('id,name')
-      .order('name')
-      .then(({ data }) => setCities((data as { id: string; name: string }[]) ?? []));
+    const handleClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
-    if (!value.city_id) {
-      setLocalities([]);
+    if (!searchTerm || searchTerm.length < 1) {
+      setPredictions([]);
+      setIsOpen(false);
       return;
     }
-    supabase
-      .from('localities')
-      .select('id,name')
-      .eq('city_id', value.city_id)
-      .order('name')
-      .then(({ data }) => setLocalities((data as { id: string; name: string }[]) ?? []));
-  }, [value.city_id]);
+
+    // Debounce
+    const timer = setTimeout(async () => {
+      setIsLoading(true);
+      const results = await getPredictions(searchTerm);
+      setPredictions(results);
+      setIsOpen(true);
+      setSelectedIndex(-1);
+      setIsLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, getPredictions]);
+
+  const handleSelect = async (place: GooglePlacePrediction) => {
+    setSearchTerm(place.description);
+    setIsOpen(false);
+    setIsLoading(true);
+    
+    const details = await getPlaceDetails(place.place_id);
+    if (details) {
+      onChange({
+        ...value,
+        location_name: details.location_name,
+        area: details.area,
+        locality: details.locality,
+        city: details.city,
+        district: details.district,
+        state: details.state,
+        country: details.country,
+        postal_code: details.postal_code,
+        latitude: details.latitude,
+        longitude: details.longitude,
+        google_place_id: details.google_place_id,
+        formatted_address: details.formatted_address,
+        address: details.formatted_address,
+      });
+    }
+    
+    setIsLoading(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isOpen) return;
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev < predictions.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && predictions[selectedIndex]) {
+        handleSelect(predictions[selectedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
 
   return (
-    <div className="space-y-3 rounded-xl border border-navy-150 p-4">
+    <div className="space-y-3 rounded-xl border border-navy-150 p-4" ref={wrapperRef}>
       <p className="text-sm font-bold text-navy-800">{label}</p>
-      <Select
-        label="City"
-        value={value.city_id ?? ''}
-        onChange={(e) => onChange({ ...value, city_id: e.target.value, locality_id: undefined })}
-      >
-        <option value="">Select city...</option>
-        {cities.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </Select>
-      <Select
-        label="Locality"
-        value={value.locality_id ?? ''}
-        onChange={(e) => onChange({ ...value, locality_id: e.target.value })}
-        disabled={!value.city_id}
-      >
-        <option value="">Select locality...</option>
-        {localities.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.name}
-          </option>
-        ))}
-      </Select>
-      <Textarea
-        label="Address"
-        value={value.address ?? ''}
-        onChange={(e) => onChange({ ...value, address: e.target.value })}
-        rows={2}
-      />
+      
+      <div className="relative">
+        <div className="relative flex items-center">
+          <Search className="absolute left-3 h-4 w-4 text-navy-400" />
+          <input
+            type="text"
+            className={cn(
+              "w-full rounded-lg border border-navy-300 py-2.5 pl-9 pr-10 text-sm outline-none transition-colors focus:border-red-500 focus:ring-1 focus:ring-red-500",
+              error ? "border-error-500" : ""
+            )}
+            placeholder="Search area, locality, city..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              // Clear out selection if user types
+              if (value.google_place_id) {
+                onChange({ ...value, google_place_id: undefined, formatted_address: undefined });
+              }
+            }}
+            onKeyDown={handleKeyDown}
+            onFocus={() => {
+              if (predictions.length > 0) setIsOpen(true);
+            }}
+          />
+          {isLoading && (
+            <Loader2 className="absolute right-3 h-4 w-4 animate-spin text-navy-400" />
+          )}
+        </div>
+
+        {isOpen && searchTerm.length > 0 && (
+          <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-navy-200 bg-white py-1 shadow-lg">
+            {predictions.length === 0 && !isLoading ? (
+              <div className="px-4 py-3 text-sm text-navy-500">No locations found</div>
+            ) : (
+              predictions.map((p, idx) => (
+                <div
+                  key={p.place_id}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-navy-50",
+                    selectedIndex === idx ? "bg-navy-50" : ""
+                  )}
+                  onClick={() => handleSelect(p)}
+                >
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                  <div>
+                    <span className="block font-medium text-navy-900">
+                      {p.structured_formatting.main_text}
+                    </span>
+                    <span className="block text-xs text-navy-500">
+                      {p.structured_formatting.secondary_text}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+      
       {error && <p className="text-xs font-semibold text-error-600">{error}</p>}
+      
+      {!isReady && (
+        <p className="text-xs text-navy-400">Loading map services...</p>
+      )}
     </div>
   );
 }

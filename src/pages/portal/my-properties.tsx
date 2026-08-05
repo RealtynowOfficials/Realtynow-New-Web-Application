@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Edit3, Trash2, Send, Eye, Building2 } from 'lucide-react';
+import { Edit3, Trash2, Send, Eye, Building2, Share2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { SharePropertyModal } from '../../components/ui/share-property-modal';
 
 import { getPortalSections } from './sections';
 import { Button, Card, EmptyState, Modal, Badge, Select, Input } from '../../components/ui';
@@ -43,6 +44,7 @@ export function PortalMyProperties() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<string>('all');
   const [toDelete, setToDelete] = useState<string | null>(null);
+  const [shareProperty, setShareProperty] = useState<Property | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleRows, setVisibleRows] = useState<Property[]>([]);
   const [rich, setRich] = useState<MyPropertiesFilterState>({ city: '', type: '', minPrice: '', maxPrice: '' });
@@ -284,6 +286,15 @@ export function PortalMyProperties() {
           <Link to={generatePropertyUrl(p)}>
             <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
           </Link>
+          {p.status !== 'draft' && (
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              icon={<Share2 className="h-4 w-4" />} 
+              onClick={() => setShareProperty(p)} 
+              title="Share Property"
+            />
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -317,32 +328,26 @@ export function PortalMyProperties() {
               rows={visibleRows as unknown as Record<string, unknown>[]}
               columns={MY_PROPERTIES_EXPORT_COLUMNS}
             />
-            <Link to="/portal/bulk-upload">
-              <button
-                type="button"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
-              >
-                Bulk Upload
-              </button>
+            <Link
+              to="/portal/bulk-upload"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
+            >
+              Bulk Upload
             </Link>
-            <Link to="/portal/list-property">
-              <button
-                type="button"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
-              >
-                <span>{t('forms.postProperty', 'Post Property')}</span>
-                <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
-                  FREE
-                </span>
-              </button>
+            <Link
+              to="/portal/list-property"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+            >
+              <span>{t('forms.postProperty', 'Post Property')}</span>
+              <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
+                FREE
+              </span>
             </Link>
-            <Link to="/portal/list-property/new">
-              <button
-                type="button"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
-              >
-                New Listing (Beta)
-              </button>
+            <Link
+              to="/portal/list-property/new"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
+            >
+              New Listing (Beta)
             </Link>
           </div>
         }
@@ -518,6 +523,15 @@ export function PortalMyProperties() {
                   <Link to={generatePropertyUrl(p)}>
                     <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
                   </Link>
+                  {p.status !== 'draft' && (
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      icon={<Share2 className="h-4 w-4" />} 
+                      onClick={() => setShareProperty(p)} 
+                      title="Share Property"
+                    />
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -560,6 +574,22 @@ export function PortalMyProperties() {
           {t('portal.deleteConfirm', 'Are you sure you want to delete this property? This action cannot be undone.')}
         </p>
       </Modal>
+
+      {shareProperty && (
+        <SharePropertyModal
+          isOpen={!!shareProperty}
+          onClose={() => setShareProperty(null)}
+          property={{
+            id: shareProperty.id,
+            title: shareProperty.title,
+            price: shareProperty.price,
+            location: `${shareProperty.locality_name}, ${shareProperty.city_name}`,
+            purpose: shareProperty.purpose,
+            imageUrl: shareProperty.images?.[0],
+            slug: shareProperty.slug || shareProperty.id
+          }}
+        />
+      )}
     </DashboardLayout>
   );
 }

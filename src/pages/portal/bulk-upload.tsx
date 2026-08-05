@@ -9,6 +9,8 @@ import {
   History,
   ArrowLeft,
   FileSpreadsheet,
+  Eye,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
@@ -62,6 +64,7 @@ export function BulkUpload() {
   const [rowStrategy, setRowStrategy] = useState<Record<number, DuplicateStrategy>>({});
   const [defaultStrategy, setDefaultStrategy] = useState<DuplicateStrategy>('skip');
   const [job, setJob] = useState<BulkImportJob | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [history, setHistory] = useState<BulkImportJob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -126,20 +129,25 @@ export function BulkUpload() {
 
         const resolved: ResolvedRow[] = rows.map((row) => {
           const errors = validateRow(fields, row.raw, row.rowNumber);
-          const cityName = (row.raw.city ?? '').toLowerCase();
+          const cityName = (row.raw.city ?? '').trim().toLowerCase();
           const cityId = cityName ? referenceData.cities.get(cityName) : undefined;
           if (row.raw.city && !cityId) {
             errors.push({ rowNumber: row.rowNumber, field: 'city', message: `Unknown city "${row.raw.city}"` });
           }
 
-          const typeName = (row.raw.property_type ?? '').toLowerCase();
+          let typeName = (row.raw.property_type ?? '').trim().toLowerCase();
+          if (typeName === 'apartment' || typeName === 'flat' || typeName === 'apartment/flat') {
+            typeName = 'residential apartment';
+          } else if (typeName === 'residential plot') {
+            typeName = 'residential land';
+          }
           const propertyTypeId = typeName ? referenceData.propertyTypes.get(typeName) : undefined;
           if (!propertyTypeId) {
             errors.push({ rowNumber: row.rowNumber, field: 'property_type', message: `Unknown property type "${row.raw.property_type || ''}"` });
           }
 
           let localityId: string | undefined;
-          const localityName = (row.raw.locality ?? '').toLowerCase();
+          const localityName = (row.raw.locality ?? '').trim().toLowerCase();
           if (localityName && cityId) {
             localityId = referenceData.localitiesByCity.get(cityId)?.get(localityName);
           }
@@ -268,6 +276,8 @@ export function BulkUpload() {
           .insert(chunk.map((r) => r.payload!))
           .select('id');
         if (error) {
+          console.error(`DB Insert Error for chunk:`, error.message, error.details, error.hint);
+          setBackendError(error.message || 'Unknown database rejection');
           for (const r of chunk) {
             failed++;
             await insertRow({ jobId: newJob.id, rowNumber: r.rowNumber, rawData: r.raw, status: 'failed' });
@@ -369,11 +379,12 @@ export function BulkUpload() {
                 <th className="px-4 py-3">Failed</th>
                 <th className="px-4 py-3">Skipped</th>
                 <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {history.map((j) => (
-                <tr key={j.id} className="border-b border-navy-50 last:border-0">
+                <tr key={j.id} className="border-b border-navy-50 last:border-0 hover:bg-navy-50/50 transition-colors">
                   <td className="px-4 py-3 font-semibold text-navy-800">{j.file_name}</td>
                   <td className="px-4 py-3">{j.purpose}</td>
                   <td className="px-4 py-3">
@@ -384,11 +395,41 @@ export function BulkUpload() {
                   <td className="px-4 py-3 text-error-700">{j.failed_rows}</td>
                   <td className="px-4 py-3 text-navy-500">{j.skipped_rows}</td>
                   <td className="px-4 py-3 text-navy-400">{new Date(j.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-navy-500 hover:text-navy-900"
+                        title="View Details"
+                        onClick={() => {
+                          toast.addToast('info', 'View details coming soon');
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-error-500 hover:text-error-700"
+                        title="Delete Job History"
+                        onClick={async () => {
+                          if (confirm('Are you sure you want to delete this import history? This will NOT delete the imported properties.')) {
+                            await supabase.from('bulk_import_jobs').delete().eq('id', j.id);
+                            setHistory(history.filter((h) => h.id !== j.id));
+                            toast.addToast('success', 'Import history deleted');
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {history.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-navy-400">
+                  <td colSpan={9} className="px-4 py-10 text-center text-navy-400">
                     No import jobs yet.
                   </td>
                 </tr>
@@ -597,12 +638,23 @@ export function BulkUpload() {
                   <p className="text-navy-500">Failed</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-navy-600">{job.skipped_rows}</p>
+                  <p className="text-2xl font-bold text-warning-700">{job.skipped_rows}</p>
                   <p className="text-navy-500">Skipped</p>
                 </div>
               </div>
-              <div className="mt-6 flex justify-center gap-3">
-                <Button variant="secondary" onClick={resetWizard}>
+
+              {/* Show exactly WHY it failed directly on screen */}
+              {job.failed_rows > 0 && backendError && (
+                <div className="mt-6 p-4 rounded-xl bg-error-50 border border-error-100 text-left">
+                  <p className="font-bold text-error-800 text-sm mb-2">Example Error (Why rows failed):</p>
+                  <p className="text-error-700 text-sm break-all font-mono">
+                    {backendError}
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-8 flex justify-center gap-4">
+                <Button variant="outline" onClick={resetWizard}>
                   Import More
                 </Button>
                 <Button variant="primary" onClick={() => navigate('/portal/my-properties')}>

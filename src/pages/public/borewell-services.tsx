@@ -1,17 +1,25 @@
 import { useState } from 'react';
-import { Droplets, Phone, Mail } from 'lucide-react';
+import { Droplets, Phone, Mail, Lock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Card, EmptyState, Button, Input, Textarea } from '../../components/ui';
+import { useAuth } from '../../lib/auth';
+import { useToast } from '../../hooks/useToast';
 
 export function BorewellServicesPage() {
   const { t } = useLanguageContext();
+  const { user } = useAuth();
+  const toast = useToast();
   const [form, setForm] = useState({ name: '', email: '', phone: '', location: '', message: '' });
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      toast.addToast('error', 'Please log in to submit a service request.');
+      return;
+    }
     setSubmitting(true);
     const { error } = await supabase.from('enquiries').insert({
       name: form.name,

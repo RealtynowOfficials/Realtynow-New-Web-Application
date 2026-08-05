@@ -440,8 +440,13 @@ export function FaqPage() {
   );
 }
 
+import { useAuth } from '../../lib/auth';
+import { useToast } from '../../hooks/useToast';
+
 export function ContactPage() {
   const { t } = useLanguageContext();
+  const { user } = useAuth();
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const service = searchParams.get('service');
 
@@ -455,6 +460,10 @@ export function ContactPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      toast.addToast('error', 'Please log in to submit this form.');
+      return;
+    }
     const { error } = await supabase.from('enquiries').insert({ ...form, property_id: null });
     if (!error) setSent(true);
   };

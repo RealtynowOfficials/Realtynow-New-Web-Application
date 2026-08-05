@@ -165,7 +165,7 @@ export function initMsg91Widget(forceRemount = false): Promise<void> {
     // waiting on a challenge nobody can complete.
     if (!initSettled) return initPromise;
     const container = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
-    if (container && container.querySelector('iframe')) {
+    if (container && container.hasAttribute('data-msg91-initialized')) {
       return initPromise;
     }
   }
@@ -185,6 +185,14 @@ export function initMsg91Widget(forceRemount = false): Promise<void> {
       throw new Error('MSG91 widget script loaded but initSendOTP is unavailable');
     }
     console.log('[MSG91] calling initSendOTP with widgetId:', widgetId);
+    
+    const container = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
+    if (container) {
+      // Clear any existing children just in case, though it should be empty
+      container.innerHTML = '';
+      container.setAttribute('data-msg91-initialized', 'true');
+    }
+
     window.initSendOTP({
       widgetId,
       tokenAuth,

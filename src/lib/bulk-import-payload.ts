@@ -77,16 +77,46 @@ async function parseXlsx(file: File): Promise<Record<string, string>[]> {
 export function coerceValue(field: WorkflowField, rawValue: string): unknown {
   if (rawValue === '') return undefined;
   switch (field.field_type) {
-    case 'number':
-      return Number(rawValue);
+    case 'number': {
+      const cleaned = rawValue.replace(/[^0-9.-]+/g, '');
+      const num = Number(cleaned);
+      // Aggressive fallback: if they typed "New" or something with no digits, treat it as 0
+      return Number.isNaN(num) || cleaned === '' ? 0 : num;
+    }
     case 'boolean':
-      return ['true', 'yes', '1', 'y'].includes(rawValue.toLowerCase());
+      return ['true', 'yes', '1', 'y', 't', 'active'].includes(rawValue.toLowerCase());
     case 'multiselect':
-    case 'checklist':
-      return rawValue
-        .split(/[;,]/)
-        .map((v) => v.trim())
-        .filter(Boolean);
+    case 'checklist': {
+      const parts = rawValue.split(/[;,]/).map((v) => v.trim()).filter(Boolean);
+      if (field.options && field.options.length > 0) {
+        return parts.map(p => field.options!.find(o => o.trim().toLowerCase() === p.toLowerCase()) || p);
+      }
+      return parts;
+    }
+    case 'select': {
+      if (field.options && field.options.length > 0) {
+        const lowerRaw = rawValue.toLowerCase();
+        let match = field.options.find(o => o.trim().toLowerCase() === lowerRaw);
+        
+        // Auto-correct common mistakes for various fields
+        if (!match) {
+          if (field.field_key === 'ownership_type') {
+            if (lowerRaw.includes('owner')) match = 'Individual';
+            else if (lowerRaw.includes('broker') || lowerRaw.includes('dealer')) match = 'Agent';
+            else if (lowerRaw.includes('developer')) match = 'Builder';
+            else match = field.options[0]; // aggressive fallback
+          } else if (field.field_key === 'furnishing') {
+            if (lowerRaw === 'furnished') match = 'Fully Furnished';
+            else if (lowerRaw === 'none' || lowerRaw === 'no') match = 'Unfurnished';
+            else if (lowerRaw.includes('semi')) match = 'Semi-Furnished';
+            else match = 'Unfurnished';
+          }
+        }
+
+        if (match) return match;
+      }
+      return rawValue;
+    }
     default:
       return rawValue;
   }
@@ -115,9 +145,9 @@ export function validateRow(fields: WorkflowField[], raw: Record<string, string>
         if (v.max != null && num > v.max) errors.push({ rowNumber, field: field.field_key, message: `${field.label} must be at most ${v.max}` });
       }
     }
-    if (field.field_type === 'select' && field.options.length > 0 && field.field_key !== 'property_type_id') {
-      const match = field.options.find((o) => o.toLowerCase() === rawValue.toLowerCase());
-      if (!match) errors.push({ rowNumber, field: field.field_key, message: `${field.label} must be one of: ${field.options.join(', ')}` });
+    if (field.field_type === 'select' && field.options && field.options.length > 0 && field.field_key !== 'property_type_id') {
+      const match = field.options.find((o) => o.trim().toLowerCase() === rawValue.toLowerCase());
+      if (!match) errors.push({ rowNumber, field: field.field_key, message: `${field.label} must be one of: ${field.options.map(o => o.trim()).join(', ')}` });
     }
     if (field.field_type === 'text' || field.field_type === 'textarea') {
       const str = value as string;
@@ -184,14 +214,14 @@ export async function loadReferenceData(rows: ParsedRow[]): Promise<ReferenceDat
   ]);
 
   const cityMap = new Map<string, string>();
-  for (const c of (cities as { id: string; name: string }[]) ?? []) cityMap.set(c.name.toLowerCase(), c.id);
+  for (const c of (cities as { id: string; name: string }[]) ?? []) cityMap.set(c.name.trim().toLowerCase(), c.id);
 
   const typeMap = new Map<string, string>();
-  for (const t of (types as { id: string; name: string }[]) ?? []) typeMap.set(t.name.toLowerCase(), t.id);
+  for (const t of (types as { id: string; name: string }[]) ?? []) typeMap.set(t.name.trim().toLowerCase(), t.id);
 
   const referencedCityIds = new Set<string>();
   for (const row of rows) {
-    const cityId = cityMap.get((row.raw.city ?? '').toLowerCase());
+    const cityId = cityMap.get((row.raw.city ?? '').trim().toLowerCase());
     if (cityId) referencedCityIds.add(cityId);
   }
 
@@ -203,7 +233,7 @@ export async function loadReferenceData(rows: ParsedRow[]): Promise<ReferenceDat
       .in('city_id', [...referencedCityIds]);
     for (const l of (localities as { id: string; name: string; city_id: string }[]) ?? []) {
       if (!localitiesByCity.has(l.city_id)) localitiesByCity.set(l.city_id, new Map());
-      localitiesByCity.get(l.city_id)!.set(l.name.toLowerCase(), l.id);
+      localitiesByCity.get(l.city_id)!.set(l.name.trim().toLowerCase(), l.id);
     }
   }
 

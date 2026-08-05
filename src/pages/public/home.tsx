@@ -2532,19 +2532,53 @@ function AppCTA() {
 ============================================================ */
 function PartnersSection() {
   const { t } = useLanguageContext();
-  const partners = ['HDFC', 'SBI', 'ICICI', 'Axis', 'LIC Housing', 'Bajaj Finserv'];
+  
+  const partners = [
+    { name: 'HDFC', logo: 'https://upload.wikimedia.org/wikipedia/commons/2/28/HDFC_Bank_Logo.svg' },
+    { name: 'SBI', logo: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/SBI-logo.svg' },
+    { name: 'ICICI', logo: 'https://upload.wikimedia.org/wikipedia/commons/1/12/ICICI_Bank_Logo.svg' },
+    { name: 'Axis', logo: 'https://upload.wikimedia.org/wikipedia/commons/1/12/Axis_Bank_logo.svg' },
+    { name: 'LIC', logo: 'https://upload.wikimedia.org/wikipedia/en/2/29/LIC_Logo.svg' },
+    { name: 'Bajaj Finserv', logo: 'https://upload.wikimedia.org/wikipedia/commons/e/e9/Bajaj_Finserv_Logo.svg' },
+    { name: 'Kotak', logo: 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Kotak_Mahindra_Bank_logo.svg' },
+    { name: 'Yes Bank', logo: 'https://upload.wikimedia.org/wikipedia/commons/e/e7/YES_Bank_logo.svg' },
+  ];
+
+  // Triple the array to ensure smooth infinite scrolling
+  const marqueeItems = [...partners, ...partners, ...partners];
+
   return (
-    <section className="border-y border-navy-100 bg-white py-12">
+    <section className="border-y border-navy-100 bg-white py-12 overflow-hidden">
       <div className="container-wide">
         <p className="text-center text-sm font-semibold uppercase tracking-wider text-navy-400">
           {t('home.bankingPartners', 'Our Banking & Insurance Partners')}
         </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-8">
-          {partners.map((p) => (
-            <div key={p} className="font-display text-xl font-bold text-navy-300 transition hover:text-navy-600">
-              {p}
-            </div>
-          ))}
+        
+        {/* Marquee Container */}
+        <div className="mt-10 relative flex overflow-hidden">
+          {/* Gradient Masks for smooth fade at edges */}
+          <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
+          <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
+
+          <motion.div
+            className="flex items-center gap-24"
+            animate={{ x: ['0%', '-33.333333%'] }}
+            transition={{ 
+              duration: 25, 
+              ease: 'linear', 
+              repeat: Infinity 
+            }}
+          >
+            {marqueeItems.map((p, i) => (
+              <div key={`${p.name}-${i}`} className="flex-shrink-0 w-48 flex justify-center">
+                <img 
+                  src={p.logo} 
+                  alt={p.name} 
+                  className="h-16 w-auto object-contain hover:scale-110 transition-transform duration-300" 
+                />
+              </div>
+            ))}
+          </motion.div>
         </div>
       </div>
     </section>

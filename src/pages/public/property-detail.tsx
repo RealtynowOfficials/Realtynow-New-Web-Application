@@ -431,8 +431,9 @@ export function PropertyDetailPage() {
 
   const enquiryMutation = useMutation({
     mutationFn: async () => {
+      if (!user) throw new Error('Please sign in to submit an enquiry');
       const payload: Record<string, unknown> = { property_id: id, name: form.name, email: form.email, phone: form.phone, message: form.message };
-      if (user) payload.customer_id = user.id;
+      payload.customer_id = user.id;
       if (property?.assigned_agent_id) payload.agent_id = property.assigned_agent_id;
       const { error } = await supabase.from('enquiries').insert(payload);
       if (error) throw error;

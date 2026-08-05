@@ -120,7 +120,7 @@ export function DataTable<T>({
   searchKeys,
   dateKey = 'created_at' as keyof T,
   dateFilterable = true,
-  pageSize = 10,
+  pageSize = 15,
   onRowClick,
   selectedIds,
   onToggleSelect,

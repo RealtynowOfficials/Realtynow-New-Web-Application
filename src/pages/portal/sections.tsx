@@ -27,7 +27,7 @@ export const getPortalSections = (t: (key: string, fallback?: string) => string)
   {
     items: [
       { to: '/portal', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
-      { to: '/portal/list-property', label: t('dashboard:listProperty', 'List Property'), icon: PlusCircle },
+      { to: '/portal/list-property', label: t('dashboard:listProperty', 'List Property'), icon: PlusCircle, end: true },
       { to: '/portal/list-property/new', label: 'New Listing (Beta)', icon: Sparkles },
       { to: '/portal/bulk-upload', label: 'Bulk Import', icon: FileText },
       { to: '/portal/my-properties', label: t('dashboard:myProperties', 'My Properties'), icon: Building2 },
