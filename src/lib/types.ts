@@ -552,3 +552,244 @@ export interface KycVerification {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================================
+// Builder Portal ERP
+// ============================================================
+
+export type BuilderProjectStatus = 'upcoming' | 'ongoing' | 'completed';
+export type BuilderTowerStatus = 'planned' | 'under_construction' | 'ready';
+export type BuilderUnitStatus = 'available' | 'booked' | 'sold';
+export type BuilderLeadStatus = 'new' | 'contacted' | 'site_visit' | 'negotiation' | 'won' | 'lost' | 'closed';
+export type BuilderBookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed';
+export type BuilderPaymentStatus = 'pending' | 'paid' | 'overdue' | 'partial';
+export type BuilderInvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+export type BuilderMilestoneStatus = 'pending' | 'in_progress' | 'completed' | 'delayed';
+export type BuilderCampaignStatus = 'draft' | 'scheduled' | 'active' | 'completed' | 'paused';
+export type BuilderCampaignChannel = 'social' | 'email' | 'sms' | 'print' | 'other';
+export type BuilderDocumentVisibility = 'private' | 'customers' | 'public';
+export type BuilderLeadActivityType = 'note' | 'call' | 'email' | 'meeting' | 'site_visit' | 'status_change';
+
+export interface BuilderProject {
+  id: string;
+  builder_id: string;
+  name: string;
+  rera_id: string | null;
+  description: string | null;
+  status: BuilderProjectStatus;
+  city_id: string | null;
+  locality_id: string | null;
+  cover_image: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderTower {
+  id: string;
+  project_id: string;
+  name: string;
+  total_floors: number;
+  status: BuilderTowerStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderFloor {
+  id: string;
+  tower_id: string;
+  floor_number: number;
+  name: string | null;
+  status: BuilderTowerStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderUnit {
+  id: string;
+  tower_id: string;
+  floor_id: string | null;
+  unit_number: string;
+  type: string;
+  size_sqft: number | null;
+  price: number | null;
+  status: BuilderUnitStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderPricingRule {
+  id: string;
+  project_id: string;
+  tower_id: string | null;
+  unit_type: string;
+  base_price: number;
+  price_per_sqft: number | null;
+  discount_percent: number;
+  effective_from: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderLead {
+  id: string;
+  builder_id: string;
+  project_id: string | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  status: BuilderLeadStatus;
+  message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderLeadActivity {
+  id: string;
+  lead_id: string;
+  builder_id: string;
+  activity_type: BuilderLeadActivityType;
+  notes: string | null;
+  activity_date: string;
+  created_at: string;
+}
+
+export interface BuilderCustomer {
+  id: string;
+  builder_id: string;
+  lead_id: string | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  kyc_doc_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderBooking {
+  id: string;
+  unit_id: string;
+  customer_id: string | null;
+  lead_id: string | null;
+  booking_date: string;
+  amount: number | null;
+  status: BuilderBookingStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderAgent {
+  id: string;
+  builder_id: string;
+  agent_profile_id: string | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  commission_percent: number | null;
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderProjectAgent {
+  id: string;
+  project_id: string;
+  agent_id: string;
+  assigned_at: string;
+}
+
+export interface BuilderConstructionMilestone {
+  id: string;
+  project_id: string;
+  tower_id: string | null;
+  title: string;
+  planned_date: string | null;
+  actual_date: string | null;
+  percent_complete: number;
+  status: BuilderMilestoneStatus;
+  photo_urls: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderPayment {
+  id: string;
+  booking_id: string;
+  amount: number;
+  due_date: string | null;
+  paid_date: string | null;
+  status: BuilderPaymentStatus;
+  payment_mode: string | null;
+  reference_no: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderInvoice {
+  id: string;
+  builder_id: string;
+  booking_id: string | null;
+  customer_id: string | null;
+  invoice_number: string;
+  amount: number;
+  tax_amount: number;
+  total_amount: number | null;
+  status: BuilderInvoiceStatus;
+  due_date: string | null;
+  issued_date: string;
+  pdf_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderDocument {
+  id: string;
+  builder_id: string;
+  project_id: string | null;
+  category: string;
+  title: string;
+  file_url: string;
+  file_path: string | null;
+  visibility: BuilderDocumentVisibility;
+  created_at: string;
+}
+
+export interface BuilderFloorPlan {
+  id: string;
+  project_id: string;
+  tower_id: string | null;
+  unit_type: string | null;
+  name: string;
+  image_url: string;
+  size_sqft: number | null;
+  bedrooms: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderMediaGalleryItem {
+  id: string;
+  project_id: string;
+  media_url: string;
+  media_type: 'image' | 'video';
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface BuilderMarketingCampaign {
+  id: string;
+  builder_id: string;
+  project_id: string | null;
+  title: string;
+  channel: BuilderCampaignChannel;
+  status: BuilderCampaignStatus;
+  content: string | null;
+  budget: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  updated_at: string;
+}

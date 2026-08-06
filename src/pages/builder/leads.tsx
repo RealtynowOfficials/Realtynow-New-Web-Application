@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
@@ -7,10 +8,10 @@ import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
 import { DataTable } from '../../components/data-table';
 import type { Column } from '../../components/data-table';
-import { Badge, Select } from '../../components/ui';
+import { Badge, Button, Select } from '../../components/ui';
 import { addToast } from '../../components/ui/toast';
 import { formatDate } from '../../lib/utils';
-import { LayoutList, Trello } from 'lucide-react';
+import { Activity, LayoutList, Trello } from 'lucide-react';
 import { BuilderKanbanBoard } from '../../components/builder/BuilderKanbanBoard';
 
 const BUILDER_LEAD_STATUSES = ['new', 'contacted', 'site_visit', 'negotiation', 'won', 'lost', 'closed'];
@@ -20,7 +21,8 @@ export function BuilderLeads() {
   const { t } = useLanguageContext();
   const builderSections = getBuilderSections(t);
   const queryClient = useQueryClient();
-  
+  const navigate = useNavigate();
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
 
@@ -92,7 +94,21 @@ export function BuilderLeads() {
       sortable: true,
       render: (l) => formatDate(l.created_at),
     },
-  ], [updateStatus]);
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (l) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={<Activity className="h-4 w-4" />}
+          onClick={() => navigate(`/builder/crm/${l.id}`)}
+        >
+          Activity
+        </Button>
+      ),
+    },
+  ], [updateStatus, navigate]);
 
   return (
     <DashboardLayout sections={builderSections} title="Leads CRM" badge="Builder">

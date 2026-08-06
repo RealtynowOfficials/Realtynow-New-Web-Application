@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
-import { Card, Skeleton } from '../../components/ui';
+import { Card, Skeleton, Badge } from '../../components/ui';
 import { Building2, MessageSquare, Briefcase, TrendingUp } from 'lucide-react';
 import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
+import { formatDate } from '../../lib/utils';
 
 export function BuilderDashboard() {
   const { profile, user } = useAuth();
@@ -27,6 +28,34 @@ export function BuilderDashboard() {
         projects: projectsRes.count || 0,
         newLeads: leadsRes.count || 0,
         wonLeads: wonLeadsRes.count || 0,
+      };
+    },
+    enabled: !!user,
+  });
+
+  const { data: recent, isLoading: recentLoading } = useQuery({
+    queryKey: ['builder-dashboard-recent', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+
+      const [projectsRes, leadsRes] = await Promise.all([
+        supabase
+          .from('builder_projects')
+          .select('id, name, status, created_at')
+          .eq('builder_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5),
+        supabase
+          .from('builder_leads')
+          .select('id, name, status, created_at, builder_projects(name)')
+          .eq('builder_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]);
+
+      return {
+        projects: projectsRes.data || [],
+        leads: leadsRes.data || [],
       };
     },
     enabled: !!user,
@@ -92,11 +121,53 @@ export function BuilderDashboard() {
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
            <h3 className="text-lg font-bold text-navy-900 mb-4">Recent Projects</h3>
-           <p className="text-sm text-gray-500">Your most recently updated projects will appear here.</p>
+           {recentLoading ? (
+             <div className="space-y-3">
+               {Array.from({ length: 3 }).map((_, i) => (
+                 <Skeleton key={i} className="h-10 w-full" />
+               ))}
+             </div>
+           ) : !recent?.projects.length ? (
+             <p className="text-sm text-gray-500">Your most recently updated projects will appear here.</p>
+           ) : (
+             <div className="divide-y divide-navy-100">
+               {recent.projects.map((p) => (
+                 <div key={p.id} className="flex items-center justify-between py-2.5">
+                   <div>
+                     <p className="text-sm font-medium text-navy-900">{p.name}</p>
+                     <p className="text-xs text-navy-500">{formatDate(p.created_at)}</p>
+                   </div>
+                   <Badge variant={p.status === 'completed' ? 'success' : p.status === 'ongoing' ? 'info' : 'default'} className="capitalize">
+                     {p.status}
+                   </Badge>
+                 </div>
+               ))}
+             </div>
+           )}
         </Card>
         <Card className="p-6">
            <h3 className="text-lg font-bold text-navy-900 mb-4">Recent Leads</h3>
-           <p className="text-sm text-gray-500">Your latest enquiries will appear here.</p>
+           {recentLoading ? (
+             <div className="space-y-3">
+               {Array.from({ length: 3 }).map((_, i) => (
+                 <Skeleton key={i} className="h-10 w-full" />
+               ))}
+             </div>
+           ) : !recent?.leads.length ? (
+             <p className="text-sm text-gray-500">Your latest enquiries will appear here.</p>
+           ) : (
+             <div className="divide-y divide-navy-100">
+               {recent.leads.map((l: any) => (
+                 <div key={l.id} className="flex items-center justify-between py-2.5">
+                   <div>
+                     <p className="text-sm font-medium text-navy-900">{l.name}</p>
+                     <p className="text-xs text-navy-500">{l.builder_projects?.name || 'General Inquiry'} • {formatDate(l.created_at)}</p>
+                   </div>
+                   <Badge variant="gold" className="capitalize">{String(l.status).replace('_', ' ')}</Badge>
+                 </div>
+               ))}
+             </div>
+           )}
         </Card>
       </div>
     </DashboardLayout>

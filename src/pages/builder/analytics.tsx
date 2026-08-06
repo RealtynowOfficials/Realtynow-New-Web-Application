@@ -16,18 +16,36 @@ export function BuilderAnalytics() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['builder-analytics', user?.id],
     queryFn: async () => {
-      const [projectsRes, towersRes, unitsRes, leadsRes] = await Promise.all([
-        supabase.from('builder_projects').select('id', { count: 'exact' }).eq('builder_id', user!.id),
-        supabase.from('builder_towers').select('id', { count: 'exact' }).eq('project_id', user!.id), // approximate
-        supabase.from('builder_units').select('status', { count: 'exact' }).eq('status', 'sold'), // approximate
-        supabase.from('builder_leads').select('status', { count: 'exact' }).eq('builder_id', user!.id),
+      const { data: projects } = await supabase.from('builder_projects').select('id').eq('builder_id', user!.id);
+      const projectIds = (projects ?? []).map((p) => p.id);
+
+      const { data: towers } = projectIds.length
+        ? await supabase.from('builder_towers').select('id').in('project_id', projectIds)
+        : { data: [] as { id: string }[] };
+      const towerIds = (towers ?? []).map((t) => t.id);
+
+      const { data: units } = towerIds.length
+        ? await supabase.from('builder_units').select('id, status').in('tower_id', towerIds)
+        : { data: [] as { id: string; status: string }[] };
+      const unitIds = (units ?? []).map((u) => u.id);
+      const soldCount = (units ?? []).filter((u) => u.status === 'sold').length;
+
+      const [leadsRes, bookingsRes, customersRes] = await Promise.all([
+        supabase.from('builder_leads').select('id', { count: 'exact', head: true }).eq('builder_id', user!.id),
+        unitIds.length
+          ? supabase.from('builder_bookings').select('id', { count: 'exact', head: true }).in('unit_id', unitIds)
+          : Promise.resolve({ count: 0 }),
+        supabase.from('builder_customers').select('id', { count: 'exact', head: true }).eq('builder_id', user!.id),
       ]);
 
       return {
-        totalProjects: projectsRes.count || 0,
-        totalTowers: towersRes.count || 0,
-        soldUnits: unitsRes.count || 0,
+        totalProjects: projectIds.length,
+        totalTowers: towerIds.length,
+        totalUnits: unitIds.length,
+        soldUnits: soldCount,
         totalLeads: leadsRes.count || 0,
+        totalBookings: bookingsRes.count || 0,
+        totalCustomers: customersRes.count || 0,
       };
     },
     enabled: !!user,
@@ -68,6 +86,34 @@ export function BuilderAnalytics() {
           icon={<Target className="h-5 w-5" />}
           accent="navy"
           to="/builder/analytics"
+        />
+        <StatCard
+          label="Active Bookings"
+          value={stats?.totalBookings || 0}
+          icon={<Building2 className="h-5 w-5" />}
+          accent="navy"
+          to="/builder/bookings"
+        />
+        <StatCard
+          label="Customers"
+          value={stats?.totalCustomers || 0}
+          icon={<Users className="h-5 w-5" />}
+          accent="gold"
+          to="/builder/customers"
+        />
+        <StatCard
+          label="Total Units"
+          value={stats?.totalUnits || 0}
+          icon={<Building2 className="h-5 w-5" />}
+          accent="navy"
+          to="/builder/units"
+        />
+        <StatCard
+          label="Total Towers"
+          value={stats?.totalTowers || 0}
+          icon={<Building2 className="h-5 w-5" />}
+          accent="navy"
+          to="/builder/blocks"
         />
       </div>
       

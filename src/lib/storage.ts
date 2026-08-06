@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const PRIVATE_BUCKETS = new Set(['property-documents', 'agent-documents', 'customer-documents', 'company-assets', 'bulk-import-files']);
+const PRIVATE_BUCKETS = new Set(['property-documents', 'agent-documents', 'customer-documents', 'company-assets', 'bulk-import-files', 'builder-documents']);
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'image/heic', 'image/heif'];
 const ALLOWED_DOC_TYPES = [
@@ -26,7 +26,9 @@ export type StorageBucket =
   | 'blog-images'
   | 'advertisements'
   | 'company-assets'
-  | 'bulk-import-files';
+  | 'bulk-import-files'
+  | 'builder-documents'
+  | 'builder-media';
 
 function validateFile(bucket: StorageBucket, file: File) {
   if (file.size > MAX_FILE_SIZE) {

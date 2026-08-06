@@ -188,14 +188,23 @@ export function DashboardLayout({
   );
 }
 
+export interface PageHeaderAction {
+  label: string;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  primary?: boolean;
+}
+
 export function PageHeader({
   title,
   subtitle,
   action,
+  actions,
 }: {
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  actions?: PageHeaderAction[];
 }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -204,6 +213,25 @@ export function PageHeader({
         {subtitle && <p className="mt-1 text-sm text-navy-500">{subtitle}</p>}
       </div>
       {action}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2">
+          {actions.map((a) => (
+            <button
+              key={a.label}
+              onClick={a.onClick}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors',
+                a.primary
+                  ? 'bg-navy-900 text-white hover:bg-navy-800'
+                  : 'border border-navy-200 text-navy-700 hover:bg-navy-50',
+              )}
+            >
+              {a.icon}
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
