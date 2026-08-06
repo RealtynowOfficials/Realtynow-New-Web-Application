@@ -34,10 +34,28 @@ export async function publishDraft({ draftId, ownerId, purpose, answers, allFiel
     if (value === undefined) continue;
 
     if (field.maps_to === 'properties.location') {
-      const loc = value as { city_id?: string; locality_id?: string; address?: string };
+      const loc = value as { 
+        city_id?: string; locality_id?: string; address?: string;
+        location_name?: string; area?: string; locality?: string; city?: string; district?: string;
+        state?: string; country?: string; postal_code?: string;
+        latitude?: number | null; longitude?: number | null;
+        google_place_id?: string; formatted_address?: string;
+      };
       if (loc.city_id) payload.city_id = loc.city_id;
       if (loc.locality_id) payload.locality_id = loc.locality_id;
       if (loc.address) payload.address = loc.address;
+      if (loc.location_name) payload.location_name = loc.location_name;
+      if (loc.area) payload.area = loc.area;
+      if (loc.locality) payload.locality = loc.locality;
+      if (loc.city) payload.city = loc.city;
+      if (loc.district) payload.district = loc.district;
+      if (loc.state) payload.state = loc.state;
+      if (loc.country) payload.country = loc.country;
+      if (loc.postal_code) payload.pincode = loc.postal_code; // maps to existing pincode
+      if (loc.latitude) payload.latitude = loc.latitude;
+      if (loc.longitude) payload.longitude = loc.longitude;
+      if (loc.google_place_id) payload.place_id = loc.google_place_id; // maps to existing place_id
+      if (loc.formatted_address) payload.formatted_address = loc.formatted_address;
       continue;
     }
 

@@ -182,8 +182,16 @@ const failedAttemptStore: Record<string, { attempts: number; lockedUntil?: numbe
  */
 export async function verifyAdminCredentials(
   emailInput: string,
-  passwordInput: string
-): Promise<{ adminId: string; email: string; mobile: string; maskedMobile: string }> {
+  passwordInput: string,
+  deviceToken?: string | null
+): Promise<{
+  adminId: string;
+  email: string;
+  mobile: string;
+  maskedMobile: string;
+  skipOtp: boolean;
+  session?: { token: string; admin: AdminUser };
+}> {
   const email = emailInput.trim().toLowerCase();
   const ip = await getClientIp();
   const device = getDeviceInfo();
@@ -250,24 +258,93 @@ export async function verifyAdminCredentials(
 
   // Reset failed attempts upon successful password verification
   delete failedAttemptStore[email];
+  
+  // Check Trusted Device for OTP Bypass
+  let skipOtp = false;
+  if (deviceToken) {
+    try {
+      const { data: trustedDevice } = await supabase
+        .from('admin_trusted_devices')
+        .select('*')
+        .eq('device_token', deviceToken)
+        .eq('admin_id', adminRecord.id)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle();
 
-  // Generate 6-digit OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins
-
-  // Dispatch OTP via MSG91 SMS service
-  let reqId: string | undefined = undefined;
-  try {
-    reqId = await sendMsg91Otp(adminRecord.mobile);
-  } catch (err) {
-    console.warn('[AdminAuth] SMS OTP send warning, using generated OTP fallback:', err);
+      if (trustedDevice) {
+        skipOtp = true;
+        // Update last used at
+        await supabase
+          .from('admin_trusted_devices')
+          .update({ last_used_at: new Date().toISOString(), ip_address: ip, device_info: device })
+          .eq('id', trustedDevice.id);
+      }
+    } catch {
+      // Ignore if table doesn't exist
+    }
   }
 
-  tempOtpStore[adminRecord.id] = {
-    otp: otpCode,
-    expiresAt,
-    reqId,
-  };
+  let sessionData: { token: string; admin: AdminUser } | undefined = undefined;
+
+  if (skipOtp) {
+    // Generate session directly
+    const sessionToken = `adm_sess_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+    const nowIso = new Date().toISOString();
+    
+    // Convert to strict AdminUser for session
+    const finalAdmin: AdminUser = {
+      id: adminRecord.id,
+      name: adminRecord.name,
+      email: adminRecord.email,
+      mobile: adminRecord.mobile,
+      role: adminRecord.role,
+      status: adminRecord.status,
+      last_login: nowIso,
+      login_ip: ip,
+      device: device,
+    };
+    
+    try {
+      await supabase.from('admins').update({
+        last_login: nowIso,
+        login_ip: ip,
+        device: device,
+        failed_attempts: 0,
+        locked_until: null,
+      }).eq('id', adminRecord.id);
+
+      await supabase.from('admin_sessions').insert({
+        admin_id: adminRecord.id,
+        session_token: sessionToken,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        login_ip: ip,
+        device: device,
+      });
+    } catch {}
+
+    await recordLoginHistory(adminRecord.id, ip, device, 'success');
+    await recordAuditLog(adminRecord.id, 'ADMIN_LOGIN_TRUSTED_DEVICE', { ip, device });
+    
+    sessionData = { token: sessionToken, admin: finalAdmin };
+  } else {
+    // Generate 6-digit OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins
+
+    // Dispatch OTP via MSG91 SMS service
+    let reqId: string | undefined = undefined;
+    try {
+      reqId = await sendMsg91Otp(adminRecord.mobile);
+    } catch (err) {
+      console.warn('[AdminAuth] SMS OTP send warning, using generated OTP fallback:', err);
+    }
+
+    tempOtpStore[adminRecord.id] = {
+      otp: otpCode,
+      expiresAt,
+      reqId,
+    };
+  }
 
   const mobileStr = adminRecord.mobile;
   const maskedMobile = mobileStr.length > 6
@@ -279,6 +356,8 @@ export async function verifyAdminCredentials(
     email: adminRecord.email,
     mobile: adminRecord.mobile,
     maskedMobile,
+    skipOtp,
+    session: sessionData,
   };
 }
 
@@ -287,8 +366,9 @@ export async function verifyAdminCredentials(
  */
 export async function verifyAdminOtp(
   adminId: string,
-  otpCode: string
-): Promise<{ token: string; admin: AdminUser }> {
+  otpCode: string,
+  rememberDevice: boolean = false
+): Promise<{ token: string; admin: AdminUser; deviceToken?: string }> {
   const ip = await getClientIp();
   const device = getDeviceInfo();
   const otpEntry = tempOtpStore[adminId];
@@ -349,6 +429,8 @@ export async function verifyAdminOtp(
 
   // Generate Session Token
   const token = `adm_sess_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  
+  let deviceToken: string | undefined = undefined;
 
   // Update DB Admin & Session records
   try {
@@ -367,15 +449,27 @@ export async function verifyAdminOtp(
       login_ip: ip,
       device: device,
     });
-  } catch {
+    
+    if (rememberDevice) {
+      deviceToken = `dev_${crypto.randomUUID().replace(/-/g, '')}_${Date.now()}`;
+      await supabase.from('admin_trusted_devices').insert({
+        admin_id: adminId,
+        device_token: deviceToken,
+        device_info: device,
+        ip_address: ip,
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
+      });
+    }
+  } catch (err) {
     // Non-blocking if table not migrated yet
+    console.warn('[AdminAuth] DB setup warning (safe to ignore in local mock):', err);
   }
 
   // Audit Log & History
   await recordLoginHistory(adminId, ip, device, 'success');
   await recordAuditLog(adminId, 'ADMIN_LOGIN_SUCCESS', { ip, device });
 
-  return { token, admin };
+  return { token, admin, deviceToken };
 }
 
 /**

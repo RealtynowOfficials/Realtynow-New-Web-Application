@@ -64,6 +64,7 @@ export function AdminLoginPage() {
   const [expirySeconds, setExpirySeconds] = useState(OTP_EXPIRY_SECONDS);
   const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS);
   const [isResending, setIsResending] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(true);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Forgot Password Modal State
@@ -126,7 +127,7 @@ export function AdminLoginPage() {
       setOtpError(null);
 
       try {
-        await verifyOtp(code);
+        await verifyOtp(code, rememberDevice);
         addToast('success', '2FA Authentication successful! Welcome to Admin Portal.');
         navigate(redirectPath, { replace: true });
       } catch (err) {
@@ -135,7 +136,7 @@ export function AdminLoginPage() {
         setIsVerifyingOtp(false);
       }
     },
-    [expirySeconds, verifyOtp, navigate, redirectPath, addToast]
+    [expirySeconds, verifyOtp, rememberDevice, navigate, redirectPath, addToast]
   );
 
   const handleResendOtp = async () => {
@@ -434,6 +435,18 @@ export function AdminLoginPage() {
               {expirySeconds <= 0 && !otpError && (
                 <p className="mt-3 text-center text-xs font-medium text-red-400">OTP code expired. Click Resend OTP below.</p>
               )}
+
+              <div className="mt-5 flex items-center justify-center pt-1">
+                <label className="flex items-center gap-2 text-xs text-navy-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberDevice}
+                    onChange={(e) => setRememberDevice(e.target.checked)}
+                    className="rounded border-white/20 bg-white/10 text-red-600 focus:ring-0"
+                  />
+                  Remember this device for 30 days
+                </label>
+              </div>
 
               <div className="mt-5 flex items-center justify-between text-xs">
                 <span className="text-navy-400">

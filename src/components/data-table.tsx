@@ -471,17 +471,44 @@ export function DataTable<T>({
 
       {/* Pagination Footer */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-navy-100 px-4 py-3 text-sm bg-white rounded-2xl border">
-          <span className="text-navy-500">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-navy-100 pl-4 pr-24 lg:pr-32 py-3 text-sm bg-white rounded-2xl border">
+          <span className="text-navy-500 whitespace-nowrap">
             Showing {(current - 1) * effectivePageSize + 1}–{Math.min(current * effectivePageSize, totalCount)} of {totalCount}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 overflow-x-auto max-w-full pb-1 sm:pb-0">
             <Button variant="ghost" size="sm" disabled={current === 1} onClick={() => setPage(current - 1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="px-2 font-semibold text-navy-700">
-              {current} / {totalPages}
-            </span>
+            
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+              // Show first, last, current, and adjacent pages
+              if (
+                p === 1 || 
+                p === totalPages || 
+                (p >= current - 1 && p <= current + 1)
+              ) {
+                return (
+                  <Button 
+                    key={p} 
+                    variant={current === p ? "primary" : "ghost"} 
+                    size="sm" 
+                    onClick={() => setPage(p)}
+                    className={current === p ? "h-8 w-8 p-0" : "h-8 w-8 p-0 text-navy-600"}
+                  >
+                    {p}
+                  </Button>
+                );
+              }
+              // Show ellipses
+              if (
+                p === current - 2 || 
+                p === current + 2
+              ) {
+                return <span key={p} className="px-1 text-navy-400">...</span>;
+              }
+              return null;
+            })}
+
             <Button variant="ghost" size="sm" disabled={current === totalPages} onClick={() => setPage(current + 1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>

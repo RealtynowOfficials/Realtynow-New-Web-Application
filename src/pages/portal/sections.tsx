@@ -111,3 +111,20 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
     ],
   },
 ];
+
+export const getBuilderSections = (t: (key: string, fallback?: string) => string): NavSection[] => [
+  {
+    items: [
+      { to: '/builder', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
+      { to: '/builder/projects', label: t('dashboard:projects', 'Projects'), icon: Building2 },
+      { to: '/builder/leads', label: t('dashboard:leads', 'Leads CRM'), icon: MessageSquare },
+      { to: '/builder/analytics', label: t('dashboard:analytics', 'Analytics'), icon: Sparkles },
+    ],
+  },
+  {
+    heading: t('dashboard:account', 'Account'),
+    items: [
+      { to: '/builder/settings', label: t('common:settings', 'Settings'), icon: Settings },
+    ],
+  },
+];

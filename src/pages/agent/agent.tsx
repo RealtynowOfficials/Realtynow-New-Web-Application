@@ -1,5 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AgentKanbanBoard } from '../../components/agent/AgentKanbanBoard';
+import { AgentAnalyticsDashboard } from '../../components/agent/AgentAnalyticsDashboard';
+import { AiLeadAssistant } from '../../components/agent/AiLeadAssistant';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -147,6 +150,10 @@ export function AgentDashboard() {
         )}
       </div>
 
+      <div className="mt-6">
+        <AiLeadAssistant />
+      </div>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div>
           <h3 className="mb-3 font-display text-lg font-semibold text-navy-900">Recent leads</h3>
@@ -277,7 +284,7 @@ export function AgentProperties() {
 
   const [visibleRows, setVisibleRows] = useState<Property[]>([]);
 
-  const columns: Column<Property>[] = [
+  const columns = useMemo<Column<Property>[]>(() => [
     {
       key: 'title',
       header: 'Property',
@@ -309,7 +316,7 @@ export function AgentProperties() {
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
     { key: 'view_count', header: 'Views', sortable: true },
     { key: 'created_at', header: 'Created', sortable: true, render: (p) => formatDate(p.created_at) },
-  ];
+  ], []);
 
   return (
     <DashboardLayout sections={agentSections} title="Assigned Properties" badge="Agent">
@@ -452,6 +459,7 @@ export function AgentLeads() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'all');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
   const realtimeTick = useRealtimeCount('enquiries', { column: 'agent_id', value: user?.id ?? '' });
 
   const { data, isLoading } = useQuery({
@@ -621,7 +629,28 @@ export function AgentLeads() {
         })}
       </div>
 
-      <DataTable
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => setViewMode('kanban')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition ${viewMode === 'kanban' ? 'bg-primary-600 text-white' : 'bg-white text-navy-600 border border-navy-200 hover:bg-navy-50'}`}
+        >
+          Kanban Board
+        </button>
+        <button
+          onClick={() => setViewMode('list')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition ${viewMode === 'list' ? 'bg-primary-600 text-white' : 'bg-white text-navy-600 border border-navy-200 hover:bg-navy-50'}`}
+        >
+          List View
+        </button>
+      </div>
+
+      {viewMode === 'kanban' ? (
+        <AgentKanbanBoard 
+          leads={data ?? []} 
+          onStatusChange={(id, status) => updateStatus.mutate({ id, status })} 
+        />
+      ) : (
+        <DataTable
         columns={columns}
         rows={filtered}
         loading={isLoading}
@@ -708,6 +737,7 @@ export function AgentLeads() {
           </Card>
         )}
       />
+      )}
     </DashboardLayout>
   );
 }
@@ -967,6 +997,10 @@ export function AgentAnalytics() {
   return (
     <DashboardLayout sections={agentSections} title="Analytics" badge="Agent">
       <PageHeader title="Performance analytics" subtitle="Track your portfolio performance with real data." />
+      
+      <AgentAnalyticsDashboard />
+
+      <h3 className="font-display font-semibold text-navy-900 mt-8 mb-4">Property Portfolio</h3>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Views"

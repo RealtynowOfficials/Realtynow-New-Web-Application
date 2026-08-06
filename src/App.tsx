@@ -16,8 +16,7 @@ import { ScrollToTop } from './components/scroll-to-top';
 import type { UserRole } from './lib/types';
 import { LanguageProvider } from './lib/i18n/language-context';
 import { LocationProvider } from './contexts/location-context';
-import { AdminSecretGate } from './components/admin-secret-gate';
-import { isAdmin2faVerified } from './lib/admin-security';
+
 
 const HomePage = lazy(() => import('./pages/public/home').then((m) => ({ default: m.HomePage })));
 const SearchPage = lazy(() => import('./pages/public/search').then((m) => ({ default: m.SearchPage })));
@@ -153,6 +152,10 @@ const AgentAnalytics = lazy(() => import('./pages/agent/agent').then((m) => ({ d
 const AgentSettings = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentSettings })));
 
 const BuilderDashboard = lazy(() => import('./pages/builder/dashboard').then((m) => ({ default: m.BuilderDashboard })));
+const BuilderProjects = lazy(() => import('./pages/builder/projects').then((m) => ({ default: m.BuilderProjects })));
+const BuilderLeads = lazy(() => import('./pages/builder/leads').then((m) => ({ default: m.BuilderLeads })));
+const BuilderAnalytics = lazy(() => import('./pages/builder/analytics').then((m) => ({ default: m.BuilderAnalytics })));
+const BuilderSettings = lazy(() => import('./pages/builder/settings').then((m) => ({ default: m.BuilderSettings })));
 
 function RootLayout() {
   return (
@@ -184,7 +187,7 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   const { user, profile, loading, signOut } = useAuth();
   const location = useLocation();
   const isAdminRoute = !!allowRoles?.includes('admin');
-  const [verified2fa, setVerified2fa] = useState(() => isAdmin2faVerified());
+
 
   // Admin sessions auto-logout after 3h of *inactivity* (not just time since login).
   // Previously this only checked once on mount, so an admin left on one page for
@@ -251,11 +254,7 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
             : '/portal';
     return <Navigate to={home} replace />;
   }
-  // Second factor — Secret Access Code — gates every admin route until verified for this
-  // browser session, layered on top of the mobile-OTP session already established above.
-  if (isAdminRoute && profile?.role === 'admin' && !verified2fa) {
-    return <AdminSecretGate onVerified={() => setVerified2fa(true)} />;
-  }
+
   return (
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
@@ -394,7 +393,13 @@ function AppRoutes() {
             { path: '/builders', element: <Navigate to="/builder/login" replace /> },
             {
               element: <ProtectedRoute allowRoles={['builder']} />,
-              children: [{ path: '/builder', element: <BuilderDashboard /> }],
+              children: [
+                { path: '/builder', element: <BuilderDashboard /> },
+                { path: '/builder/projects', element: <BuilderProjects /> },
+                { path: '/builder/leads', element: <BuilderLeads /> },
+                { path: '/builder/analytics', element: <BuilderAnalytics /> },
+                { path: '/builder/settings', element: <BuilderSettings /> },
+              ],
             },
             {
               element: <AdminProtectedRoute />,

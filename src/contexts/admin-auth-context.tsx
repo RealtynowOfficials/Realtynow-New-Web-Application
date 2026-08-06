@@ -117,25 +117,48 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [admin]);
 
-  const loginWithCredentials = useCallback(async (email: string, pass: string): Promise<PendingAuth> => {
+  const loginWithCredentials = useCallback(async (email: string, pass: string): Promise<PendingAuth | null> => {
     setLoading(true);
     try {
-      const res = await verifyAdminCredentials(email, pass);
-      setPendingAuth(res);
+      const deviceToken = localStorage.getItem('realtynow_admin_device_token');
+      const res = await verifyAdminCredentials(email, pass, deviceToken);
+      
+      if (res.skipOtp && res.session) {
+        setAdmin(res.session.admin);
+        setSession(res.session);
+        setLoginStep('authenticated');
+        setPendingAuth(null);
+
+        localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(res.session));
+        localStorage.setItem(ADMIN_ACTIVITY_STORAGE_KEY, Date.now().toString());
+        return null;
+      }
+      
+      const pending: PendingAuth = {
+        adminId: res.adminId,
+        email: res.email,
+        mobile: res.mobile,
+        maskedMobile: res.maskedMobile,
+      };
+      setPendingAuth(pending);
       setLoginStep('otp');
-      return res;
+      return pending;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const verifyOtp = useCallback(async (code: string): Promise<AdminUser> => {
+  const verifyOtp = useCallback(async (code: string, rememberDevice: boolean = false): Promise<AdminUser> => {
     if (!pendingAuth) {
       throw new Error('No pending login authorization found');
     }
     setLoading(true);
     try {
-      const { token, admin: authenticatedAdmin } = await verifyAdminOtp(pendingAuth.adminId, code);
+      const { token, admin: authenticatedAdmin, deviceToken } = await verifyAdminOtp(pendingAuth.adminId, code, rememberDevice);
+
+      if (deviceToken) {
+        localStorage.setItem('realtynow_admin_device_token', deviceToken);
+      }
 
       const newSession: AdminSession = {
         token,
