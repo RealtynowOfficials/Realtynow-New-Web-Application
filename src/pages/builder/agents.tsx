@@ -12,7 +12,6 @@ import { Badge, Button, EmptyState, Input, Modal, Select } from '../../component
 import { useToast } from '../../components/toast';
 import { useRealtimeMulti } from '../../lib/realtime';
 import { logBuilderAudit } from '../../lib/builder-audit';
-import { formatDate } from '../../lib/utils';
 
 type BuilderAgentStatus = 'active' | 'inactive';
 

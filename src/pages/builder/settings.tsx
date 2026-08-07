@@ -6,7 +6,7 @@ import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
 import { Card, Input, Button } from '../../components/ui';
-import { addToast } from '../../components/ui/toast';
+import { useToast } from '../../components/toast';
 import { Save } from 'lucide-react';
 
 export function BuilderSettings() {
@@ -14,6 +14,7 @@ export function BuilderSettings() {
   const { t } = useLanguageContext();
   const builderSections = getBuilderSections(t);
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
 
   const [form, setForm] = useState({
     first_name: profile?.first_name ?? '',

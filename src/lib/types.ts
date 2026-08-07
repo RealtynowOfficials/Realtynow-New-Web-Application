@@ -36,6 +36,7 @@ export interface Profile {
   agent_id: string | null;
   bio: string | null;
   company: string | null;
+  company_logo_url: string | null;
   license_number: string | null;
   assigned_areas: string[] | null;
   specialization: string | null;
@@ -428,6 +429,10 @@ export interface HeroCampaign {
   cta_url?: string | null;
   city_id?: string | null;
   campaign_type: 'Paid' | 'Free';
+  package_tier?: 'Platinum' | 'Gold' | 'Silver' | 'Featured' | 'Free' | null;
+  property_id?: string | null;
+  is_pinned?: boolean;
+  display_type?: 'Hero Banner' | 'Featured Slider' | 'Premium Card' | null;
   priority?: number;
   start_date?: string | null;
   end_date?: string | null;
@@ -436,6 +441,7 @@ export interface HeroCampaign {
   created_at?: string;
   updated_at?: string;
   cities?: { name: string } | null;
+  property?: Property | null;
 }
 
 export interface AuditLog {
@@ -790,6 +796,56 @@ export interface BuilderMarketingCampaign {
   budget: number | null;
   start_date: string | null;
   end_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================
+// Agent Portal Ecosystem
+// ============================================================
+
+export type AgentNegotiationStatus = 'open' | 'countered' | 'accepted' | 'rejected' | 'withdrawn';
+export type AgentTaskPriority = 'low' | 'medium' | 'high';
+export type AgentTaskStatus = 'pending' | 'in_progress' | 'completed';
+export type AgentDocumentVisibility = 'private' | 'client' | 'public';
+
+export interface AgentNegotiation {
+  id: string;
+  agent_id: string;
+  lead_id: string;
+  property_id: string | null;
+  round_number: number;
+  offer_amount: number;
+  counter_amount: number | null;
+  status: AgentNegotiationStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentDocument {
+  id: string;
+  agent_id: string;
+  lead_id: string | null;
+  property_id: string | null;
+  category: string;
+  title: string;
+  file_url: string;
+  file_path: string | null;
+  visibility: AgentDocumentVisibility;
+  created_at: string;
+}
+
+export interface AgentTask {
+  id: string;
+  agent_id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  priority: AgentTaskPriority;
+  status: AgentTaskStatus;
+  related_lead_id: string | null;
+  related_property_id: string | null;
   created_at: string;
   updated_at: string;
 }

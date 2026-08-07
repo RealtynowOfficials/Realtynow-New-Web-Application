@@ -20,6 +20,13 @@ import {
   Image,
   LayoutTemplate,
   Lock,
+  Layers,
+  Grid3x3,
+  Tag,
+  HardHat,
+  UserCircle,
+  Activity,
+  Boxes,
 } from 'lucide-react';
 import type { NavSection } from '../../components/dashboard-layout';
 
@@ -55,20 +62,53 @@ export const getPortalSections = (t: (key: string, fallback?: string) => string)
 
 export const getAgentSections = (t: (key: string, fallback?: string) => string): NavSection[] => [
   {
+    items: [{ to: '/agent', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true }],
+  },
+  {
+    heading: t('dashboard:salesCrm', 'Sales & CRM'),
     items: [
-      { to: '/agent', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
-      { to: '/agent/properties', label: t('dashboard:assignedProperties', 'Assigned Properties'), icon: Building2 },
-      { to: '/agent/bulk-upload', label: 'Bulk Import', icon: FileText },
-      { to: '/agent/leads', label: t('dashboard:leads', 'Leads'), icon: MessageSquare },
+      { to: '/agent/leads', label: t('dashboard:leads', 'Leads CRM'), icon: MessageSquare },
+      { to: '/agent/crm', label: t('dashboard:crm', 'CRM'), icon: Activity },
+      { to: '/agent/clients', label: t('dashboard:clients', 'Clients'), icon: Users },
       { to: '/agent/appointments', label: t('dashboard:appointmentsHeader', 'Appointments'), icon: Calendar },
-      { to: '/agent/notifications', label: t('dashboard:notifications', 'Notifications'), icon: Bell },
+      { to: '/agent/negotiations', label: t('dashboard:negotiations', 'Negotiations'), icon: Tag },
     ],
   },
   {
-    heading: t('dashboard:performance', 'Performance'),
+    heading: t('dashboard:listings', 'Listings'),
+    items: [
+      { to: '/agent/properties', label: t('dashboard:assignedProperties', 'Assigned Properties'), icon: Building2 },
+      { to: '/agent/bulk-upload', label: 'Bulk Import', icon: FileText },
+    ],
+  },
+  {
+    heading: t('dashboard:operations', 'Operations'),
+    items: [
+      { to: '/agent/tasks', label: t('dashboard:tasks', 'Tasks'), icon: LayoutTemplate },
+      { to: '/agent/documents', label: t('dashboard:documents', 'Documents'), icon: FileText },
+      { to: '/agent/commissions', label: t('dashboard:commissions', 'Commissions & Invoices'), icon: Wallet },
+    ],
+  },
+  {
+    heading: t('dashboard:marketing', 'Marketing'),
+    items: [
+      { to: '/agent/marketing', label: t('dashboard:marketing', 'Marketing'), icon: Megaphone },
+    ],
+  },
+  {
+    heading: t('dashboard:insights', 'Insights'),
     items: [
       { to: '/agent/analytics', label: t('dashboard:analytics', 'Analytics'), icon: Sparkles },
-      { to: '/agent/settings', label: t('common:editProfile', 'Edit Profile'), icon: Settings },
+      { to: '/agent/reports', label: t('dashboard:reports', 'Reports'), icon: ScrollText },
+      { to: '/agent/notifications', label: t('dashboard:notifications', 'Notifications'), icon: Bell },
+      { to: '/agent/ai-assistant', label: t('dashboard:aiAssistant', 'AI Assistant'), icon: Sparkles },
+    ],
+  },
+  {
+    heading: t('dashboard:account', 'Account'),
+    items: [
+      { to: '/agent/profile', label: t('dashboard:profile', 'Profile'), icon: UserCircle },
+      { to: '/agent/settings', label: t('common:settings', 'Settings'), icon: Settings },
     ],
   },
 ];
@@ -114,16 +154,58 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
 
 export const getBuilderSections = (t: (key: string, fallback?: string) => string): NavSection[] => [
   {
+    items: [{ to: '/builder', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true }],
+  },
+  {
+    heading: t('dashboard:salesCrm', 'Sales & CRM'),
     items: [
-      { to: '/builder', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
-      { to: '/builder/projects', label: t('dashboard:projects', 'Projects'), icon: Building2 },
       { to: '/builder/leads', label: t('dashboard:leads', 'Leads CRM'), icon: MessageSquare },
+      { to: '/builder/crm', label: t('dashboard:crm', 'CRM'), icon: Activity },
+      { to: '/builder/bookings', label: t('dashboard:bookings', 'Bookings'), icon: Calendar },
+      { to: '/builder/customers', label: t('dashboard:customers', 'Customers'), icon: Heart },
+      { to: '/builder/agents', label: t('dashboard:agents', 'Agents'), icon: Users },
+    ],
+  },
+  {
+    heading: t('dashboard:inventory', 'Inventory'),
+    items: [
+      { to: '/builder/projects', label: t('dashboard:projects', 'Projects'), icon: Building2 },
+      { to: '/builder/blocks', label: t('dashboard:blocks', 'Blocks'), icon: Layers },
+      { to: '/builder/floors', label: t('dashboard:floors', 'Floors'), icon: Grid3x3 },
+      { to: '/builder/units', label: t('dashboard:units', 'Units'), icon: Boxes },
+      { to: '/builder/pricing', label: t('dashboard:pricing', 'Pricing'), icon: Tag },
+      { to: '/builder/floor-plans', label: t('dashboard:floorPlans', 'Floor Plans'), icon: LayoutTemplate },
+    ],
+  },
+  {
+    heading: t('dashboard:operations', 'Operations'),
+    items: [
+      { to: '/builder/construction', label: t('dashboard:construction', 'Construction Progress'), icon: HardHat },
+      { to: '/builder/payments', label: t('dashboard:payments', 'Payment Tracking'), icon: Wallet },
+      { to: '/builder/invoices', label: t('dashboard:invoices', 'Invoices'), icon: FileText },
+      { to: '/builder/documents', label: t('dashboard:documents', 'Documents'), icon: FileText },
+    ],
+  },
+  {
+    heading: t('dashboard:marketing', 'Marketing'),
+    items: [
+      { to: '/builder/marketing', label: t('dashboard:marketing', 'Marketing'), icon: Megaphone },
+      { to: '/builder/gallery', label: t('dashboard:gallery', 'Gallery'), icon: Image },
+    ],
+  },
+  {
+    heading: t('dashboard:insights', 'Insights'),
+    items: [
       { to: '/builder/analytics', label: t('dashboard:analytics', 'Analytics'), icon: Sparkles },
+      { to: '/builder/reports', label: t('dashboard:reports', 'Reports'), icon: ScrollText },
+      { to: '/builder/notifications', label: t('dashboard:notifications', 'Notifications'), icon: Bell },
+      { to: '/builder/ai-assistant', label: t('dashboard:aiAssistant', 'AI Assistant'), icon: Sparkles },
     ],
   },
   {
     heading: t('dashboard:account', 'Account'),
     items: [
+      { to: '/builder/profile', label: t('dashboard:profile', 'Profile'), icon: UserCircle },
       { to: '/builder/settings', label: t('common:settings', 'Settings'), icon: Settings },
     ],
   },

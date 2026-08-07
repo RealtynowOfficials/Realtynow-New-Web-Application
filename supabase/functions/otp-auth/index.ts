@@ -140,8 +140,32 @@ serve(async (req) => {
       // Agent/Builder tab: never auto-create. The mobile number must
       // already belong to an agent or builder account.
       if (!existingProfile) {
+        // Create a placeholder request using this verified mobile number.
+        const { data: existingRequest } = await admin
+          .from("agent_requests")
+          .select("id")
+          .eq("mobile", mobile)
+          .eq("status", "pending")
+          .maybeSingle();
+
+        let requestId = existingRequest?.id;
+        if (!requestId) {
+          const { data: inserted, error: insertErr } = await admin
+            .from("agent_requests")
+            .insert({ mobile, requested_role: "agent", status: "pending" })
+            .select("id")
+            .single();
+          if (insertErr) return error(insertErr.message, 500);
+          requestId = inserted?.id;
+        }
+
         return json(
-          { error: "Your account has not been created yet. Please contact the administrator.", success: false, code: "AGENT_NOT_FOUND" },
+          { 
+            error: "Your account has not been created yet. Please contact the administrator.", 
+            success: false, 
+            code: "AGENT_NOT_FOUND",
+            requestId 
+          },
           403,
         );
       }
@@ -209,39 +233,16 @@ serve(async (req) => {
   // Public — called after a 'verify' with intent 'agent' comes back
   // AGENT_NOT_FOUND, using the same (already-verified) MSG91 access token.
   if (action === "request-agent-access") {
-    const accessToken = body.accessToken as string | undefined;
+    const requestId = body.requestId as string | undefined;
     const fullName = (body.full_name as string | undefined)?.trim() || null;
     const requestedRole = body.requested_role === "builder" ? "builder" : "agent";
-    if (!accessToken) return error("accessToken is required");
-    if (!MSG91_AUTH_KEY) return error("MSG91 is not configured on the server", 500);
+    if (!requestId) return error("requestId is required");
 
-    const verified = await verifyMsg91AccessToken(accessToken, MSG91_AUTH_KEY);
-    if ("error" in verified) return error(verified.error, verified.status);
-    const { mobile } = verified;
-
-    const { data: existingProfile } = await admin.from("profiles").select("id").eq("phone", mobile).maybeSingle();
-    if (existingProfile) {
-      return error("An account already exists for this number. Please sign in from the Agent / Builder tab.", 409);
-    }
-
-    const { data: existingRequest } = await admin
+    const { error: updateErr } = await admin
       .from("agent_requests")
-      .select("id")
-      .eq("mobile", mobile)
-      .eq("status", "pending")
-      .maybeSingle();
-
-    if (existingRequest) {
-      await admin
-        .from("agent_requests")
-        .update({ full_name: fullName, requested_role: requestedRole })
-        .eq("id", existingRequest.id);
-    } else {
-      const { error: insertErr } = await admin
-        .from("agent_requests")
-        .insert({ mobile, full_name: fullName, requested_role: requestedRole, status: "pending" });
-      if (insertErr) return error(insertErr.message, 500);
-    }
+      .update({ full_name: fullName, requested_role: requestedRole })
+      .eq("id", requestId);
+    if (updateErr) return error(updateErr.message, 500);
 
     return json({ success: true });
   }

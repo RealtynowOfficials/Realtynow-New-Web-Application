@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { Building2, Phone, Mail, Clock, Calendar } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
+import { formatDate } from '../../lib/utils';
+import { Badge } from '../ui';
 
 export const PIPELINE_STAGES = [
   { id: 'new', label: 'New Lead', color: 'bg-blue-100 text-blue-700 border-blue-200' },

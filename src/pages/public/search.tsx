@@ -805,6 +805,43 @@ function FilterSidebar({ params, setFilter, clearAll, activeCount, types, cities
   );
 }
 
+const FILTER_CHIP_LABELS: Record<string, string> = {
+  purpose: 'Purpose',
+  city_id: 'Location',
+  city: 'Location',
+  locality_id: 'Locality',
+  locality: 'Locality',
+  type: 'Type',
+  type_id: 'Type',
+  min_price: 'Min Price',
+  max_price: 'Max Price',
+  bedrooms: 'Bedrooms',
+  bathrooms: 'Bathrooms',
+  min_area: 'Min Area',
+  max_area: 'Max Area',
+  possession_status: 'Possession',
+  amenities: 'Amenities',
+  luxury: 'Luxury',
+};
+
+// Never render raw UUIDs in filter chips — resolve city_id/locality_id/type to their readable names.
+function describeFilterChip(
+  key: string,
+  value: string,
+  lookups: {
+    cities?: { id: string; name: string }[];
+    localities?: { id: string; name: string }[];
+    types?: { id: string; name: string }[];
+  },
+): { label: string; value: string } {
+  const label = FILTER_CHIP_LABELS[key] || key;
+  let resolved = value;
+  if (key === 'city_id') resolved = lookups.cities?.find((c) => c.id === value)?.name ?? value;
+  else if (key === 'locality_id') resolved = lookups.localities?.find((l) => l.id === value)?.name ?? value;
+  else if (key === 'type' || key === 'type_id') resolved = lookups.types?.find((ty) => ty.id === value)?.name ?? value;
+  return { label, value: resolved };
+}
+
 // ──────────────────────────────────────────────────────────────
 // Main Search Page
 // ──────────────────────────────────────────────────────────────
@@ -865,9 +902,11 @@ export function SearchPage() {
     }
 
     // Phase 11: Resolve ?city=CityName → city_id UUID (footer links use names not UUIDs)
+    // ?city_id=UUID (filter sidebar) takes precedence when present
+    const cityIdParam = params.get('city_id') || undefined;
     const cityParam = params.get('city') || undefined;
-    let resolvedCityId: string | undefined;
-    if (cityParam) {
+    let resolvedCityId: string | undefined = cityIdParam;
+    if (!resolvedCityId && cityParam) {
       const isUuid = /^[0-9a-f-]{36}$/i.test(cityParam);
       resolvedCityId = isUuid
         ? cityParam
@@ -1159,17 +1198,20 @@ export function SearchPage() {
               <span className="text-xs font-semibold text-slate-500">{t('search.activeFilters', 'Active:')}</span>
               {Array.from(params.entries())
                 .filter(([k]) => !['q', 'page'].includes(k))
-                .map(([k, v]) => (
-                  <span
-                    key={k}
-                    className="flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2.5 py-0.5 text-xs font-semibold text-red-700"
-                  >
-                    {k}: {v}
-                    <button onClick={() => setFilter(k, '')} className="ml-0.5 hover:text-red-900">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
+                .map(([k, v]) => {
+                  const { label, value } = describeFilterChip(k, v, { cities, localities, types });
+                  return (
+                    <span
+                      key={k}
+                      className="flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2.5 py-0.5 text-xs font-semibold text-red-700"
+                    >
+                      {label}: {value}
+                      <button onClick={() => setFilter(k, '')} className="ml-0.5 hover:text-red-900">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
               <button onClick={clearAll} className="text-xs text-slate-500 hover:text-red-600 font-semibold ml-1">
                 {t('search.clearAll', 'Clear all')}
               </button>
@@ -1430,9 +1472,20 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
     const defaultPurpose = category === 'rent' ? 'Rent' : category === 'buy' ? 'Sale' : undefined;
     const defaultIsLuxury = category === 'luxury' || undefined;
 
+    // ?city_id=UUID (filter sidebar) takes precedence; ?city=CityName (footer/home links) is resolved via lookup
+    const cityIdParam = params.get('city_id') || undefined;
+    const cityParam = params.get('city') || undefined;
+    let resolvedCityId: string | undefined = cityIdParam;
+    if (!resolvedCityId && cityParam) {
+      const isUuid = /^[0-9a-f-]{36}$/i.test(cityParam);
+      resolvedCityId = isUuid
+        ? cityParam
+        : cities?.find((c) => c.name.toLowerCase() === cityParam.toLowerCase())?.id;
+    }
+
     return {
       q: params.get('q') || undefined,
-      city_id: params.get('city') || undefined,
+      city_id: resolvedCityId,
       purpose: params.get('purpose') || defaultPurpose,
       property_type_id: resolvedTypeId || (typeFilter && typeFilter.length === 1 ? typeFilter[0] : undefined),
       min_price: params.get('min_price') ? Number(params.get('min_price')) : undefined,
@@ -1445,7 +1498,7 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
       facing: params.get('facing') || undefined,
       is_luxury: params.get('luxury') === '1' || defaultIsLuxury,
     };
-  }, [params, types, category, typeFilter]);
+  }, [params, types, category, typeFilter, cities]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['category', category, filters, page],

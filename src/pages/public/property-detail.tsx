@@ -1090,21 +1090,23 @@ export function PropertyDetailPage() {
               <Button size="lg" onClick={() => setContactOpen(true)} className="w-full text-base font-semibold shadow-lg shadow-red-600/20 hover:shadow-red-600/40">
                 {t('property.contactAgent', 'Contact Agent')}
               </Button>
-              <div className="grid grid-cols-3 gap-2">
-                {agent?.phone && (
+              <Button size="lg" variant="secondary" icon={<Calendar className="h-5 w-5 shrink-0" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700 text-base font-semibold" onClick={() => (user ? setApptOpen(true) : navigate('/login'))}>
+                Schedule Visit
+              </Button>
+              {agent?.phone && (
+                <div className="grid grid-cols-2 gap-2">
                   <a href={`tel:${agent.phone}`}>
-                    <Button variant="secondary" icon={<Phone className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700" title="Call" />
+                    <Button variant="secondary" icon={<Phone className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700" title="Call">
+                      Call
+                    </Button>
                   </a>
-                )}
-                {agent?.phone && (
                   <a href={`https://wa.me/${agent.phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(`Hi, I'm interested in ${property.title}`)}`} target="_blank" rel="noopener noreferrer">
-                    <Button variant="secondary" icon={<Send className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-emerald-700" title="WhatsApp" />
+                    <Button variant="secondary" icon={<Send className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-emerald-700" title="WhatsApp">
+                      WhatsApp
+                    </Button>
                   </a>
-                )}
-                <Button variant="secondary" icon={<Calendar className="h-4 w-4 shrink-0" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700 text-[11px] whitespace-nowrap" onClick={() => (user ? setApptOpen(true) : navigate('/login'))}>
-                  Schedule Visit
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-success-50 p-3 text-xs font-medium text-success-700 border border-success-100">

@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/auth-context';
-import { StatCard } from '@/components/dashboard-layout';
-import { Card } from '@/components/ui/card';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/auth';
+import { StatCard } from '../dashboard-layout';
+import { Card } from '../ui';
 import { Target, TrendingUp, Users, DollarSign, Calendar, Clock } from 'lucide-react';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice } from '../../lib/utils';
 
 export function AgentAnalyticsDashboard() {
   const { user } = useAuth();

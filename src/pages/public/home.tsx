@@ -5,6 +5,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PostPropertyBanner } from '../../components/post-property-banner';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+
+import homeServicesImg from '../../assets/services/home-services.webp';
+import interiorServicesImg from '../../assets/services/interior-services.webp';
+import borewellServicesImg from '../../assets/services/borewell-services.webp';
+import homeLoansImg from '../../assets/services/home-loans.webp';
 import {
   Search,
   Mic,
@@ -258,6 +263,8 @@ type HeroSlide = {
   imageMobile?: string | null;
   ctaText: string;
   ctaLink: string;
+  packageTier?: 'Platinum' | 'Gold' | 'Silver' | 'Featured' | 'Free' | null;
+  isPinned?: boolean;
 };
 
 // Static fallback slides — shown only when no admin-configured Hero-placement
@@ -308,12 +315,14 @@ function mapCampaignToHeroSlide(c: HeroCampaign): HeroSlide {
     companyLogo: c.logo,
     // Reuses the existing "priceText" slide slot to surface a Sponsored badge for
     // Paid campaigns — Free campaigns just show their location, same as before.
-    priceText: c.campaign_type === 'Paid' ? 'Sponsored' : null,
+    priceText: c.campaign_type === 'Paid' ? (c.package_tier && c.package_tier !== 'Free' ? c.package_tier : 'Sponsored') : null,
     locationText: c.cities?.name ?? null,
     imageDesktop: c.banner_image || '',
     imageMobile: c.mobile_banner || c.banner_image || '',
     ctaText: c.cta_text || 'Explore Now',
-    ctaLink: c.cta_url || '/search',
+    ctaLink: c.cta_url || (c.property_id ? `/property/${c.property_id}` : '/search'),
+    packageTier: c.package_tier,
+    isPinned: c.is_pinned,
   };
 }
 
@@ -345,7 +354,32 @@ function HeroSection() {
     // "All Cities" (city_id null) always show. Skip the city filter until a city is
     // detected so slides aren't empty during the initial geolocation lookup.
     const live = cityId ? active.filter((c) => !c.city_id || c.city_id === cityId) : active;
-    return live.length > 0 ? live.map(mapCampaignToHeroSlide) : HERO_SLIDES;
+
+    const sortedLive = [...live].sort((a, b) => {
+      if (a.is_pinned && !b.is_pinned) return -1;
+      if (!a.is_pinned && b.is_pinned) return 1;
+
+      const tierWeights: Record<string, number> = {
+        Platinum: 5,
+        Gold: 4,
+        Silver: 3,
+        Featured: 2,
+        Free: 1,
+      };
+
+      const weightA = tierWeights[a.package_tier || 'Free'] || 1;
+      const weightB = tierWeights[b.package_tier || 'Free'] || 1;
+
+      if (weightA !== weightB) {
+        return weightB - weightA;
+      }
+
+      const orderA = a.order_no ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.order_no ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+
+    return sortedLive.length > 0 ? sortedLive.map(mapCampaignToHeroSlide) : HERO_SLIDES;
   }, [campaigns, cityId]);
 
   // Keep slideIndex in range if the live slide list shrinks/refreshes.
@@ -390,7 +424,7 @@ function HeroSection() {
                 alt={activeSlide.title}
                 className="h-full w-full object-cover object-center"
                 loading={isFirstSlide ? 'eager' : 'lazy'}
-                fetchPriority={isFirstSlide ? 'high' : 'low'}
+                {...{ fetchpriority: isFirstSlide ? 'high' : 'low' }}
               />
             </picture>
           </motion.div>
@@ -2352,7 +2386,7 @@ const ENHANCED_SERVICES = [
     title: 'Home Services',
     description: 'Professional care for your home, every day.',
     icon: Home,
-    image: '/services/home-services.webp',
+    image: homeServicesImg,
     link: 'https://kamkaka.com',
     cta: 'Explore Now',
   },
@@ -2361,7 +2395,7 @@ const ENHANCED_SERVICES = [
     title: 'Interior Services',
     description: 'Designing beautiful spaces that reflect you.',
     icon: PaintBucket,
-    image: '/services/interior-services.webp',
+    image: interiorServicesImg,
     link: 'https://borninteriors.in',
     cta: 'Explore Now',
   },
@@ -2370,7 +2404,7 @@ const ENHANCED_SERVICES = [
     title: 'Borewell Services',
     description: 'Deep expertise. Reliable water solutions.',
     icon: Droplets,
-    image: '/services/borewell-services.webp',
+    image: borewellServicesImg,
     link: '/borewell-services',
     cta: 'Explore Now',
   },
@@ -2379,7 +2413,7 @@ const ENHANCED_SERVICES = [
     title: 'Home Loans',
     description: 'Easy financing for your dream home.',
     icon: PieChart,
-    image: '/services/home-loans.webp',
+    image: homeLoansImg,
     link: '/home-loans',
     cta: 'Explore Now',
   },
@@ -2534,14 +2568,14 @@ function PartnersSection() {
   const { t } = useLanguageContext();
   
   const partners = [
-    { name: 'HDFC', logo: 'https://upload.wikimedia.org/wikipedia/commons/2/28/HDFC_Bank_Logo.svg' },
-    { name: 'SBI', logo: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/SBI-logo.svg' },
-    { name: 'ICICI', logo: 'https://upload.wikimedia.org/wikipedia/commons/1/12/ICICI_Bank_Logo.svg' },
-    { name: 'Axis', logo: 'https://upload.wikimedia.org/wikipedia/commons/1/12/Axis_Bank_logo.svg' },
-    { name: 'LIC', logo: 'https://upload.wikimedia.org/wikipedia/en/2/29/LIC_Logo.svg' },
-    { name: 'Bajaj Finserv', logo: 'https://upload.wikimedia.org/wikipedia/commons/e/e9/Bajaj_Finserv_Logo.svg' },
-    { name: 'Kotak', logo: 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Kotak_Mahindra_Bank_logo.svg' },
-    { name: 'Yes Bank', logo: 'https://upload.wikimedia.org/wikipedia/commons/e/e7/YES_Bank_logo.svg' },
+    { name: 'HDFC', logo: '/partners/hdfc.svg' },
+    { name: 'SBI', logo: '/partners/sbi.svg' },
+    { name: 'ICICI', logo: '/partners/icici.svg' },
+    { name: 'Axis', logo: '/partners/axis.svg' },
+    { name: 'LIC', logo: '/partners/lic.svg' },
+    { name: 'Bajaj Finserv', logo: '/partners/bajaj.svg' },
+    { name: 'Kotak', logo: '/partners/kotak.svg' },
+    { name: 'Yes Bank', logo: '/partners/yesbank.svg' },
   ];
 
   // Triple the array to ensure smooth infinite scrolling

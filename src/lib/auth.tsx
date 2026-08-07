@@ -12,11 +12,8 @@ interface AuthContextValue {
   profile: Profile | null;
   loading: boolean;
   role: UserRole | null;
-  verifyOtpAndSignIn: (
-    accessToken: string,
-    intent?: OtpLoginIntent,
-  ) => Promise<{ error: string | null; isNewUser?: boolean; code?: string }>;
-  requestAgentAccess: (accessToken: string, fullName: string) => Promise<{ error: string | null }>;
+  verifyOtpAndSignIn: (accessToken: string, intent: 'customer' | 'agent') => Promise<{ error: string | null; isNewUser?: boolean; code?: string; requestId?: string }>;
+  requestAgentAccess: (requestId: string, fullName: string, requestedRole: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -83,24 +80,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: { 'x-action': 'verify' },
     });
     if (error) {
-      // supabase-js leaves `data` empty on a non-2xx response and only sets
-      // a generic error.message ("Edge Function returned a non-2xx status
-      // code") — the real reason (and `code`, e.g. AGENT_NOT_FOUND) is in
-      // the response body, on error.context.
       let message = error.message;
-      let code: string | undefined;
+      let code = undefined;
+      let requestId = undefined;
       const context = (error as { context?: unknown }).context;
       if (context instanceof Response) {
         try {
           const body = await context.clone().json();
           if (typeof body?.error === 'string') message = body.error;
           if (typeof body?.code === 'string') code = body.code;
+          if (typeof body?.requestId === 'string') requestId = body.requestId;
         } catch {
           /* response wasn't JSON, keep the generic message */
         }
       }
-      console.error('[otp-auth] verify failed:', message);
-      return { error: message, code };
+      return { error: message, code, requestId };
     }
     if (!data?.access_token || !data?.refresh_token) {
       return { error: data?.error ?? 'OTP verification failed', code: data?.code };
@@ -113,9 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null, isNewUser: Boolean(data.isNewUser) };
   }, []);
 
-  const requestAgentAccess = useCallback(async (accessToken: string, fullName: string) => {
+  const requestAgentAccess = useCallback(async (requestId: string, fullName: string, requestedRole: string) => {
     const { data, error } = await supabase.functions.invoke('otp-auth', {
-      body: { accessToken, full_name: fullName },
+      body: { requestId, full_name: fullName, requested_role: requestedRole },
       headers: { 'x-action': 'request-agent-access' },
     });
     if (error) {

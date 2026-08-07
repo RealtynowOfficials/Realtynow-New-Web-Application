@@ -34,6 +34,10 @@ const initialForm = {
   cta_url: '',
   city_id: '',
   campaign_type: 'Free' as 'Free' | 'Paid',
+  package_tier: 'Free' as 'Platinum' | 'Gold' | 'Silver' | 'Featured' | 'Free',
+  property_id: '',
+  is_pinned: false,
+  display_type: 'Hero Banner' as 'Hero Banner' | 'Featured Slider' | 'Premium Card',
   priority: 1,
   start_date: new Date().toISOString().slice(0, 16),
   end_date: '',
@@ -106,6 +110,10 @@ export function AdminHeroCampaigns() {
         cta_url: form.cta_url || null,
         city_id: form.city_id || null,
         campaign_type: form.campaign_type,
+        package_tier: form.package_tier || 'Free',
+        property_id: form.property_id || null,
+        is_pinned: form.is_pinned,
+        display_type: form.display_type,
         priority: Number(form.priority) || 1,
         start_date: form.start_date ? new Date(form.start_date).toISOString() : new Date().toISOString(),
         end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
@@ -186,6 +194,10 @@ export function AdminHeroCampaigns() {
       cta_url: c.cta_url ?? '',
       city_id: c.city_id ?? '',
       campaign_type: (c.campaign_type as 'Free' | 'Paid') ?? 'Free',
+      package_tier: (c.package_tier as any) ?? 'Free',
+      property_id: c.property_id ?? '',
+      is_pinned: c.is_pinned ?? false,
+      display_type: (c.display_type as any) ?? 'Hero Banner',
       priority: c.priority ?? 1,
       start_date: c.start_date ? c.start_date.slice(0, 16) : new Date().toISOString().slice(0, 16),
       end_date: c.end_date ? c.end_date.slice(0, 16) : '',
@@ -318,16 +330,28 @@ export function AdminHeroCampaigns() {
                     alt={c.title}
                     className="h-full w-full object-cover"
                   />
-                  <div className="absolute top-2 left-2 flex gap-1">
-                    <Badge variant={c.campaign_type === 'Paid' ? 'gold' : 'default'} className="text-[10px] uppercase font-bold tracking-wide">
-                      {c.campaign_type}
-                    </Badge>
-                    <Badge variant="default" className="text-[10px]">
-                      Priority {c.priority ?? 1}
-                    </Badge>
+                  <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+                    <div className="flex gap-1">
+                      <Badge variant={c.campaign_type === 'Paid' ? 'gold' : 'default'} className="text-[10px] uppercase font-bold tracking-wide">
+                        {c.campaign_type}
+                      </Badge>
+                      <Badge variant="default" className="text-[10px]">
+                        Priority {c.priority ?? 1}
+                      </Badge>
+                    </div>
+                    {c.package_tier && c.package_tier !== 'Free' && (
+                      <Badge variant="gold" className="text-[10px] uppercase font-bold bg-navy-900 text-gold-400 border border-gold-500/30 shadow-md">
+                        {c.package_tier}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="absolute top-2 right-2">
+                  <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
                     <Badge variant={c.status === 'Active' ? 'success' : 'default'}>{c.status}</Badge>
+                    {c.is_pinned && (
+                      <Badge variant="success" className="text-[10px] bg-red-600 border-none text-white shadow-md flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> Pinned
+                      </Badge>
+                    )}
                   </div>
                   {c.logo && (
                     <img
@@ -577,6 +601,51 @@ export function AdminHeroCampaigns() {
               <option value="Free">Free</option>
               <option value="Paid">Paid</option>
             </Select>
+            <Select
+              label="Package Tier"
+              value={form.package_tier}
+              onChange={(e) => setForm((f) => ({ ...f, package_tier: e.target.value as any }))}
+            >
+              <option value="Free">Free (Standard)</option>
+              <option value="Featured">Featured</option>
+              <option value="Silver">Silver</option>
+              <option value="Gold">Gold</option>
+              <option value="Platinum">Platinum</option>
+            </Select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label="Linked Property ID (Optional)"
+              value={form.property_id}
+              onChange={(e) => setForm((f) => ({ ...f, property_id: e.target.value }))}
+              placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+            />
+            <Select
+              label="Display Type"
+              value={form.display_type}
+              onChange={(e) => setForm((f) => ({ ...f, display_type: e.target.value as any }))}
+            >
+              <option value="Hero Banner">Hero Banner</option>
+              <option value="Featured Slider">Featured Slider</option>
+              <option value="Premium Card">Premium Card</option>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2 mb-2 p-3 bg-navy-50 rounded-xl border border-navy-100">
+            <input
+              type="checkbox"
+              id="is_pinned"
+              checked={form.is_pinned}
+              onChange={(e) => setForm((f) => ({ ...f, is_pinned: e.target.checked }))}
+              className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-600"
+            />
+            <label htmlFor="is_pinned" className="text-sm font-semibold text-navy-900 cursor-pointer">
+              Pin to First Position
+              <span className="block text-xs font-normal text-navy-500">
+                This campaign will always appear first regardless of priority or order number.
+              </span>
+            </label>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

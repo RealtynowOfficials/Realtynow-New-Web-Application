@@ -8,8 +8,8 @@ import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
 import { DataTable } from '../../components/data-table';
 import type { Column } from '../../components/data-table';
-import { Badge, Button, Select } from '../../components/ui';
-import { addToast } from '../../components/ui/toast';
+import { Button, Select } from '../../components/ui';
+import { useToast } from '../../components/toast';
 import { formatDate } from '../../lib/utils';
 import { Activity, LayoutList, Trello } from 'lucide-react';
 import { BuilderKanbanBoard } from '../../components/builder/BuilderKanbanBoard';
@@ -22,6 +22,7 @@ export function BuilderLeads() {
   const builderSections = getBuilderSections(t);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');

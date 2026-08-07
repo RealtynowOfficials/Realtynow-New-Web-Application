@@ -115,6 +115,7 @@ const AdminBuilderApplications = lazy(() =>
   import('./pages/admin/applications').then((m) => ({ default: m.AdminBuilderApplications })),
 );
 const AdminCustomers = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminCustomers })));
+const AdminPropertyEditor = lazy(() => import('./pages/admin/admin-property-editor').then((m) => ({ default: m.AdminPropertyEditor })));
 const AdminAgents = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminAgents })));
 const AdminBlogs = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminBlogs })));
 const AdminMasterData = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminMasterData })));
@@ -144,18 +145,48 @@ const AdminAnalyticsPage = lazy(() => import('./pages/admin/analytics').then((m)
 const AdminSponsoredPage = lazy(() => import('./pages/admin/sponsored').then((m) => ({ default: m.default })));
 const AdminInvoicesPage = lazy(() => import('./pages/admin/invoices').then((m) => ({ default: m.default })));
 
-const AgentDashboard = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentDashboard })));
-const AgentProperties = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentProperties })));
-const AgentLeads = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentLeads })));
-const AgentAppointments = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentAppointments })));
-const AgentAnalytics = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentAnalytics })));
-const AgentSettings = lazy(() => import('./pages/agent/agent').then((m) => ({ default: m.AgentSettings })));
+const AgentDashboard = lazy(() => import('./pages/agent/dashboard').then((m) => ({ default: m.AgentDashboard })));
+const AgentProperties = lazy(() => import('./pages/agent/properties').then((m) => ({ default: m.AgentProperties })));
+const AgentLeads = lazy(() => import('./pages/agent/leads').then((m) => ({ default: m.AgentLeads })));
+const AgentAppointments = lazy(() => import('./pages/agent/appointments').then((m) => ({ default: m.AgentAppointments })));
+const AgentAnalytics = lazy(() => import('./pages/agent/analytics').then((m) => ({ default: m.AgentAnalytics })));
+const AgentSettings = lazy(() => import('./pages/agent/settings').then((m) => ({ default: m.AgentSettings })));
+const AgentClients = lazy(() => import('./pages/agent/clients').then((m) => ({ default: m.AgentClients })));
+const AgentCrm = lazy(() => import('./pages/agent/crm').then((m) => ({ default: m.AgentCrm })));
+const AgentNegotiations = lazy(() => import('./pages/agent/negotiations').then((m) => ({ default: m.AgentNegotiations })));
+const AgentCommissions = lazy(() => import('./pages/agent/commissions').then((m) => ({ default: m.AgentCommissions })));
+const AgentDocuments = lazy(() => import('./pages/agent/documents').then((m) => ({ default: m.AgentDocuments })));
+const AgentTasks = lazy(() => import('./pages/agent/tasks').then((m) => ({ default: m.AgentTasks })));
+const AgentMarketing = lazy(() => import('./pages/agent/marketing').then((m) => ({ default: m.AgentMarketing })));
+const AgentReports = lazy(() => import('./pages/agent/reports').then((m) => ({ default: m.AgentReports })));
+const AgentProfile = lazy(() => import('./pages/agent/profile').then((m) => ({ default: m.AgentProfile })));
+const AgentAiAssistant = lazy(() => import('./pages/agent/ai-assistant').then((m) => ({ default: m.AgentAiAssistant })));
 
 const BuilderDashboard = lazy(() => import('./pages/builder/dashboard').then((m) => ({ default: m.BuilderDashboard })));
 const BuilderProjects = lazy(() => import('./pages/builder/projects').then((m) => ({ default: m.BuilderProjects })));
 const BuilderLeads = lazy(() => import('./pages/builder/leads').then((m) => ({ default: m.BuilderLeads })));
 const BuilderAnalytics = lazy(() => import('./pages/builder/analytics').then((m) => ({ default: m.BuilderAnalytics })));
 const BuilderSettings = lazy(() => import('./pages/builder/settings').then((m) => ({ default: m.BuilderSettings })));
+const BuilderInventory = lazy(() => import('./pages/builder/inventory').then((m) => ({ default: m.BuilderInventory })));
+const BuilderBlocks = lazy(() => import('./pages/builder/blocks').then((m) => ({ default: m.BuilderBlocks })));
+const BuilderFloors = lazy(() => import('./pages/builder/floors').then((m) => ({ default: m.BuilderFloors })));
+const BuilderUnits = lazy(() => import('./pages/builder/units').then((m) => ({ default: m.BuilderUnits })));
+const BuilderPricing = lazy(() => import('./pages/builder/pricing').then((m) => ({ default: m.BuilderPricing })));
+const BuilderBookings = lazy(() => import('./pages/builder/bookings').then((m) => ({ default: m.BuilderBookings })));
+const BuilderCustomers = lazy(() => import('./pages/builder/customers').then((m) => ({ default: m.BuilderCustomers })));
+const BuilderAgents = lazy(() => import('./pages/builder/agents').then((m) => ({ default: m.BuilderAgents })));
+const BuilderCrm = lazy(() => import('./pages/builder/crm').then((m) => ({ default: m.BuilderCrm })));
+const BuilderConstruction = lazy(() => import('./pages/builder/construction').then((m) => ({ default: m.BuilderConstruction })));
+const BuilderPayments = lazy(() => import('./pages/builder/payments').then((m) => ({ default: m.BuilderPayments })));
+const BuilderInvoices = lazy(() => import('./pages/builder/invoices').then((m) => ({ default: m.BuilderInvoices })));
+const BuilderDocuments = lazy(() => import('./pages/builder/documents').then((m) => ({ default: m.BuilderDocuments })));
+const BuilderFloorPlans = lazy(() => import('./pages/builder/floor-plans').then((m) => ({ default: m.BuilderFloorPlans })));
+const BuilderGallery = lazy(() => import('./pages/builder/gallery').then((m) => ({ default: m.BuilderGallery })));
+const BuilderMarketing = lazy(() => import('./pages/builder/marketing').then((m) => ({ default: m.BuilderMarketing })));
+const BuilderReports = lazy(() => import('./pages/builder/reports').then((m) => ({ default: m.BuilderReports })));
+const BuilderNotifications = lazy(() => import('./pages/builder/notifications').then((m) => ({ default: m.BuilderNotifications })));
+const BuilderProfile = lazy(() => import('./pages/builder/profile').then((m) => ({ default: m.BuilderProfile })));
+const BuilderAiAssistant = lazy(() => import('./pages/builder/ai-assistant').then((m) => ({ default: m.BuilderAiAssistant })));
 
 function RootLayout() {
   return (
@@ -382,7 +413,17 @@ function AppRoutes() {
                 { path: '/agent', element: <AgentDashboard /> },
                 { path: '/agent/properties', element: <AgentProperties /> },
                 { path: '/agent/leads', element: <AgentLeads /> },
+                { path: '/agent/clients', element: <AgentClients /> },
+                { path: '/agent/crm', element: <AgentCrm /> },
                 { path: '/agent/appointments', element: <AgentAppointments /> },
+                { path: '/agent/negotiations', element: <AgentNegotiations /> },
+                { path: '/agent/commissions', element: <AgentCommissions /> },
+                { path: '/agent/documents', element: <AgentDocuments /> },
+                { path: '/agent/tasks', element: <AgentTasks /> },
+                { path: '/agent/marketing', element: <AgentMarketing /> },
+                { path: '/agent/reports', element: <AgentReports /> },
+                { path: '/agent/profile', element: <AgentProfile /> },
+                { path: '/agent/ai-assistant', element: <AgentAiAssistant /> },
                 { path: '/agent/analytics', element: <AgentAnalytics /> },
                 { path: '/agent/settings', element: <AgentSettings /> },
                 { path: '/agent/notifications', element: <PortalNotifications /> },
@@ -399,6 +440,27 @@ function AppRoutes() {
                 { path: '/builder/leads', element: <BuilderLeads /> },
                 { path: '/builder/analytics', element: <BuilderAnalytics /> },
                 { path: '/builder/settings', element: <BuilderSettings /> },
+                { path: '/builder/inventory', element: <BuilderInventory /> },
+                { path: '/builder/blocks', element: <BuilderBlocks /> },
+                { path: '/builder/floors', element: <BuilderFloors /> },
+                { path: '/builder/units', element: <BuilderUnits /> },
+                { path: '/builder/pricing', element: <BuilderPricing /> },
+                { path: '/builder/bookings', element: <BuilderBookings /> },
+                { path: '/builder/customers', element: <BuilderCustomers /> },
+                { path: '/builder/agents', element: <BuilderAgents /> },
+                { path: '/builder/crm', element: <BuilderCrm /> },
+                { path: '/builder/crm/:leadId', element: <BuilderCrm /> },
+                { path: '/builder/construction', element: <BuilderConstruction /> },
+                { path: '/builder/payments', element: <BuilderPayments /> },
+                { path: '/builder/invoices', element: <BuilderInvoices /> },
+                { path: '/builder/documents', element: <BuilderDocuments /> },
+                { path: '/builder/floor-plans', element: <BuilderFloorPlans /> },
+                { path: '/builder/gallery', element: <BuilderGallery /> },
+                { path: '/builder/marketing', element: <BuilderMarketing /> },
+                { path: '/builder/reports', element: <BuilderReports /> },
+                { path: '/builder/notifications', element: <BuilderNotifications /> },
+                { path: '/builder/profile', element: <BuilderProfile /> },
+                { path: '/builder/ai-assistant', element: <BuilderAiAssistant /> },
               ],
             },
             {
@@ -406,6 +468,7 @@ function AppRoutes() {
               children: [
                 { path: '/admin', element: <AdminDashboard /> },
                 { path: '/admin/properties', element: <AdminProperties /> },
+                { path: '/admin/properties/edit/:id', element: <AdminPropertyEditor /> },
                 { path: '/admin/bulk-import', element: <AdminBulkImport /> },
                 { path: '/admin/approvals', element: <AdminApprovals /> },
                 { path: '/admin/agent-applications', element: <AdminAgentApplications /> },

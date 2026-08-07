@@ -4,9 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
 import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
-import { Card } from '../../components/ui/card';
+import { Card } from '../../components/ui';
 import { TrendingUp, Target, Users, Building2 } from 'lucide-react';
-import { formatPrice } from '../../lib/utils';
 
 export function BuilderAnalytics() {
   const { user } = useAuth();

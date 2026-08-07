@@ -22,6 +22,9 @@ export function AdminCustomers() {
   const [editing, setEditing] = useState<Profile | null>(null);
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', status: 'active' });
   const [saving, setSaving] = useState(false);
+  
+  // Advanced Filters
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-customers'],
@@ -133,14 +136,39 @@ export function AdminCustomers() {
 
   const { t } = useLanguageContext();
   const adminSections = getAdminSections(t);
+  
+  const filteredData = (data ?? []).filter(p => {
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+    return true;
+  });
 
   return (
     <DashboardLayout sections={adminSections} title={t('dashboard:customers', 'Customers')}>
       <PageHeader title="Customers" subtitle="Manage all customer accounts." />
+      <div className="mb-4">
+        <Card className="p-4 bg-navy-50/50">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-navy-500 uppercase tracking-wider mb-1.5">
+                Account Status
+              </label>
+              <Select 
+                value={statusFilter} 
+                onChange={e => setStatusFilter(e.target.value)}
+                className="max-w-xs"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+              </Select>
+            </div>
+          </div>
+        </Card>
+      </div>
       <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
       <DataTable
         columns={columns}
-        rows={data ?? []}
+        rows={filteredData}
         loading={isLoading}
         getRowId={(p) => p.id}
         searchKeys={['first_name', 'last_name', 'email', 'phone']}

@@ -905,6 +905,62 @@ export function AdminProperties() {
   const handleVisibleRowsChange = useCallback((rows: PendingProperty[]) => setVisibleRows(rows), []);
   const [exportAllRows, setExportAllRows] = useState<PendingProperty[]>([]);
 
+  // Real-time Counts
+  const [counts, setCounts] = useState<Record<string, number>>({
+    all: 0,
+    published: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    draft: 0,
+  });
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const countsMap: Record<string, number> = {
+        all: 0,
+        published: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        draft: 0,
+      };
+      
+      const queries = [
+        supabase.from('properties').select('id', { count: 'exact', head: true }).then(res => countsMap.all = res.count || 0),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).in('status', ['published', 'approved']).then(res => countsMap.published = res.count || 0),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).in('status', ['submitted', 'pending_verification']).then(res => countsMap.pending = res.count || 0),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).eq('status', 'approved').then(res => countsMap.approved = res.count || 0),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).eq('status', 'rejected').then(res => countsMap.rejected = res.count || 0),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).in('status', ['draft', 'submitted']).then(res => countsMap.draft = res.count || 0),
+      ];
+      await Promise.all(queries);
+      setCounts(countsMap);
+    } catch (err) {
+      console.error('Failed to fetch counts:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCounts();
+    
+    // Subscribe to realtime changes on properties to update counts
+    const channel = supabase.channel('admin_properties_counts')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'properties' },
+        () => {
+          fetchCounts();
+          // Optionally invalidate query to refresh table data if needed, but we don't want to force refresh while typing
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchCounts]);
+
   // Fetch ALL records (no pagination) for export — runs on demand
   const fetchAllForExport = useCallback(async (): Promise<PendingProperty[]> => {
     let q = supabase
@@ -1383,11 +1439,17 @@ export function AdminProperties() {
                 key={t}
                 onClick={() => setTab(t)}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
+                  'rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap flex items-center gap-2',
                   tab === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50',
                 )}
               >
-                {t === 'pending' ? 'Pending' : t.charAt(0).toUpperCase() + t.slice(1)}
+                <span>{t === 'pending' ? 'Pending' : t.charAt(0).toUpperCase() + t.slice(1)}</span>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                  tab === t ? "bg-white/20 text-white" : "bg-navy-100 text-navy-500"
+                )}>
+                  {counts[t] || 0}
+                </span>
               </button>
             ))}
           </div>

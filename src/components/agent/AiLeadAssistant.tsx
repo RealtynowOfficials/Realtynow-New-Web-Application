@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/input';
+import { Card, Button, Input as Textarea } from '../ui';
 import { Sparkles, MessageSquare, Mail, Send } from 'lucide-react';
-import { addToast } from '@/components/ui/toast';
+import { useToast } from '../toast';
 
 export function AiLeadAssistant() {
   const [prompt, setPrompt] = useState('');
+  const { addToast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState('');
 

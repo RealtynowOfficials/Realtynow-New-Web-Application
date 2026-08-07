@@ -109,9 +109,9 @@ export function OtpLoginPage() {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Set once the verified accessToken comes back AGENT_NOT_FOUND, so the
-  // "request access" follow-up can reuse the same already-verified OTP
-  // instead of asking the user to verify again.
-  const [verifiedAccessToken, setVerifiedAccessToken] = useState<string | null>(null);
+  // "request access" follow-up can reuse the request_id instead of
+  // verifying again.
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [agentNotFound, setAgentNotFound] = useState(false);
   const [requestName, setRequestName] = useState('');
   const [requestSubmitting, setRequestSubmitting] = useState(false);
@@ -152,7 +152,7 @@ export function OtpLoginPage() {
     setOtp(Array(OTP_LENGTH).fill(''));
     setOtpError(null);
     setAgentNotFound(false);
-    setVerifiedAccessToken(null);
+    setRequestId(null);
     setRequestName('');
     setRequestSubmitted(false);
   }, []);
@@ -214,10 +214,10 @@ export function OtpLoginPage() {
       setAgentNotFound(false);
       try {
         const accessToken = await verifyMsg91Otp(code, reqId);
-        const { error, isNewUser, code: errCode } = await verifyOtpAndSignIn(accessToken, tab);
+        const { error, isNewUser, code: errCode, requestId: newRequestId } = await verifyOtpAndSignIn(accessToken, tab);
         if (error) {
           if (tab === 'agent' && errCode === 'AGENT_NOT_FOUND') {
-            setVerifiedAccessToken(accessToken);
+            if (newRequestId) setRequestId(newRequestId);
             setAgentNotFound(true);
           } else {
             setOtpError(error);
@@ -237,10 +237,10 @@ export function OtpLoginPage() {
   );
 
   const submitAgentRequest = useCallback(async () => {
-    if (!verifiedAccessToken || !requestName.trim()) return;
+    if (!requestId || !requestName.trim()) return;
     setRequestSubmitting(true);
     try {
-      const { error } = await requestAgentAccess(verifiedAccessToken, requestName.trim());
+      const { error } = await requestAgentAccess(requestId, requestName.trim(), segment);
       if (error) {
         addToast('error', error);
         return;
@@ -249,7 +249,7 @@ export function OtpLoginPage() {
     } finally {
       setRequestSubmitting(false);
     }
-  }, [verifiedAccessToken, requestName, requestAgentAccess, addToast]);
+  }, [requestId, requestName, requestAgentAccess, addToast, segment]);
 
   const handleOtpChange = (index: number, value: string) => {
     const digit = value.replace(/[^\d]/g, '').slice(-1);
@@ -602,7 +602,7 @@ export function OtpLoginPage() {
                   onClick={() => {
                     setStep('mobile');
                     setAgentNotFound(false);
-                    setVerifiedAccessToken(null);
+                    setRequestId(null);
                     setRequestName('');
                     setRequestSubmitted(false);
                   }}
