@@ -85,9 +85,9 @@ export function PortalDashboard() {
         title={`${t('portal.welcomeBack', 'Welcome back')}, ${profile?.first_name ?? ''}`}
         subtitle={t('portal.activityOverview', "Here's an overview of your real estate activity.")}
         action={
-          <Link to="/portal/list-property">
+          <PostPropertyLink to="/portal/list-property">
             <Button icon={<Plus className="h-4 w-4" />}>{t('forms.postProperty', 'List Property')}</Button>
-          </Link>
+          </PostPropertyLink>
         }
       />
 
@@ -157,9 +157,9 @@ export function PortalDashboard() {
                 title={t('portal.noPropertiesTitle', 'No properties yet')}
                 description={t('portal.noPropertiesDesc', 'List your first property to reach thousands of buyers.')}
                 action={
-                  <Link to="/portal/list-property">
+                  <PostPropertyLink to="/portal/list-property">
                     <Button icon={<Plus className="h-4 w-4" />}>{t('forms.postProperty', 'List Property')}</Button>
-                  </Link>
+                  </PostPropertyLink>
                 }
               />
             </Card>
@@ -445,6 +445,7 @@ export function PortalCompare() {
 }
 
 import { RazorpayCheckout } from '../../components/payments/razorpay-checkout';
+import { PostPropertyLink } from '../../components/post-property-link';
 
 export function PortalSubscription() {
   const { t } = useLanguageContext();

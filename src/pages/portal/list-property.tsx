@@ -645,11 +645,49 @@ export function ListPropertyWizard() {
     setValue('place_id', place.placeId, { shouldDirty: true });
   };
 
-  const handleNext = async () => {
-    if (activeStep === 4 && !getValues('place_id')) {
-      toast.addToast('error', 'Please search and select a location from Google Maps before continuing.');
-      return;
+
+  const validateStep = () => {
+    const vals = getValues();
+    const stepName = WIZARD_STEPS[activeStep];
+    
+    if (stepName === 'Purpose' && !vals.purpose) {
+      toast.addToast('error', 'Please select a listing purpose to continue.');
+      return false;
     }
+    
+    if (stepName === 'Category' && !vals.category) {
+      toast.addToast('error', 'Please select a property category to continue.');
+      return false;
+    }
+    
+    if (stepName === 'Property Type' && !vals.property_sub_type) {
+      toast.addToast('error', 'Please select a property type to continue.');
+      return false;
+    }
+    
+    if (stepName === 'Location' && !vals.place_id) {
+      toast.addToast('error', 'Please search and select a location from Google Maps before continuing.');
+      return false;
+    }
+    
+    // Media validation: At least one cover photo or some images required
+    if (stepName === 'Media' && mediaItems.length === 0) {
+      toast.addToast('error', 'Please upload at least one image to continue.');
+      return false;
+    }
+    
+    if (stepName === 'Pricing' && !vals.price && !vals.rent_amount) {
+      toast.addToast('error', 'Please enter the pricing details to continue.');
+      return false;
+    }
+
+    return true;
+  };
+
+
+  const handleNext = async () => {
+    if (!validateStep()) return;
+    
     if (activeStep < WIZARD_STEPS.length - 1) {
       if (!completedSteps.includes(activeStep)) {
         setCompletedSteps(prev => [...prev, activeStep]);
@@ -657,6 +695,7 @@ export function ListPropertyWizard() {
       setActiveStep((prev) => prev + 1);
     }
   };
+
   const handleBack = () => {
     if (activeStep > 0) setActiveStep((prev) => prev - 1);
   };
@@ -754,7 +793,9 @@ export function ListPropertyWizard() {
     };
   };
 
-  const handleSaveDraft = async () => {
+  const handleSaveDraft = async (isAutoSave = false) => {
+    // If it is an autosave, ensure we have some data so we do not spam empty drafts
+    if (isAutoSave && !draftId && activeStep === 0 && !getValues('purpose')) return;
     setSaving(true);
     try {
       const payload = buildPayload();

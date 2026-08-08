@@ -19,6 +19,7 @@ import type { Property } from '../../lib/types';
 import { ExportMenu } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
+import { PostPropertyLink } from '../../components/post-property-link';
 
 const MY_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -275,7 +276,7 @@ export function PortalMyProperties() {
               {t('portal.resubmit', 'Resubmit')}
             </Button>
           )}
-          <Link to={`/portal/list-property?edit=${p.id}`}>
+          <PostPropertyLink to={`/portal/list-property?edit=${p.id}`}>
             <Button
               size="sm"
               variant="ghost"
@@ -284,7 +285,7 @@ export function PortalMyProperties() {
                 !['draft', 'submitted', 'pending_verification', 'rejected', 'changes_requested'].includes(p.status)
               }
             />
-          </Link>
+          </PostPropertyLink>
           <Link to={generatePropertyUrl(p)}>
             <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
           </Link>
@@ -336,21 +337,19 @@ export function PortalMyProperties() {
             >
               Bulk Upload
             </Link>
-            <Link
-              to="/portal/list-property"
+            <PostPropertyLink to="/portal/list-property"
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
             >
               <span>{t('forms.postProperty', 'Post Property')}</span>
               <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
                 FREE
               </span>
-            </Link>
-            <Link
-              to="/portal/list-property/new"
+            </PostPropertyLink>
+            <PostPropertyLink to="/portal/list-property/new"
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
             >
               New Listing (Beta)
-            </Link>
+            </PostPropertyLink>
           </div>
         }
       />
@@ -420,9 +419,9 @@ export function PortalMyProperties() {
             title={t('portal.noPropertiesTitle', 'No properties here')}
             description={t('portal.noPropertiesDesc', 'List your first property to see it here.')}
             action={
-              <Link to="/portal/list-property">
+              <PostPropertyLink to="/portal/list-property">
                 <Button variant="primary">{t('forms.postProperty', 'List Property')}</Button>
-              </Link>
+              </PostPropertyLink>
             }
           />
         </Card>
@@ -501,7 +500,7 @@ export function PortalMyProperties() {
                   </Button>
                 )}
                 {p.status === 'draft' ? (
-                  <Link to={`/portal/list-property?draft_id=${p.id}`} className="flex-1">
+                  <PostPropertyLink to={`/portal/list-property?draft_id=${p.id}`} className="flex-1">
                     <Button
                       size="sm"
                       variant="primary"
@@ -509,18 +508,18 @@ export function PortalMyProperties() {
                     >
                       Continue Listing
                     </Button>
-                  </Link>
+                  </PostPropertyLink>
                 ) : null}
                 <div className="flex gap-1 ml-auto">
                   {p.status !== 'draft' && (
-                    <Link to={`/portal/list-property?edit=${p.id}`}>
+                    <PostPropertyLink to={`/portal/list-property?edit=${p.id}`}>
                       <Button
                         size="sm"
                         variant="ghost"
                         icon={<Edit3 className="h-4 w-4" />}
                         disabled={!['submitted', 'pending_verification', 'rejected', 'changes_requested'].includes(p.status)}
                       />
-                    </Link>
+                    </PostPropertyLink>
                   )}
                   <Link to={generatePropertyUrl(p)}>
                     <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />

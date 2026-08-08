@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { checkListingLimit } from './listing-limits';
 import type { Property, PropertyStatus } from './types';
 
 export interface PropertyFilters {
@@ -316,6 +317,21 @@ export async function submitPropertyForReview(id: string) {
 }
 
 export async function savePropertyDraft(draftId: string | null, payload: any, submissionId?: string) {
+  // Database-level protection against empty drafts
+  if (!draftId && !payload.purpose && !payload.category && !payload.property_type_id && !payload.address) {
+    throw new Error('Cannot create an empty draft property');
+  }
+
+  // Monthly listing limit enforcement for new drafts
+  if (!draftId) {
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData?.user) {
+      const limitStatus = await checkListingLimit(userData.user.id);
+      if (!limitStatus.canList) {
+        throw new Error('LISTING_LIMIT_REACHED');
+      }
+    }
+  }
   if (draftId) {
     const { data, error } = await supabase
       .from('properties')

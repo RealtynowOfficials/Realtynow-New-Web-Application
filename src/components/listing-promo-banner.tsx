@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Home, Sparkles, ShieldCheck, ArrowRight } from 'lucide-react';
+import { PostPropertyLink } from './post-property-link';
 
 export function ListingPromoBanner() {
   return (
@@ -36,8 +37,7 @@ export function ListingPromoBanner() {
 
         {/* Right side CTA */}
         <div className="shrink-0 flex items-center justify-center">
-          <Link
-            to="/portal/list-property"
+          <PostPropertyLink to="/portal/list-property"
             className="group relative inline-flex items-center gap-2 overflow-hidden rounded-[12px] bg-red-600 px-8 py-4 text-sm font-bold text-white shadow-lg transition-all hover:bg-red-700 hover:scale-105 hover:shadow-red-600/40"
           >
             <span className="relative z-10 flex items-center gap-2">
@@ -45,7 +45,7 @@ export function ListingPromoBanner() {
             </span>
             {/* Shimmer effect */}
             <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-shimmer" />
-          </Link>
+          </PostPropertyLink>
         </div>
       </div>
     </div>

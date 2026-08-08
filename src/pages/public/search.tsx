@@ -52,6 +52,7 @@ import type { Property } from '../../lib/types';
 
 import { AdvancedFilters } from '../../components/advanced-filters';
 import { useSEO } from '../../hooks/use-seo';
+import { PostPropertyLink } from '../../components/post-property-link';
 
 const PAGE_SIZE = 10;
 type ViewMode = 'list' | 'grid' | 'map';
@@ -1405,12 +1406,11 @@ export function SearchPage() {
       
       {/* Mobile Floating CTA */}
       <div className="fixed bottom-6 right-6 lg:hidden z-40">
-        <Link
-          to="/portal/list-property"
+        <PostPropertyLink to="/portal/list-property"
           className="flex h-14 items-center justify-center rounded-full bg-red-600 px-6 font-bold text-white shadow-xl hover:bg-red-700 transition"
         >
           Post Property FREE
-        </Link>
+        </PostPropertyLink>
       </div>
     </div>
   );
@@ -1714,12 +1714,11 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
       
       {/* Mobile Floating CTA */}
       <div className="fixed bottom-6 right-6 lg:hidden z-40">
-        <Link
-          to="/portal/list-property"
+        <PostPropertyLink to="/portal/list-property"
           className="flex h-14 items-center justify-center rounded-full bg-red-600 px-6 font-bold text-white shadow-xl hover:bg-red-700 transition"
         >
           Post Property FREE
-        </Link>
+        </PostPropertyLink>
       </div>
     </div>
   );

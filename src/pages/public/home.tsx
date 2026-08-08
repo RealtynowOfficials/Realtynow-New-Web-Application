@@ -71,6 +71,7 @@ import { useLocationContext } from '../../contexts/location-context';
 
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { useAuth } from '../../lib/auth';
+import { PostPropertyLink } from '../../components/post-property-link';
 
 type HomeCardProperty = Property & {
   city_name?: string | null;
@@ -2746,12 +2747,11 @@ function FinalCTA() {
             >
               {t('common.getStartedFree', 'Get Started Free')} <ArrowRight className="h-5 w-5" />
             </Link>
-            <Link
-              to="/portal/list-property"
+            <PostPropertyLink to="/portal/list-property"
               className="btn rounded-xl glass-card px-6 py-3.5 text-base text-white hover:bg-white/20"
             >
               {t('forms.postProperty', 'Post a Property')}
-            </Link>
+            </PostPropertyLink>
           </div>
         </motion.div>
       </div>

@@ -3,6 +3,7 @@ import { Home, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
 import { Button } from './ui';
 import { useLanguageContext } from '../lib/i18n/language-context';
 import { cn } from '../lib/utils';
+import { PostPropertyLink } from './post-property-link';
 
 export function PostPropertyBanner({ compact = false }: { compact?: boolean }) {
   const { t } = useLanguageContext();
@@ -14,11 +15,11 @@ export function PostPropertyBanner({ compact = false }: { compact?: boolean }) {
           <h2 className="font-display font-bold text-xl mb-3">
             {t('banner.sellFaster', 'Sell or rent faster at the right price!')}
           </h2>
-          <Link to="/portal/list-property" className="w-full">
+          <PostPropertyLink to="/portal/list-property" className="w-full">
             <Button className="w-full bg-[#E60000] hover:bg-red-700 text-white border-0 font-bold">
               {t('banner.postFree', "Post Property, It's FREE")}
             </Button>
-          </Link>
+          </PostPropertyLink>
         </div>
       </div>
     );
@@ -60,12 +61,12 @@ export function PostPropertyBanner({ compact = false }: { compact?: boolean }) {
             </ul>
 
             <div className="mt-4">
-              <Link to="/portal/list-property">
+              <PostPropertyLink to="/portal/list-property">
                 <Button size="sm" className="bg-[#E60000] hover:bg-red-700 text-white border-0 shadow-lg shadow-red-600/30 font-bold transition-all hover:scale-105 h-9 px-4 rounded-xl group text-xs">
                   {t('banner.postFree', "Post Property, It's FREE")}
                   <ArrowRight className="ml-1.5 h-3 w-3 transition-transform group-hover:translate-x-1" />
                 </Button>
-              </Link>
+              </PostPropertyLink>
             </div>
           </div>
 

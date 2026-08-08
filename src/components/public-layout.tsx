@@ -51,6 +51,7 @@ import { Avatar } from './ui';
 import { Logo, LogoLight } from './logo';
 import { LocationSelector } from './location-selector';
 import { cn } from '../lib/utils';
+import { PostPropertyLink } from './post-property-link';
 
 // Official X (formerly Twitter) SVG Icon
 const XTwitterIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string }) => (
@@ -838,7 +839,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               </button>
 
               {/* Post Property — primary CTA */}
-              <Link to="/portal/list-property" className="hidden sm:block">
+              <PostPropertyLink to="/portal/list-property" className="hidden sm:block">
                 <button
                   type="button"
                   className="flex items-center gap-1.5 rounded-full bg-[#D8232A] px-4 py-2 text-sm font-bold text-white shadow-md shadow-[#D8232A]/25 transition-all duration-200 hover:scale-105 hover:bg-[#c01e24] hover:shadow-lg hover:shadow-[#D8232A]/35 active:scale-95"
@@ -848,7 +849,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                     FREE
                   </span>
                 </button>
-              </Link>
+              </PostPropertyLink>
 
               {/* Login / Profile */}
               <div className="relative">
@@ -1133,14 +1134,13 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                       </Link>
                     </>
                   )}
-                  <Link
-                    to="/portal/list-property"
+                  <PostPropertyLink to="/portal/list-property"
                     className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-md"
                     style={{ background: 'linear-gradient(90deg,#D8232A,#f43f5e)' }}
                   >
                     <span>{t('forms.postProperty', 'Post Property')}</span>
                     <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-950">FREE</span>
-                  </Link>
+                  </PostPropertyLink>
                 </div>
               </div>
             </motion.div>
@@ -1174,13 +1174,12 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               <h3 className="font-display text-2xl md:text-3xl font-bold text-white mb-2">Ready to list your property?</h3>
               <p className="text-white/60 max-w-md text-sm md:text-base">Join thousands of property owners who trust India's leading AI-powered real estate platform.</p>
             </div>
-            <Link
-              to="/portal/list-property"
+            <PostPropertyLink to="/portal/list-property"
               className="relative z-10 flex items-center justify-center gap-2 rounded-full bg-red-600 hover:bg-red-500 px-8 py-4 font-bold text-white shadow-[0_0_30px_rgba(220,38,38,0.4)] transition-all hover:scale-105"
             >
               Post Property FREE
               <ArrowRight className="h-4 w-4" />
-            </Link>
+            </PostPropertyLink>
           </div>
 
           <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-12">
