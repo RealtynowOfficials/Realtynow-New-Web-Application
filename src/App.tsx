@@ -16,7 +16,8 @@ import { ScrollToTop } from './components/scroll-to-top';
 import type { UserRole } from './lib/types';
 import { LanguageProvider } from './lib/i18n/language-context';
 import { LocationProvider } from './contexts/location-context';
-
+import { GlobalAppLoader } from './components/global-app-loader';
+import { GlobalNotificationListener } from './components/global-notification-listener';
 
 const HomePage = lazy(() => import('./pages/public/home').then((m) => ({ default: m.HomePage })));
 const SearchPage = lazy(() => import('./pages/public/search').then((m) => ({ default: m.SearchPage })));
@@ -79,7 +80,7 @@ const PortalDashboard = lazy(() => import('./pages/portal/portal').then((m) => (
 const ProfileSetupPage = lazy(() =>
   import('./pages/portal/profile-setup').then((m) => ({ default: m.ProfileSetupPage })),
 );
-const PortalSaved = lazy(() => import('./pages/portal/portal').then((m) => ({ default: m.PortalSaved })));
+const PortalSaved = lazy(() => import('./pages/portal/saved-properties'));
 const PortalCompare = lazy(() => import('./pages/portal/portal').then((m) => ({ default: m.PortalCompare })));
 const PortalSubscription = lazy(() => import('./pages/portal/portal').then((m) => ({ default: m.PortalSubscription })));
 const PortalNotifications = lazy(() =>
@@ -195,6 +196,7 @@ function RootLayout() {
       <CompareFloatingPanel />
       <AIAssistant />
       <PwaInstallPrompt />
+      <GlobalNotificationListener />
     </ErrorBoundary>
   );
 }
@@ -390,6 +392,22 @@ function AppRoutes() {
               ),
             },
             {
+              path: '/portal/saved',
+              element: (
+                <Suspense fallback={<PageLoader />}>
+                  <PortalSaved />
+                </Suspense>
+              ),
+            },
+            {
+              path: '/portal/compare',
+              element: (
+                <Suspense fallback={<PageLoader />}>
+                  <PortalCompare />
+                </Suspense>
+              ),
+            },
+            {
               element: <ProtectedRoute allowRoles={['customer']} />,
               children: [
                 { path: '/portal', element: <PortalDashboard /> },
@@ -398,8 +416,6 @@ function AppRoutes() {
                 { path: '/portal/list-property/new', element: <NewListingWizard /> },
                 { path: '/portal/bulk-upload', element: <BulkUpload /> },
                 { path: '/portal/my-properties', element: <PortalMyProperties /> },
-                { path: '/portal/saved', element: <PortalSaved /> },
-                { path: '/portal/compare', element: <PortalCompare /> },
                 { path: '/portal/enquiries', element: <PortalEnquiries /> },
                 { path: '/portal/subscription', element: <PortalSubscription /> },
                 { path: '/portal/invoices', element: <PortalInvoices /> },
@@ -524,7 +540,9 @@ export default function App() {
           <AdminAuthProvider>
             <LanguageProvider>
               <LocationProvider>
-                <AppRoutes />
+                <GlobalAppLoader>
+                  <AppRoutes />
+                </GlobalAppLoader>
               </LocationProvider>
             </LanguageProvider>
           </AdminAuthProvider>

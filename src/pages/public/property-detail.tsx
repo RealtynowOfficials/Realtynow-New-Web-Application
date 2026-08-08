@@ -4,43 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
-import {
-  Bed,
-  Bath,
-  Maximize,
-  MapPin,
-  Phone,
-  Heart,
-  Share2,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Car,
-  Calendar,
-  Home,
-  Eye,
-  Star,
-  Send,
-  ShieldCheck,
-  Bot,
-  GitCompare,
-  Play,
-  Printer,
-  X,
-  Building,
-  Zap,
-  Ruler,
-  Images,
-  HelpCircle,
-  TrendingUp,
-  Layers,
-  Flag,
-  Download,
-  ChevronDown,
-  Sparkles,
-  Box,
-  Navigation2,
-} from 'lucide-react';
+import { Bed, Bath, Maximize, MapPin, Phone, Heart, Share2, Check, ChevronLeft, ChevronRight, Car, Calendar, Home, Eye, Star, Send, ShieldCheck, Bot, GitCompare, Play, Printer, X, Building, Zap, Ruler, Images, HelpCircle, TrendingUp, Layers, Flag, Download, ChevronDown, Sparkles, Box, Navigation2, Clock, Compass, User } from 'lucide-react';
 import { fetchProperty, trackPropertyView } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
@@ -253,7 +217,7 @@ export function PropertyDetailPage() {
   const [showVirtualTour, setShowVirtualTour] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
   const [apptForm, setApptForm] = useState({ date: '', time: '', notes: '' });
-  const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
+  const [reviewForm, setReviewForm] = useState({ rating: 5, title: '', comment: '' });
   const [reportForm, setReportForm] = useState({ reason: '', details: '' });
   const [saved, setSaved] = useState(false);
   const [compared, setCompared] = useState(false);
@@ -345,8 +309,16 @@ export function PropertyDetailPage() {
   const { data: reviews } = useQuery({
     queryKey: ['reviews', id],
     queryFn: async () => {
-      const { data } = await supabase.from('reviews').select('*, profiles!inner(first_name, last_name, avatar_url)').eq('property_id', id!).order('created_at', { ascending: false });
-      return data ?? [];
+      const { data: reviewsData } = await supabase.from('reviews').select('*').eq('property_id', id!).order('created_at', { ascending: false });
+      if (!reviewsData || reviewsData.length === 0) return [];
+
+      const userIds = [...new Set(reviewsData.map((r: any) => r.user_id))];
+      const { data: profilesData } = await supabase.from('profiles').select('id, first_name, last_name, avatar_url').in('id', userIds);
+
+      return reviewsData.map((r: any) => ({
+        ...r,
+        profiles: profilesData?.find((p: any) => p.id === r.user_id) || null
+      }));
     },
     enabled: !!id,
   });
@@ -375,7 +347,7 @@ export function PropertyDetailPage() {
 
   const toggleSave = async () => {
     if (!user) {
-      navigate('/login');
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
       return;
     }
     if (saved) {
@@ -413,7 +385,7 @@ export function PropertyDetailPage() {
       await navigator.clipboard.writeText(window.location.href);
       addToast('success', 'Link copied to clipboard');
       if (id) {
-        supabase.rpc('log_property_share', { p_property_id: id, p_platform: 'copy_link' }).catch(console.error);
+        supabase.rpc('log_property_share', { p_property_id: id, p_platform: 'copy_link' }).then(({ error }) => { if (error) console.error(error); });
       }
     } catch {
       addToast('error', 'Could not copy link');
@@ -423,7 +395,7 @@ export function PropertyDetailPage() {
 
   const handleShareClick = (platform: string, href: string) => {
     if (id) {
-      supabase.rpc('log_property_share', { p_property_id: id, p_platform: platform.toLowerCase() }).catch(console.error);
+      supabase.rpc('log_property_share', { p_property_id: id, p_platform: platform.toLowerCase() }).then(({ error }) => { if (error) console.error(error); });
     }
     window.open(href, '_blank', 'noopener,noreferrer');
     setShowShare(false);
@@ -472,12 +444,12 @@ export function PropertyDetailPage() {
   const reviewMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Please sign in to leave a review');
-      const { error } = await supabase.from('reviews').insert({ property_id: id, user_id: user.id, rating: reviewForm.rating, comment: reviewForm.comment });
+      const { error } = await supabase.from('reviews').insert({ property_id: id, user_id: user.id, rating: reviewForm.rating, title: reviewForm.title || null, comment: reviewForm.comment });
       if (error) throw error;
     },
     onSuccess: () => {
       setReviewOpen(false);
-      setReviewForm({ rating: 5, comment: '' });
+      setReviewForm({ rating: 5, title: '', comment: '' });
       queryClient.invalidateQueries({ queryKey: ['reviews', id] });
       addToast('success', 'Review submitted successfully!');
     },
@@ -503,7 +475,21 @@ export function PropertyDetailPage() {
     onError: (err: any) => addToast('error', err.message || 'Failed to submit report'),
   });
 
-  const images = property?.images?.length ? property.images : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
+  let parsedImages = property?.images;
+  if (typeof parsedImages === 'string') {
+    try {
+      parsedImages = JSON.parse(parsedImages);
+    } catch {
+      parsedImages = [parsedImages as unknown as string];
+    }
+  } else if (parsedImages && !Array.isArray(parsedImages)) {
+    // Just in case it's some other weird object
+    parsedImages = [parsedImages as any];
+  }
+  const images = Array.isArray(parsedImages) && parsedImages.length > 0 
+    ? parsedImages 
+    : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
+  const coverImage = property?.cover_image_url || images[0];
   const agentName = agent ? `${agent.first_name ?? ''} ${agent.last_name ?? ''}`.trim() : 'Agent';
 
   // AI-generated JSON-LD (generatePropertySeo edge function, written on submit/resubmit)
@@ -538,7 +524,7 @@ export function PropertyDetailPage() {
       property?.description ||
       `${property?.property_type_name ?? 'Property'} for ${property?.purpose === 'Rent' ? 'rent' : 'sale'} in ${property?.locality_name ?? property?.city_name ?? 'Hyderabad'} — RealtyNow`,
     type: 'product',
-    image: property?.og_image || images[0],
+    image: property?.og_image || coverImage,
     twitterTitle: property?.twitter_title || undefined,
     twitterDescription: property?.twitter_description || undefined,
     twitterImage: property?.twitter_image || undefined,
@@ -610,580 +596,525 @@ export function PropertyDetailPage() {
   ];
 
   return (
-    <div className="container-page py-6">
-      {/* Dynamic breadcrumbs */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-navy-500">
-        {breadcrumbs.map((b, i) => (
-          <span key={b.to} className="flex items-center gap-2">
-            {i > 0 && <ChevronLeft className="h-3 w-3 rotate-180" />}
-            <Link to={b.to} className="hover:text-navy-800">
-              {b.label}
-            </Link>
-          </span>
-        ))}
-        <ChevronLeft className="h-3 w-3 rotate-180" />
-        <span className="text-navy-700 truncate max-w-[200px]">{property.title}</span>
+    <div className="min-h-screen bg-white pb-24 lg:pb-0">
+      {/* 1. CINEMATIC HERO */}
+      <section className="relative h-[60vh] min-h-[500px] w-full bg-navy-950 overflow-hidden">
+        <img src={coverImage} alt={property.title} className="absolute inset-0 h-full w-full object-cover opacity-50 transition-transform duration-1000 scale-105" loading="eager" />
+        <div className="absolute inset-0 bg-gradient-to-t from-navy-950 via-navy-950/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-navy-950/80 to-transparent" />
+
+        {/* Top Bar: Breadcrumbs & Actions */}
+        <div className="absolute top-0 left-0 right-0 p-6 z-20 flex justify-between items-start">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+            {breadcrumbs.map((b, i) => (
+              <span key={b.to} className="flex items-center gap-2">
+                {i > 0 && <ChevronLeft className="h-3 w-3 rotate-180" />}
+                <Link to={b.to} className="hover:text-white transition-colors">
+                  {b.label}
+                </Link>
+              </span>
+            ))}
+            <ChevronLeft className="h-3 w-3 rotate-180" />
+            <span className="text-white font-medium truncate max-w-[150px] sm:max-w-[300px]">{property.title}</span>
+          </div>
+          
+          <div className="flex gap-3">
+            <button onClick={(e) => { e.stopPropagation(); toggleSave(); }} className={cn('grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 transition-all hover:bg-white/20 hover:scale-110', saved ? 'text-red-500' : 'text-white')} title="Save property">
+              <Heart className={cn('h-5 w-5', saved && 'fill-red-500')} />
+            </button>
+            <div className="relative">
+              <button onClick={(e) => { e.stopPropagation(); setShowShare(true); }} className="grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 transition-all hover:bg-white/20 hover:scale-110 text-white" title="Share">
+                <Share2 className="h-5 w-5" />
+              </button>
+              <SharePropertyModal property={property} isOpen={showShare} onClose={() => setShowShare(false)} />
+            </div>
+          </div>
+        </div>
+
+        {/* Hero Content */}
+        <div className="absolute bottom-0 left-0 right-0 p-6 md:p-12 z-20">
+          <div className="container-page px-0 flex flex-col md:flex-row md:items-end justify-between gap-8">
+            <div className="max-w-3xl text-white space-y-4">
+              <Badge variant={property.purpose === 'Rent' ? 'info' : 'gold'} className="shadow-lg backdrop-blur-md bg-opacity-90 border-0 px-3 py-1.5 text-sm uppercase tracking-wider font-bold">
+                {t('common.for', 'For')} {property.purpose === 'Rent' ? 'Rent' : 'Sale'}
+              </Badge>
+              <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-tight drop-shadow-lg">{property.title}</h1>
+              <p className="text-lg text-slate-200 flex items-center gap-2 drop-shadow-md">
+                <MapPin className="h-5 w-5 text-red-500" /> {property.address ?? `${property.locality_name ?? ''}, ${property.city_name ?? ''}`}
+              </p>
+              
+              <div className="flex items-end gap-4 pt-2 drop-shadow-lg">
+                <span className="font-display text-4xl lg:text-5xl font-extrabold">{formatCompactPrice(property.price)}</span>
+                {property.purpose === 'Rent' && <span className="text-slate-300 text-lg mb-1">/ month</span>}
+                <span className="rounded-lg bg-white/10 px-2.5 py-1 text-xs border border-white/20 backdrop-blur-md font-medium mb-2">Negotiable</span>
+              </div>
+
+              <div className="flex flex-wrap gap-x-8 gap-y-4 pt-4 text-slate-100">
+                {property.bedrooms && <div className="flex items-center gap-2.5"><Bed className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.bedrooms}</span> Bedrooms</span></div>}
+                {property.bathrooms && <div className="flex items-center gap-2.5"><Bath className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.bathrooms}</span> Bathrooms</span></div>}
+                {property.built_up_area && <div className="flex items-center gap-2.5"><Maximize className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.built_up_area}</span> Sq Ft</span></div>}
+                {property.parking && <div className="flex items-center gap-2.5"><Car className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.parking}</span> Parking</span></div>}
+              </div>
+            </div>
+
+            {/* CTA & Carousel Preview */}
+            <div className="shrink-0 flex flex-col gap-4">
+              <div className="flex gap-3">
+                <Button size="lg" className="bg-red-600 hover:bg-red-700 text-white border-0 shadow-xl shadow-red-900/30 text-base px-6" onClick={() => setContactOpen(true)}>
+                  Contact Agent
+                </Button>
+                <Button size="lg" className="bg-white hover:bg-slate-100 text-navy-900 border-0 shadow-xl text-base px-6" onClick={() => (user ? setApptOpen(true) : navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`))}>
+                  <Calendar className="h-5 w-5 mr-2"/> Schedule Visit
+                </Button>
+              </div>
+              
+              <div className="mt-2 flex gap-3 items-end justify-end">
+                {images.slice(0, 3).map((img, i) => (
+                  <button key={i} onClick={() => {setActiveImg(i); setLightbox(true);}} className="h-20 w-32 overflow-hidden rounded-xl border-2 border-white/20 hover:border-white transition-all shadow-xl group hidden md:block">
+                    <img src={img} className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                  </button>
+                ))}
+                <button onClick={() => {setActiveImg(0); setLightbox(true);}} className="h-20 px-5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-xl border-2 border-white/20 hover:border-white text-white flex flex-col items-center justify-center gap-1.5 transition-all shadow-xl group">
+                  <span className="text-sm font-bold">1 / {images.length}</span>
+                  <span className="text-xs flex items-center gap-1 font-medium"><Images className="h-3.5 w-3.5"/> View All Photos</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. PROPERTY IDENTITY BAR */}
+      <div className="border-b border-navy-100 bg-white sticky top-[64px] z-30 shadow-sm">
+        <div className="container-page py-4 flex flex-wrap items-center gap-x-8 gap-y-4 text-sm">
+          <div className="flex items-center gap-3 border-r border-navy-100 pr-8">
+            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-navy-500 shrink-0"><Box className="h-5 w-5"/></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-navy-400 font-medium">Property ID</span>
+              <span className="font-bold text-navy-900">RN-{property.id.slice(0,7).toUpperCase()}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 border-r border-navy-100 pr-8">
+            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-navy-500 shrink-0"><Calendar className="h-5 w-5"/></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-navy-400 font-medium">Posted On</span>
+              <span className="font-bold text-navy-900">{new Date(property.created_at).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'})}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 border-r border-navy-100 pr-8">
+            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-navy-500 shrink-0"><Building className="h-5 w-5"/></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-navy-400 font-medium">Property Type</span>
+              <span className="font-bold text-navy-900">{property.property_type_name ?? 'Property'}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 border-r border-navy-100 pr-8 hidden sm:flex">
+            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-navy-500 shrink-0"><Flag className="h-5 w-5"/></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-navy-400 font-medium">Purpose</span>
+              <span className="font-bold text-navy-900">For {property.purpose}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 hidden md:flex">
+            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-navy-500 shrink-0"><Clock className="h-5 w-5"/></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-navy-400 font-medium">Availability</span>
+              <span className="font-bold text-navy-900">{property.possession_status ?? 'Ready to Move'}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Main 2-Column Layout */}
-      <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
-        {/* LEFT COLUMN */}
-        <div className="space-y-6 min-w-0">
-          {/* Hero carousel */}
-          {/* Premium Hero Gallery (Grid on Desktop, Carousel on Mobile) */}
-          <div className="relative group rounded-3xl overflow-hidden bg-navy-100 shadow-sm border border-navy-50">
-            {/* Desktop Grid (Hidden on Mobile) */}
-            <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-2 h-[450px] lg:h-[500px]">
-              {/* Main Large Image */}
-              <button
-                className="col-span-2 row-span-2 relative h-full w-full cursor-pointer overflow-hidden group/main"
-                onClick={() => { setActiveImg(0); setLightbox(true); }}
-              >
-                <img
-                  src={images[0]}
-                  alt={`${property.title} main`}
-                  className="h-full w-full object-cover transition-transform duration-700 group-hover/main:scale-105"
-                  loading="eager"
-                />
-                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover/main:opacity-100 transition-opacity" />
-              </button>
-
-              {/* 4 Smaller Images */}
-              {Array.from({ length: 4 }).map((_, i) => {
-                const imgIndex = i + 1;
-                // If there aren't enough images, reuse the last one or early exit
-                const imgSrc = images[imgIndex] || images[images.length - 1];
-                if (!imgSrc && imgIndex > 0) return null; // Edge case where property has only 1 image
-
-                return (
-                  <button
-                    key={imgIndex}
-                    className="relative h-full w-full cursor-pointer overflow-hidden group/sub"
-                    onClick={() => { setActiveImg(imgIndex % images.length); setLightbox(true); }}
-                  >
-                    <img
-                      src={imgSrc}
-                      alt={`${property.title} view ${imgIndex + 1}`}
-                      className="h-full w-full object-cover transition-transform duration-700 group-hover/sub:scale-110"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-black/10 opacity-0 group-hover/sub:opacity-100 transition-opacity" />
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Mobile Carousel (Hidden on Desktop) */}
-            <div className="md:hidden overflow-hidden" ref={emblaRef}>
-              <div className="flex aspect-square sm:aspect-video">
-                {images.map((img, i) => (
-                  <button key={i} className="relative min-w-0 flex-[0_0_100%] cursor-pointer" onClick={() => { setActiveImg(i); setLightbox(true); }}>
-                    <img src={img} alt={`${property.title} ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} className="h-full w-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Floating Top Bar (Badges & Actions) */}
-            <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none">
-              <div className="flex flex-col gap-2 pointer-events-auto">
-                <Badge variant={property.purpose === 'Rent' ? 'info' : 'gold'} className="shadow-lg backdrop-blur-md bg-opacity-90 w-fit">
-                  {t('common.for', 'For')} {property.purpose === 'Rent' ? t('common.rent', 'Rent') : t('common.sale', 'Sale')}
-                </Badge>
-              </div>
-
-              <div className="flex gap-2 pointer-events-auto">
-                <button onClick={(e) => { e.stopPropagation(); toggleSave(); }} className={cn('grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur transition-transform hover:scale-110', saved ? 'text-error-500' : 'text-navy-600 hover:text-navy-900')} title="Save property">
-                  <Heart className={cn('h-5 w-5', saved && 'fill-error-500')} />
-                </button>
-                <div className="relative">
-                  <button onClick={(e) => { e.stopPropagation(); setShowShare(true); }} className="grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur transition-transform hover:scale-110 text-navy-600 hover:text-navy-900" title="Share">
-                    <Share2 className="h-5 w-5" />
-                  </button>
-                  <SharePropertyModal property={property} isOpen={showShare} onClose={() => setShowShare(false)} />
-                </div>
-              </div>
-            </div>
-
-            {/* Floating Bottom Bar (Show all photos & Media toggles) */}
-            <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 flex items-center gap-2">
-              {!!tours?.length && (
-                <button className="flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2.5 text-sm font-bold text-navy-900 shadow-lg backdrop-blur hover:bg-white hover:scale-105 transition-all" onClick={(e) => { e.stopPropagation(); setShowVirtualTour(true); }}>
-                  <Box className="h-4 w-4 text-red-600" /> <span className="hidden sm:inline">360° Tour</span>
-                </button>
-              )}
-              {!!property.videos?.length && (
-                <button className="flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2.5 text-sm font-bold text-navy-900 shadow-lg backdrop-blur hover:bg-white hover:scale-105 transition-all" onClick={(e) => { e.stopPropagation(); setActiveTab('videos'); }}>
-                  <Play className="h-4 w-4 text-red-600" /> <span className="hidden sm:inline">Video</span>
-                </button>
-              )}
-              <button
-                className="flex items-center gap-2 rounded-xl bg-navy-900/90 px-5 py-2.5 text-sm font-bold text-white shadow-lg backdrop-blur hover:bg-navy-900 hover:scale-105 transition-all border border-white/10"
-                onClick={(e) => { e.stopPropagation(); setLightbox(true); }}
-              >
-                <Images className="h-4 w-4" /> Show all photos
-              </button>
-            </div>
+      <div className="container-page py-12">
+        <div className="grid lg:grid-cols-[1fr_360px] gap-12">
+          
+          {/* LEFT COLUMN: MAIN CONTENT */}
+          <div className="space-y-16 min-w-0">
             
-            {/* Mobile Dots */}
-            {images.length > 1 && (
-              <div className="md:hidden absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 bg-black/20 px-2 py-1 rounded-full backdrop-blur-md">
-                {images.slice(0, 8).map((_, i) => (
-                  <span key={i} className="h-1.5 w-1.5 rounded-full bg-white/90 shadow-sm" />
+            {/* 5. ABOUT THIS PROPERTY */}
+            <section className="scroll-mt-32" id="about">
+              <h2 className="font-display text-2xl font-bold text-navy-900 mb-6">About This Property</h2>
+              <div className="prose prose-navy max-w-none text-navy-700 leading-relaxed text-[15px]">
+                {property.description}
+              </div>
+              {property.ai_description && (
+                <div className="mt-8 rounded-2xl bg-gradient-to-br from-gold-50 to-white p-6 border border-gold-200 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10"><Bot className="h-24 w-24 text-gold-600"/></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Bot className="h-5 w-5 text-gold-600" />
+                      <h3 className="text-base font-bold text-gold-900">AI Generated Summary</h3>
+                    </div>
+                    <p className="text-[15px] leading-relaxed text-gold-800">{property.ai_description}</p>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* 6. PROPERTY SPECIFICATIONS */}
+            <section className="scroll-mt-32" id="specifications">
+              <h2 className="font-display text-2xl font-bold text-navy-900 mb-6">Property Specifications</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                {[
+                  { label: 'Bedrooms', value: property.bedrooms, icon: Bed },
+                  { label: 'Bathrooms', value: property.bathrooms, icon: Bath },
+                  { label: 'Built-up Area', value: property.built_up_area ? `${property.built_up_area} Sq Ft` : null, icon: Maximize },
+                  { label: 'Carpet Area', value: property.carpet_area ? `${property.carpet_area} Sq Ft` : null, icon: Maximize },
+                  { label: 'Floor', value: property.floor_number != null ? `${property.floor_number} of ${property.total_floors ?? '—'}` : null, icon: Layers },
+                  { label: 'Furnishing', value: property.furnishing, icon: Box },
+                  { label: 'Facing', value: property.facing, icon: Compass },
+                  { label: 'Parking', value: property.parking, icon: Car },
+                  { label: 'Construction Year', value: property.age_of_property ? (new Date().getFullYear() - property.age_of_property).toString() : null, icon: Building },
+                  { label: 'Possession', value: property.possession_status, icon: Clock },
+                ].filter(s => s.value != null).map((s, idx) => (
+                  <div key={idx} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-navy-500 mb-1">
+                      <s.icon className="h-4 w-4" />
+                      <span className="text-xs uppercase tracking-wider font-semibold">{s.label}</span>
+                    </div>
+                    <span className="font-bold text-navy-900 text-[15px]">{s.value}</span>
+                  </div>
                 ))}
               </div>
-            )}
-          </div>
+            </section>
 
-          {/* Header Section (Title, Location, Price, Stats) */}
-          <div className="space-y-4">
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-navy-900">{property.title}</h1>
-
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-navy-600">
-              <span className="flex items-center gap-1">
-                <MapPin className="h-4 w-4 text-navy-400" />
-                {property.address ?? `${property.locality_name ?? ''}, ${property.city_name ?? ''}`}
-              </span>
-              {property.latitude && property.longitude && (
-                <button onClick={() => setActiveTab('location')} className="font-semibold text-red-600 hover:underline flex items-center gap-1">
-                  <MapPin className="h-4 w-4" /> View on Map
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <span className="font-display text-3xl font-extrabold text-navy-900">{formatCompactPrice(property.price)}</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">Negotiable</span>
-              {property.purpose === 'Rent' && <span className="text-sm font-medium text-navy-500">/mo</span>}
-            </div>
-
-            {property.verification_status && property.verification_status !== 'Pending AI' && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-2.5 text-xs font-medium text-emerald-800">
-                <span className="inline-flex items-center gap-1.5 font-bold">
-                  <ShieldCheck className="h-4 w-4" /> {property.verification_status}
-                </span>
-                {property.ai_score != null && <span>AI Score: {property.ai_score}/100</span>}
-                {property.ai_verified_at && <span>Verified on {new Date(property.ai_verified_at).toLocaleDateString('en-IN')}</span>}
-                <span>Verified By AI</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 rounded-2xl border border-navy-100 bg-white p-4 shadow-sm">
-              {[
-                { icon: Bed, label: 'Bedrooms', value: property.bedrooms },
-                { icon: Bath, label: 'Bathrooms', value: property.bathrooms },
-                { icon: Maximize, label: 'Built-up Area', value: property.built_up_area ? `${property.built_up_area} sq.ft` : null },
-                { icon: Car, label: 'Parking', value: property.parking },
-              ].map((s) => (
-                <div key={s.label} className="flex flex-col gap-1.5 pl-4 first:border-l-0 sm:border-l border-navy-50 first:pl-0">
-                  <div className="flex items-center gap-2 text-navy-500">
-                    <s.icon className="h-4 w-4" />
-                    <span className="text-xs">{s.label}</span>
-                  </div>
-                  <span className="font-semibold text-navy-900">{s.value ?? '—'}</span>
+            {/* 7. AMENITIES */}
+            {property.amenities && property.amenities.length > 0 && (
+              <section className="scroll-mt-32" id="amenities">
+                <h2 className="font-display text-2xl font-bold text-navy-900 mb-6">Amenities</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {property.amenities.map((a) => (
+                    <div key={a} className="flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border border-navy-100 bg-white text-center hover:shadow-md transition-shadow group">
+                      <div className="h-12 w-12 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-red-50 transition-colors">
+                        <Check className="h-5 w-5 text-navy-400 group-hover:text-red-500" />
+                      </div>
+                      <span className="text-sm font-semibold text-navy-800">{a}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </section>
+            )}
 
-          {/* Real tab switcher */}
-          <div className="sticky top-[64px] z-30 flex items-center gap-5 overflow-x-auto border-b border-navy-100 bg-slate-50/95 backdrop-blur pb-px pt-2 no-scrollbar">
-            {visibleTabs.map((tabDef) => (
-              <button
-                key={tabDef.key}
-                onClick={() => setActiveTab(tabDef.key)}
-                className={cn(
-                  'whitespace-nowrap pb-3 text-sm font-semibold transition-colors border-b-2',
-                  currentTab === tabDef.key ? 'border-red-600 text-red-600' : 'border-transparent text-navy-500 hover:text-navy-900',
-                )}
-              >
-                {tabDef.label}
-              </button>
-            ))}
-          </div>
-
-          <AnimatePresence mode="wait">
-            <motion.div key={currentTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-              {currentTab === 'overview' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.overview', 'Property Overview')}</h2>
-                  {property.description && <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-navy-700">{property.description}</p>}
-                  {property.ai_description && (
-                    <div className="mt-6 rounded-xl bg-gold-50/50 p-4 ring-1 ring-gold-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Bot className="h-4 w-4 text-gold-600" />
-                        <h3 className="text-sm font-semibold text-gold-900">AI Summary</h3>
+            {/* 13. PHOTO GALLERY */}
+            <section className="scroll-mt-32" id="gallery">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="font-display text-2xl font-bold text-navy-900">Photo Gallery</h2>
+                <Button variant="secondary" onClick={() => {setActiveImg(0); setLightbox(true);}} className="font-semibold text-navy-700 bg-white">View All</Button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {images.slice(0, 5).map((img, i) => (
+                  <button 
+                    key={i} 
+                    onClick={() => {setActiveImg(i); setLightbox(true);}} 
+                    className={cn(
+                      "relative overflow-hidden rounded-2xl group cursor-pointer border border-navy-100",
+                      i === 0 ? "col-span-2 row-span-2 aspect-square md:aspect-auto" : "aspect-square"
+                    )}
+                  >
+                    <img src={img} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                    <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {i === 4 && images.length > 5 && (
+                      <div className="absolute inset-0 bg-navy-900/70 backdrop-blur-sm flex flex-col items-center justify-center text-white transition-colors group-hover:bg-navy-900/80">
+                        <span className="font-display text-3xl font-bold">+{images.length - 5}</span>
+                        <span className="text-sm font-semibold mt-1">More Photos</span>
                       </div>
-                      <p className="text-sm leading-relaxed text-gold-800">{property.ai_description}</p>
-                    </div>
-                  )}
-                  <div className="mt-8 grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                    {[
-                      { label: t('search.propertyTypeLabel', 'Property type'), value: property.property_type_name },
-                      { label: t('search.purposeLabel', 'Purpose'), value: property.purpose },
-                      { label: 'Possession', value: property.possession_status },
-                      { label: t('property.ownership', 'Ownership'), value: property.ownership_type },
-                    ].filter((r) => r.value).map((r) => (
-                      <div key={r.label} className="flex justify-between border-b border-navy-50 pb-2 text-sm">
-                        <span className="text-navy-500">{r.label}</span>
-                        <span className="font-medium text-navy-800 text-right">{r.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
 
-              {currentTab === 'specifications' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="flex items-center gap-2 font-display text-xl font-bold text-navy-900">
-                    <Ruler className="h-5 w-5 text-red-500" /> {t('property.specifications', 'Specifications')}
-                  </h2>
-                  <div className="mt-6 grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                    {[
-                      { label: t('search.furnishingLabel', 'Furnishing'), value: property.furnishing },
-                      { label: t('property.floor', 'Floor'), value: property.floor_number != null ? `${property.floor_number} of ${property.total_floors ?? '—'}` : null },
-                      { label: t('search.facingLabel', 'Facing'), value: property.facing },
-                      { label: t('property.carpetArea', 'Carpet area'), value: property.carpet_area ? `${property.carpet_area} ${t('property.sqft', 'sqft')}` : null },
-                      { label: t('property.plotArea', 'Plot area'), value: property.plot_area ? `${property.plot_area} ${t('property.sqft', 'sqft')}` : null },
-                      { label: t('property.ageOfProperty', 'Age of property'), value: property.age_of_property ? `${property.age_of_property} yrs` : null },
-                      { label: t('property.balconies', 'Balconies'), value: property.balconies },
-                      { label: 'Legal approved', value: property.legal_approved ? 'Yes' : null },
-                    ].filter((r) => r.value).map((r) => (
-                      <div key={r.label} className="flex justify-between border-b border-navy-50 pb-2 text-sm">
-                        <span className="text-navy-500">{r.label}</span>
-                        <span className="font-medium text-navy-800 text-right">{r.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'amenities' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.amenities', 'Amenities')}</h2>
-                  <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                    {property.amenities!.map((a) => (
-                      <div key={a} className="flex items-center gap-3 text-sm text-navy-700 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                        <div className="bg-white p-1.5 rounded shadow-sm">
-                          <Zap className="h-4 w-4 text-red-500" />
-                        </div>
-                        {a}
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'floorplans' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.floorPlans', 'Floor Plans')}</h2>
-                  <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                    {property.floor_plans!.map((fp, i) => (
-                      <a href={fp} target="_blank" rel="noopener noreferrer" key={i} className="group relative overflow-hidden rounded-xl border border-navy-100 block aspect-video">
-                        <img src={fp} alt={`Floor plan ${i + 1}`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                        <div className="absolute inset-0 bg-navy-900/40 opacity-0 transition-opacity group-hover:opacity-100 flex items-center justify-center">
-                          <span className="bg-white px-3 py-1.5 rounded-full text-xs font-bold text-navy-900">View Full Size</span>
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'gallery' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.gallery', 'Photo Gallery')}</h2>
-                  <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {images.map((img, i) => (
-                      <button key={i} onClick={() => { setActiveImg(i); setLightbox(true); }} className="aspect-square overflow-hidden rounded-xl">
-                        <img src={img} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-300 hover:scale-105" />
-                      </button>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'videos' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.videoTitle', 'Property Videos')}</h2>
-                  <div className="mt-6 space-y-4">
-                    {property.videos!.map((v, i) => (
-                      <div key={i} className="aspect-video overflow-hidden rounded-xl bg-navy-100">
-                        <video src={v} controls className="h-full w-full" />
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'virtualtour' && !!tours?.length && (
-                <Card className="overflow-hidden border-0 p-0 shadow-sm ring-1 ring-navy-100">
-                  <div className="h-[420px]">
-                    <VirtualTourViewer tours={tours} propertyId={id} />
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'location' && property.latitude && property.longitude && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-display text-xl font-bold text-navy-900">{t('property.locationMap', 'Location & Map')}</h2>
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${property.latitude},${property.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-semibold text-red-600 hover:underline flex items-center gap-1"
-                    >
-                      Get Directions <ChevronRight className="h-4 w-4" />
-                    </a>
-                  </div>
-                  <div className="aspect-video sm:aspect-[21/9] overflow-hidden rounded-xl border border-slate-200 shadow-inner">
-                    <PropertyLocationMap lat={property.latitude} lng={property.longitude} title={property.title} />
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'nearby' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.neighborhood', 'Nearby')}</h2>
-                  <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                    {nearbyEntries.map(([key, value]) => {
-                      const Icon = NEARBY_ICONS[key] ?? MapPin;
-                      const labels: Record<string, string> = { metro: 'Nearest Metro', hospital: 'Hospital', school: 'School / College', mall: 'Shopping Mall', airport: 'Airport' };
-                      return (
-                        <div key={key} className="flex flex-col gap-2 rounded-xl border border-navy-100 bg-slate-50 p-4">
-                          <div className="flex items-center gap-2 text-navy-500">
-                            <Icon className="h-4 w-4" />
-                            <span className="text-xs font-semibold uppercase tracking-wide">{labels[key] ?? key}</span>
-                          </div>
-                          <p className="text-sm font-medium text-navy-900">{value}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'pricehistory' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="flex items-center gap-2 font-display text-xl font-bold text-navy-900">
-                    <TrendingUp className="h-5 w-5 text-red-500" /> {t('property.priceHistory', 'Price History')}
-                  </h2>
-                  <div className="mt-6 space-y-3">
-                    {priceHistory!.map((h: Record<string, unknown>) => (
-                      <div key={h.id as string} className="flex items-center justify-between border-b border-navy-50 pb-3 text-sm last:border-0">
-                        <div>
-                          <p className="font-medium text-navy-900">
-                            {(h.from_status as string) ?? '—'} → {h.to_status as string}
-                          </p>
-                          {(h.reason as string) && <p className="mt-0.5 text-xs text-navy-500">{h.reason as string}</p>}
-                        </div>
-                        <span className="text-xs text-navy-400 shrink-0">{new Date(h.created_at as string).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'reviews' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h2 className="font-display text-xl font-bold text-navy-900">{t('property.reviews', 'Reviews')}</h2>
-                      {reviews && reviews.length > 0 && (
-                        <div className="flex items-center gap-2 text-sm mt-1">
-                          <RatingStars rating={reviews.reduce((a: number, r: { rating: number }) => a + r.rating, 0) / reviews.length} />
-                          <span className="text-navy-600">{reviews.length} {t('property.reviewsCount', 'reviews')}</span>
-                        </div>
-                      )}
-                    </div>
-                    <Button size="sm" variant="secondary" onClick={() => (user ? setReviewOpen(true) : navigate('/login'))} icon={<Star className="h-4 w-4" />}>
-                      {t('property.writeReview', 'Write a review')}
-                    </Button>
-                  </div>
-                  {reviews && reviews.length > 0 ? (
-                    <div className="space-y-6">
-                      {reviews.map((r: Record<string, unknown>) => {
-                        const p = r.profiles as Record<string, unknown> | Record<string, unknown>[] | null;
-                        const rp = Array.isArray(p) ? p[0] : p;
+            {/* 8. LOCATION SECTION */}
+            {property.latitude && property.longitude && (
+              <section className="scroll-mt-32" id="location">
+                <h2 className="font-display text-2xl font-bold text-navy-900 mb-2">Location</h2>
+                <p className="text-navy-600 mb-6">{property.address ?? `${property.locality_name ?? ''}, ${property.city_name ?? ''}`} {property.pincode}</p>
+                <div className="aspect-[21/9] rounded-3xl overflow-hidden shadow-sm border border-navy-100 mb-8">
+                  <PropertyLocationMap lat={property.latitude} lng={property.longitude} title={property.title} />
+                </div>
+                {nearbyEntries.length > 0 && (
+                  <div>
+                    <h3 className="font-bold text-navy-900 mb-5 text-lg">Nearby Places</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                      {nearbyEntries.map(([key, value]) => {
+                        const Icon = NEARBY_ICONS[key] ?? MapPin;
+                        const labels: Record<string, string> = { metro: 'Metro', hospital: 'Hospital', school: 'School', mall: 'Shopping', airport: 'Airport' };
                         return (
-                          <div key={r.id as string} className="border-b border-navy-50 pb-6 last:border-0 last:pb-0">
-                            <div className="flex justify-between items-start">
-                              <div className="flex gap-3">
-                                <Avatar name={`${rp?.first_name ?? ''} ${rp?.last_name ?? ''}`.trim() || 'User'} src={(rp?.avatar_url as string) ?? null} size={40} />
-                                <div>
-                                  <p className="text-sm font-bold text-navy-900">{String(rp?.first_name ?? 'Anonymous')}</p>
-                                  <div className="mt-1">
-                                    <RatingStars rating={r.rating as number} size={14} />
-                                  </div>
-                                </div>
-                              </div>
-                              <span className="text-xs text-navy-400">{new Date(r.created_at as string).toLocaleDateString()}</span>
+                          <div key={key} className="flex flex-col items-center justify-center text-center gap-3 rounded-2xl border border-navy-100 bg-white p-5 hover:border-navy-200 transition-colors">
+                            <div className="h-10 w-10 rounded-full bg-slate-50 flex items-center justify-center text-blue-500">
+                              <Icon className="h-5 w-5" />
                             </div>
-                            {r.comment ? <p className="mt-3 text-sm text-navy-700 bg-slate-50 p-4 rounded-xl">{r.comment as string}</p> : null}
+                            <div>
+                              <p className="text-sm font-bold text-navy-900">{value}</p>
+                              <span className="text-xs font-semibold uppercase tracking-wide text-navy-400">{labels[key] ?? key}</span>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* 9. PRICE DETAILS */}
+            <section className="scroll-mt-32" id="price">
+              <h2 className="font-display text-2xl font-bold text-navy-900 mb-6">Price Details</h2>
+              <div className="rounded-3xl border border-navy-100 bg-white shadow-sm overflow-hidden">
+                <div className="p-8 space-y-6">
+                  {property.purpose === 'Rent' ? (
+                    <>
+                      <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                        <span className="text-navy-600 font-medium">Rent</span>
+                        <span className="text-xl font-bold text-navy-900">{formatCompactPrice(property.price)} <span className="text-sm text-navy-500 font-normal">/ month</span></span>
+                      </div>
+                      {property.security_deposit && (
+                        <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                          <span className="text-navy-600 font-medium">Security Deposit</span>
+                          <span className="text-lg font-bold text-navy-900">{formatCompactPrice(property.security_deposit)} <span className="text-xs text-navy-500 font-normal">(Refundable)</span></span>
+                        </div>
+                      )}
+                      {(property as any).maintenance_charges && (
+                        <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                          <span className="text-navy-600 font-medium">Maintenance</span>
+                          <span className="text-lg font-bold text-navy-900">{formatCompactPrice((property as any).maintenance_charges)} <span className="text-sm text-navy-500 font-normal">/ month</span></span>
+                        </div>
+                      )}
+                    </>
                   ) : (
-                    <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                      <Star className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                      <p className="text-sm font-medium text-navy-600">{t('property.noReviews', 'No reviews yet.')}</p>
-                      <p className="text-xs text-navy-500 mt-1">Be the first to share your experience!</p>
+                    <>
+                      <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                        <span className="text-navy-600 font-medium">Sale Price</span>
+                        <span className="text-xl font-bold text-navy-900">{formatCompactPrice(property.price)}</span>
+                      </div>
+                      {property.built_up_area && (
+                        <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                          <span className="text-navy-600 font-medium">Price per Sq Ft</span>
+                          <span className="text-lg font-bold text-navy-900">₹{formatNumber(Math.round(property.price / property.built_up_area))}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="bg-red-50/50 p-6 flex items-start gap-4 border-t border-red-100">
+                  <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm border border-red-100">
+                    <Heart className="h-5 w-5 text-red-600 fill-red-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-red-900">Price is negotiable</h4>
+                    <p className="text-sm text-red-700/80 mt-1">Connect with the agent to discuss the final price and make an offer.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+            
+            {/* 14. VIDEO / 360° SECTION */}
+            {(!!tours?.length || !!property.videos?.length) && (
+              <section className="scroll-mt-32" id="media">
+                <h2 className="font-display text-2xl font-bold text-navy-900 mb-6">Experience This Property</h2>
+                <div className="grid sm:grid-cols-2 gap-6">
+                  {!!tours?.length && (
+                    <div className="rounded-3xl border border-navy-100 overflow-hidden bg-white shadow-sm">
+                      <div className="aspect-video bg-navy-900 relative flex items-center justify-center">
+                        <img src={images[0]} className="absolute inset-0 h-full w-full object-cover opacity-50" />
+                        <button onClick={() => setShowVirtualTour(true)} className="relative z-10 h-16 w-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center hover:scale-110 transition-transform shadow-2xl border border-white/30 text-white">
+                          <Box className="h-8 w-8" />
+                        </button>
+                      </div>
+                      <div className="p-5 text-center">
+                        <h3 className="font-bold text-navy-900">360° Virtual Tour</h3>
+                        <p className="text-sm text-navy-500 mt-1">Explore the property in immersive 3D</p>
+                      </div>
                     </div>
                   )}
-                </Card>
-              )}
-
-              {currentTab === 'faqs' && (
-                <Card className="p-6 border-0 shadow-sm ring-1 ring-navy-100">
-                  <h2 className="flex items-center gap-2 font-display text-xl font-bold text-navy-900">
-                    <HelpCircle className="h-5 w-5 text-red-500" /> {t('property.faqs', 'Frequently Asked Questions')}
-                  </h2>
-                  <div className="mt-6 divide-y divide-navy-50">
-                    {faqItems.map((f) => (
-                      <details key={f.q} className="group py-3">
-                        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-navy-900">
-                          {f.q}
-                          <ChevronDown className="h-4 w-4 text-navy-400 transition-transform group-open:rotate-180" />
-                        </summary>
-                        <p className="mt-2 text-sm text-navy-600">{f.a}</p>
-                      </details>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {currentTab === 'similar' && (
-                <div>
-                  <h2 className="font-display text-xl font-bold text-navy-900">{t('property.similarProperties', 'Similar Properties')}</h2>
-                  <div className="mt-4 grid gap-6 sm:grid-cols-2">
-                    {similar!.map((p) => (
-                      <PropertyCard key={p.id} property={p as unknown as Parameters<typeof PropertyCard>[0]['property']} />
-                    ))}
-                  </div>
+                  {!!property.videos?.length && (
+                    <div className="rounded-3xl border border-navy-100 overflow-hidden bg-white shadow-sm">
+                      <div className="aspect-video bg-navy-900 relative flex items-center justify-center">
+                         <video src={property.videos[0]} className="absolute inset-0 h-full w-full object-cover opacity-80" controls={false} />
+                         <div className="absolute inset-0 bg-black/20" />
+                         <button className="relative z-10 h-16 w-16 rounded-full bg-red-600 flex items-center justify-center hover:scale-110 transition-transform shadow-2xl text-white">
+                           <Play className="h-8 w-8 ml-1" />
+                         </button>
+                      </div>
+                      <div className="p-5 text-center">
+                        <h3 className="font-bold text-navy-900">Property Video</h3>
+                        <p className="text-sm text-navy-500 mt-1">Watch a guided video walkthrough</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {/* RIGHT COLUMN */}
-        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-          {/* Agent Card */}
-          <Card className="p-6 border-t-4 border-t-red-600 shadow-md">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold tracking-wider text-navy-500 uppercase">{t('property.managedBy', 'Managed by')}</span>
-              <StatusBadge status={property.status} />
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="ring-4 ring-red-50 rounded-full">
-                <Avatar name={agentName} src={agent?.avatar_url ?? null} size={56} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-lg text-navy-900 truncate">{agentName}</p>
-                {agent?.company && <p className="text-sm text-navy-600 truncate">{agent.company}</p>}
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              <Button size="lg" onClick={() => setContactOpen(true)} className="w-full text-base font-semibold shadow-lg shadow-red-600/20 hover:shadow-red-600/40">
-                {t('property.contactAgent', 'Contact Agent')}
-              </Button>
-              <Button size="lg" variant="secondary" icon={<Calendar className="h-5 w-5 shrink-0" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700 text-base font-semibold" onClick={() => (user ? setApptOpen(true) : navigate('/login'))}>
-                Schedule Visit
-              </Button>
-              {agent?.phone && (
-                <div className="grid grid-cols-2 gap-2">
-                  <a href={`tel:${agent.phone}`}>
-                    <Button variant="secondary" icon={<Phone className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-navy-700" title="Call">
-                      Call
-                    </Button>
-                  </a>
-                  <a href={`https://wa.me/${agent.phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(`Hi, I'm interested in ${property.title}`)}`} target="_blank" rel="noopener noreferrer">
-                    <Button variant="secondary" icon={<Send className="h-4 w-4" />} className="w-full bg-white border-navy-200 hover:bg-navy-50 text-emerald-700" title="WhatsApp">
-                      WhatsApp
-                    </Button>
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-success-50 p-3 text-xs font-medium text-success-700 border border-success-100">
-              <ShieldCheck className="h-4 w-4" /> Verified Professional
-            </div>
-          </Card>
-
-          {settings.promo_banner_title && (
-            <a
-              href={settings.promo_banner_link ?? '#'}
-              target={settings.promo_banner_link?.startsWith('http') ? '_blank' : undefined}
-              rel="noopener noreferrer"
-              className="block rounded-2xl bg-gradient-to-br from-red-600 to-rose-700 p-5 text-white shadow-lg transition-transform hover:scale-[1.01]"
-            >
-              <p className="font-display text-base font-bold">{settings.promo_banner_title}</p>
-              {settings.promo_banner_body && <p className="mt-1 text-sm text-red-100">{settings.promo_banner_body}</p>}
-            </a>
-          )}
-
-          <PostPropertyBanner compact />
-
-          {settings.show_emi_calculator && <EMICalculatorWidget defaultAmount={property.price} />}
-
-          {/* Property Insights */}
-          <Card className="p-6 shadow-sm border-0 ring-1 ring-navy-100">
-            <h3 className="text-base font-bold text-navy-900 mb-4 flex items-center gap-2">
-              <Eye className="h-4 w-4 text-navy-400" /> Property Insights
-            </h3>
-            <div className="space-y-4 text-sm">
-              <div className="flex justify-between items-center pb-4 border-b border-navy-50">
-                <span className="text-navy-500">{t('property.views', 'Total Views')}</span>
-                <span className="font-bold text-navy-900">{formatNumber(property.view_count)}</span>
-              </div>
-              <div className="flex justify-between items-center pb-4 border-b border-navy-50">
-                <span className="text-navy-500">{t('property.posted', 'Posted On')}</span>
-                <span className="font-semibold text-navy-800">{new Date(property.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              </div>
-              {property.ai_score != null && (
-                <div className="flex justify-between items-center pb-4 border-b border-navy-50">
-                  <span className="text-navy-500">AI Property Score</span>
-                  <span className="font-bold text-violet-700">{property.ai_score}/100</span>
-                </div>
-              )}
-              <div className="flex justify-between items-center">
-                <span className="text-navy-500">{t('property.propertyId', 'Property ID')}</span>
-                <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded text-navy-700">{property.id.slice(0, 8)}</span>
-              </div>
-            </div>
-          </Card>
-
-          {/* Brochure + Report */}
-          <div className="grid grid-cols-2 gap-3">
-            {property.documents?.[0] ? (
-              <a href={property.documents[0]} target="_blank" rel="noopener noreferrer">
-                <Button variant="secondary" icon={<Download className="h-4 w-4" />} className="w-full">
-                  Brochure
-                </Button>
-              </a>
-            ) : (
-              <Button variant="secondary" icon={<Download className="h-4 w-4" />} className="w-full opacity-50" disabled>
-                Brochure
-              </Button>
+              </section>
             )}
-            <Button variant="secondary" icon={<Flag className="h-4 w-4" />} className="w-full text-navy-600" onClick={() => setReportOpen(true)}>
-              Report
-            </Button>
+
+            {/* 15. LEAD CTA SECTION */}
+            <section className="rounded-3xl bg-navy-900 p-8 md:p-12 text-center text-white shadow-2xl relative overflow-hidden">
+               <div className="absolute inset-0 opacity-20">
+                 <img src={images[0]} className="h-full w-full object-cover" />
+                 <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-navy-900 mix-blend-multiply" />
+               </div>
+               <div className="relative z-10 space-y-6 max-w-2xl mx-auto">
+                 <h2 className="font-display text-3xl md:text-4xl font-bold">Interested in this property?</h2>
+                 <p className="text-navy-200 text-lg">Connect with the agent or schedule a visit today to secure this listing.</p>
+                 <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
+                    <Button size="lg" className="bg-red-600 hover:bg-red-700 border-none text-white shadow-lg shadow-red-900/50 text-base px-8" onClick={() => setContactOpen(true)}>
+                      Contact Agent
+                    </Button>
+                    <Button size="lg" className="bg-white text-navy-900 hover:bg-navy-50 border-none shadow-lg text-base px-8" onClick={() => (user ? setApptOpen(true) : navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`))}>
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-5 w-5 mr-2" /> WhatsApp
+                    </Button>
+                 </div>
+               </div>
+            </section>
+            
+            {/* Reviews */}
+            {settings.show_reviews && reviews && reviews.length > 0 && (
+              <section className="scroll-mt-32" id="reviews">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="font-display text-2xl font-bold text-navy-900">Reviews</h2>
+                  <Button size="sm" variant="secondary" onClick={() => (user ? setReviewOpen(true) : navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`))} icon={<Star className="h-4 w-4" />}>
+                    Write a review
+                  </Button>
+                </div>
+                <div className="space-y-6">
+                  {reviews.map((r: Record<string, unknown>) => {
+                    const p = r.profiles as Record<string, unknown> | Record<string, unknown>[] | null;
+                    const rp = Array.isArray(p) ? p[0] : p;
+                    return (
+                      <div key={r.id as string} className="border-b border-navy-100 pb-6 last:border-0 last:pb-0">
+                        <div className="flex justify-between items-start">
+                          <div className="flex gap-4">
+                            <Avatar name={`${rp?.first_name ?? ''} ${rp?.last_name ?? ''}`.trim() || 'User'} src={(rp?.avatar_url as string) ?? null} size={48} />
+                            <div>
+                              <p className="text-base font-bold text-navy-900">{String(rp?.first_name ?? 'Anonymous')}</p>
+                              <div className="mt-1">
+                                <RatingStars rating={r.rating as number} size={14} />
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-sm text-navy-400">{new Date(r.created_at as string).toLocaleDateString()}</span>
+                        </div>
+                        {r.comment ? <p className="mt-4 text-[15px] text-navy-700 leading-relaxed">{r.comment as string}</p> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* Bottom Badges */}
+            <div className="flex flex-wrap justify-center gap-6 pt-10 border-t border-navy-100 text-center pb-10">
+               {property.verification_status && property.verification_status !== 'Pending AI' && (
+                 <div className="flex flex-col items-center gap-2 max-w-[200px]">
+                   <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><ShieldCheck className="h-6 w-6"/></div>
+                   <p className="font-bold text-navy-900 text-sm">Verified Listing</p>
+                   <p className="text-xs text-navy-500">100% Verified Property</p>
+                 </div>
+               )}
+               <div className="flex flex-col items-center gap-2 max-w-[200px]">
+                 <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center"><User className="h-6 w-6"/></div>
+                 <p className="font-bold text-navy-900 text-sm">Trusted Agent</p>
+                 <p className="text-xs text-navy-500">Verified & Experienced</p>
+               </div>
+               <div className="flex flex-col items-center gap-2 max-w-[200px]">
+                 <div className="h-12 w-12 rounded-full bg-violet-50 text-violet-600 flex items-center justify-center"><Check className="h-6 w-6"/></div>
+                 <p className="font-bold text-navy-900 text-sm">Secure Transactions</p>
+                 <p className="text-xs text-navy-500">Safe & Transparent</p>
+               </div>
+               {property.ai_score != null && (
+                 <div className="flex flex-col items-center gap-2 max-w-[200px]">
+                   <div className="h-12 w-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center"><Bot className="h-6 w-6"/></div>
+                   <p className="font-bold text-navy-900 text-sm">AI Property Score</p>
+                   <p className="text-xs text-navy-500">{property.ai_score}/100 Excellent</p>
+                 </div>
+               )}
+            </div>
+
           </div>
-        </aside>
+
+          {/* RIGHT COLUMN (Sticky Sidebar) */}
+          <aside className="hidden lg:block relative">
+             <div className="sticky top-28 space-y-6">
+               
+               {/* MANAGED BY CARD */}
+               <Card className="p-8 border-0 shadow-xl shadow-navy-900/5 ring-1 ring-navy-100 rounded-3xl bg-white overflow-hidden">
+                 <div className="text-xs font-bold tracking-widest text-navy-400 uppercase mb-6">Managed By</div>
+                 <div className="flex flex-col items-center text-center mb-8">
+                   <div className="relative mb-4">
+                     <div className="ring-4 ring-navy-50 rounded-full p-1">
+                       <Avatar name={agentName} src={agent?.avatar_url ?? null} size={96} />
+                     </div>
+                     <div className="absolute bottom-1 right-1 bg-white rounded-full p-1 shadow-md">
+                       <div className="bg-red-600 text-white rounded-full p-1"><ShieldCheck className="h-4 w-4" /></div>
+                     </div>
+                   </div>
+                   <h3 className="font-display font-bold text-xl text-navy-900">{agentName}</h3>
+                   <p className="text-sm font-medium text-emerald-600 mt-1 flex items-center justify-center gap-1"><Check className="h-4 w-4"/> Verified Agent</p>
+                   {agent?.company && <p className="text-sm text-navy-500 mt-2">{agent.company}</p>}
+                 </div>
+                 
+                 <div className="space-y-3">
+                   <Button size="lg" className="w-full bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/20 text-base font-semibold py-6 rounded-xl" onClick={() => setContactOpen(true)}>
+                     Contact Agent
+                   </Button>
+                   {agent?.phone && (
+                     <a href={`https://wa.me/${agent.phone.replace(/[^\d]/g, '')}`} target="_blank" rel="noopener noreferrer" className="block">
+                       <Button size="lg" variant="secondary" className="w-full text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 text-base font-semibold py-6 rounded-xl">
+                         <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-5 w-5 mr-2" /> WhatsApp
+                       </Button>
+                     </a>
+                   )}
+                   <Button size="lg" variant="secondary" className="w-full bg-white hover:bg-navy-50 border-navy-200 text-navy-700 text-base font-semibold py-6 rounded-xl" onClick={() => (user ? setApptOpen(true) : navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`))}>
+                     <Calendar className="h-5 w-5 mr-2 text-navy-500" /> Schedule Visit
+                   </Button>
+                 </div>
+               </Card>
+
+               {/* PROPERTY INSIGHTS */}
+               <Card className="p-6 shadow-sm border-0 ring-1 ring-navy-100 rounded-3xl bg-white">
+                 <h3 className="text-sm font-bold tracking-widest text-navy-400 uppercase mb-4 flex items-center gap-2">
+                   <Eye className="h-4 w-4 text-navy-400" /> Property Insights
+                 </h3>
+                 <div className="space-y-4 text-sm">
+                   <div className="flex justify-between items-center pb-4 border-b border-navy-50">
+                     <span className="text-navy-500">{t('property.views', 'Total Views')}</span>
+                     <span className="font-bold text-navy-900">{formatNumber(property.view_count)}</span>
+                   </div>
+                   <div className="flex justify-between items-center pb-4 border-b border-navy-50">
+                     <span className="text-navy-500">{t('property.posted', 'Posted On')}</span>
+                     <span className="font-semibold text-navy-800">{new Date(property.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                   </div>
+                   <div className="flex justify-between items-center">
+                     <span className="text-navy-500">{t('property.propertyId', 'Property ID')}</span>
+                     <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded-md text-navy-700">RN-{property.id.slice(0, 7).toUpperCase()}</span>
+                   </div>
+                 </div>
+               </Card>
+             </div>
+          </aside>
+        </div>
+      </div>
+
+      {/* MOBILE STICKY ACTION BAR */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-navy-100 p-4 shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex gap-3">
+        {agent?.phone && (
+          <a href={`https://wa.me/${agent.phone.replace(/[^\d]/g, '')}`} className="flex-1">
+            <Button size="lg" variant="secondary" className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-5 w-5 mr-2" /> WhatsApp
+            </Button>
+          </a>
+        )}
+        <Button size="lg" className="flex-1 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-900/20" onClick={() => setContactOpen(true)}>
+          Contact Agent
+        </Button>
       </div>
 
       {/* Virtual tour modal */}
       {showVirtualTour && !!tours?.length && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/95 p-4" onClick={() => setShowVirtualTour(false)}>
-          <button className="absolute right-6 top-6 z-50 grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white hover:bg-white/25" onClick={() => setShowVirtualTour(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/95 p-4 backdrop-blur-md" onClick={() => setShowVirtualTour(false)}>
+          <button className="absolute right-6 top-6 z-50 grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white hover:bg-white/30 backdrop-blur-md transition-all" onClick={() => setShowVirtualTour(false)}>
             <X className="h-6 w-6" />
           </button>
-          <div className="h-[80vh] w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+          <div className="h-[80vh] w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <VirtualTourViewer tours={tours} propertyId={id} />
           </div>
         </div>
@@ -1192,43 +1123,31 @@ export function PropertyDetailPage() {
       {/* Lightbox Modal */}
       {lightbox && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/98 backdrop-blur-xl" onClick={() => setLightbox(false)}>
-          <button className="absolute right-6 top-6 z-50 grid h-12 w-12 place-items-center rounded-full bg-black/50 text-white hover:bg-black/70 backdrop-blur-md transition-all shadow-lg" onClick={() => setLightbox(false)}>
+          <button className="absolute right-6 top-6 z-50 grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white hover:bg-white/30 backdrop-blur-md transition-all shadow-lg" onClick={() => setLightbox(false)}>
             <X className="h-6 w-6" />
           </button>
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md text-white font-semibold text-sm px-5 py-2 rounded-full shadow-md tracking-wide">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md text-white font-semibold text-sm px-5 py-2 rounded-full shadow-md tracking-widest uppercase">
             {activeImg + 1} / {images.length}
           </div>
           {images.length > 1 && (
-            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev - 1 + images.length) % images.length); }} className="absolute left-4 sm:left-8 top-1/2 -translate-y-1/2 z-50 grid h-14 w-14 place-items-center rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
+            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev - 1 + images.length) % images.length); }} className="absolute left-4 sm:left-8 top-1/2 -translate-y-1/2 z-50 grid h-16 w-16 place-items-center rounded-full bg-white/10 hover:bg-white/30 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
               <ChevronLeft className="h-8 w-8" />
             </button>
           )}
-          <img src={images[activeImg]} alt={`Property image ${activeImg + 1}`} className="max-h-[85vh] max-w-[90vw] object-contain shadow-2xl rounded-lg" onClick={(e) => e.stopPropagation()} />
+          <img src={images[activeImg]} alt={`Property image ${activeImg + 1}`} className="max-h-[85vh] max-w-[90vw] object-contain shadow-2xl rounded-2xl" onClick={(e) => e.stopPropagation()} />
           {images.length > 1 && (
-            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev + 1) % images.length); }} className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 z-50 grid h-14 w-14 place-items-center rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
+            <button onClick={(e) => { e.stopPropagation(); setActiveImg((prev) => (prev + 1) % images.length); }} className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 z-50 grid h-16 w-16 place-items-center rounded-full bg-white/10 hover:bg-white/30 text-white backdrop-blur-md transition-all shadow-2xl hover:scale-110 cursor-pointer">
               <ChevronRight className="h-8 w-8" />
             </button>
           )}
-          <div className="absolute bottom-6 flex gap-3 overflow-x-auto max-w-[90vw] px-4 py-3 bg-black/50 backdrop-blur-md rounded-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute bottom-6 flex gap-3 overflow-x-auto max-w-[90vw] px-4 py-3 bg-white/5 backdrop-blur-md rounded-2xl no-scrollbar" onClick={(e) => e.stopPropagation()}>
             {images.map((img, i) => (
-              <button key={i} onClick={() => setActiveImg(i)} className={cn('h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 transition-all', activeImg === i ? 'border-red-500 scale-105 shadow-lg' : 'border-transparent opacity-50 hover:opacity-100')}>
+              <button key={i} onClick={() => setActiveImg(i)} className={cn('h-20 w-32 shrink-0 overflow-hidden rounded-xl border-2 transition-all cursor-pointer', activeImg === i ? 'border-red-500 scale-105 shadow-xl' : 'border-transparent opacity-40 hover:opacity-100')}>
                 <img src={img} alt="" className="h-full w-full object-cover" />
               </button>
             ))}
           </div>
         </div>
-      )}
-
-      {/* Recently viewed */}
-      {recentViews && recentViews.length > 0 && (
-        <section className="mt-16">
-          <h2 className="font-display text-2xl font-bold text-navy-900">{t('property.recentlyViewed', 'Recently Viewed')}</h2>
-          <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {recentViews.map((p) => (
-              <PropertyCard key={p.id} property={p as unknown as Parameters<typeof PropertyCard>[0]['property']} />
-            ))}
-          </div>
-        </section>
       )}
 
       {/* Contact modal */}
@@ -1237,19 +1156,19 @@ export function PropertyDetailPage() {
         onClose={() => setContactOpen(false)}
         title={t('property.contactAgent', 'Contact Agent')}
         footer={
-          <Button loading={enquiryMutation.isPending} onClick={() => enquiryMutation.mutate()} icon={<Send className="h-4 w-4" />} className="w-full">
+          <Button loading={enquiryMutation.isPending} onClick={() => enquiryMutation.mutate()} icon={<Send className="h-4 w-4" />} className="w-full bg-red-600 hover:bg-red-700 text-white border-0">
             {t('forms.sendEnquiry', 'Send enquiry')}
           </Button>
         }
       >
         <p className="mb-4 text-sm text-navy-500">{t('property.shareDetailsMsg', 'Share your details. The agent will reach out shortly.')}</p>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <Input label={t('forms.name', 'Name')} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={t('forms.yourName', 'Your name')} />
           <Input label={t('forms.email', 'Email')} type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="you@email.com" />
           <Input label={t('forms.phone', 'Phone')} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91 90000 00000" />
           <Textarea label={t('forms.message', 'Message')} value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} placeholder={t('forms.interestedMsg', "I'm interested in this property. Please share more details.")} />
           {enquiryMutation.isSuccess && (
-            <p className="text-sm text-success-600 flex items-center gap-1">
+            <p className="text-sm text-emerald-600 flex items-center gap-1 font-medium bg-emerald-50 p-3 rounded-lg">
               <Check className="h-4 w-4" /> {t('property.enquirySentMsg', 'Enquiry sent! The agent will contact you soon.')}
             </p>
           )}
@@ -1262,20 +1181,20 @@ export function PropertyDetailPage() {
         onClose={() => setApptOpen(false)}
         title={t('property.bookVisit', 'Book a property visit')}
         footer={
-          <Button loading={apptMutation.isPending} onClick={() => apptMutation.mutate()} icon={<Calendar className="h-4 w-4" />} className="w-full">
+          <Button loading={apptMutation.isPending} onClick={() => apptMutation.mutate()} icon={<Calendar className="h-4 w-4" />} className="w-full bg-navy-900 hover:bg-navy-800 text-white border-0">
             {t('forms.requestAppointment', 'Request appointment')}
           </Button>
         }
       >
         <p className="mb-4 text-sm text-navy-500">{t('property.pickDateMsg', 'Pick a date and time to visit this property. The agent will confirm.')}</p>
-        <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Input label={t('forms.date', 'Date')} type="date" value={apptForm.date} onChange={(e) => setApptForm((f) => ({ ...f, date: e.target.value }))} />
             <Input label={t('forms.time', 'Time')} type="time" value={apptForm.time} onChange={(e) => setApptForm((f) => ({ ...f, time: e.target.value }))} />
           </div>
           <Textarea label={t('forms.notesOptional', 'Notes (optional)')} value={apptForm.notes} onChange={(e) => setApptForm((f) => ({ ...f, notes: e.target.value }))} placeholder={t('forms.specificRequests', 'Any specific requests or questions')} />
           {apptMutation.isSuccess && (
-            <p className="text-sm text-success-600 flex items-center gap-1">
+            <p className="text-sm text-emerald-600 flex items-center gap-1 font-medium bg-emerald-50 p-3 rounded-lg">
               <Check className="h-4 w-4" /> {t('property.apptRequestedMsg', 'Appointment requested! Check your portal for updates.')}
             </p>
           )}
@@ -1298,15 +1217,16 @@ export function PropertyDetailPage() {
             <label className="label">{t('forms.rating', 'Rating')}</label>
             <div className="flex gap-1">
               {[1, 2, 3, 4, 5].map((i) => (
-                <button key={i} type="button" onClick={() => setReviewForm((f) => ({ ...f, rating: i }))} className={i <= reviewForm.rating ? 'text-gold-400' : 'text-navy-200'}>
-                  <Star className="h-6 w-6 fill-current" />
+                <button key={i} type="button" onClick={() => setReviewForm((f) => ({ ...f, rating: i }))} className={i <= reviewForm.rating ? 'text-gold-400 hover:scale-110 transition-transform' : 'text-navy-100 hover:text-gold-200 transition-colors'}>
+                  <Star className="h-8 w-8 fill-current" />
                 </button>
               ))}
             </div>
           </div>
+          <Input label="Title (optional)" value={reviewForm.title} onChange={(e) => setReviewForm((f) => ({ ...f, title: e.target.value }))} placeholder="Brief summary of your experience" />
           <Textarea label={t('forms.comment', 'Comment')} value={reviewForm.comment} onChange={(e) => setReviewForm((f) => ({ ...f, comment: e.target.value }))} placeholder={t('forms.shareExperience', 'Share your experience with this property')} />
           {reviewMutation.isSuccess && (
-            <p className="text-sm text-success-600 flex items-center gap-1">
+            <p className="text-sm text-emerald-600 flex items-center gap-1 font-medium bg-emerald-50 p-3 rounded-lg">
               <Check className="h-4 w-4" /> {t('property.reviewSubmitted', 'Review submitted!')}
             </p>
           )}
@@ -1324,7 +1244,7 @@ export function PropertyDetailPage() {
           </Button>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-4">
           <Select label="Reason" value={reportForm.reason} onChange={(e) => setReportForm((f) => ({ ...f, reason: e.target.value }))}>
             <option value="">Select a reason</option>
             <option value="Incorrect information">Incorrect information</option>

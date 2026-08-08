@@ -22,9 +22,21 @@ export interface PropertyFilters {
   parking?: number;
   property_age?: number;
   amenities?: string[];
-  sort_by?: 'newest' | 'price_asc' | 'price_desc' | 'area_asc' | 'area_desc' | 'ai_recommended' | 'featured' | 'most_viewed' | 'most_contacted';
+  sort_by?: 'newest' | 'price_asc' | 'price_desc' | 'ai_recommended' | 'featured' | 'most_viewed' | 'most_contacted';
   limit?: number;
   offset?: number;
+}
+
+// Trims, collapses whitespace, and drops characters that aren't meaningful for a
+// free-text locality/city/project/title search (also sidesteps '%'/'_' which are
+// ILIKE pattern metacharacters) — shared by every search entry point so autocomplete,
+// the search bar, and category pages all normalize a query the same way.
+export function sanitizeSearchQuery(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function buildPublishedQuery(filters: PropertyFilters = {}) {
@@ -63,11 +75,18 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
   }
 
   if (filters.q) {
-    const isNumeric = !isNaN(Number(filters.q)) && filters.q.trim() !== '';
-    if (isNumeric) {
-      q = q.or(`search_text.ilike.%${filters.q}%,price.eq.${filters.q},rent_amount.eq.${filters.q}`);
-    } else {
-      q = q.ilike('search_text', `%${filters.q}%`);
+    const cleaned = sanitizeSearchQuery(filters.q);
+    if (cleaned) {
+      const isNumeric = !isNaN(Number(cleaned));
+      if (isNumeric) {
+        q = q.or(`search_text.ilike.%${cleaned}%,price.eq.${cleaned},rent_amount.eq.${cleaned}`);
+      } else {
+        // search_text already concatenates title, description, address, city, locality,
+        // property type, builder, project, and agent/owner names — so a locality- or
+        // city-only query (e.g. "Hyde" → "Hyderabad") matches even when the property's
+        // own title/description never mentions it. See v_properties_search view.
+        q = q.ilike('search_text', `%${cleaned}%`);
+      }
     }
   }
 
@@ -81,12 +100,6 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
       break;
     case 'price_desc':
       q = q.order('price', { ascending: false });
-      break;
-    case 'area_asc':
-      q = q.order('built_up_area', { ascending: true, nullsFirst: false });
-      break;
-    case 'area_desc':
-      q = q.order('built_up_area', { ascending: false, nullsFirst: false });
       break;
     case 'ai_recommended':
       q = q.order('ai_score', { ascending: false, nullsFirst: false });
@@ -302,7 +315,7 @@ export async function submitPropertyForReview(id: string) {
   return updatePropertyStatus(id, 'submitted');
 }
 
-export async function savePropertyDraft(draftId: string | null, payload: any) {
+export async function savePropertyDraft(draftId: string | null, payload: any, submissionId?: string) {
   if (draftId) {
     const { data, error } = await supabase
       .from('properties')
@@ -315,7 +328,19 @@ export async function savePropertyDraft(draftId: string | null, payload: any) {
       .single();
     if (error) throw error;
     return data;
+  } else if (submissionId) {
+    const { data, error } = await supabase
+      .from('properties')
+      .upsert(
+        { ...payload, submission_id: submissionId },
+        { onConflict: 'submission_id' }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
   } else {
+    // Fallback if no submissionId is provided (e.g., from older callers)
     const { data, error } = await supabase
       .from('properties')
       .insert({

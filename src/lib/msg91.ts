@@ -18,8 +18,20 @@ const SEND_TIMEOUT_MS = 15_000;
 // MSG91 renders its captcha challenge into this DOM element when
 // exposeMethods is true. Without a captchaRenderId, MSG91 has nowhere to
 // run the captcha and every sendOtp call fails with "Invalid Captcha Token".
-// The OTP login page must render an element with this id somewhere in the DOM.
+// We create a persistent DOM element in memory so we never double-initialize
+// MSG91 even if React unmounts and remounts the placeholder.
 export const MSG91_CAPTCHA_CONTAINER_ID = 'msg91-captcha-container';
+
+let persistentCaptchaContainer: HTMLElement | null = null;
+
+export function getPersistentCaptchaContainer(): HTMLElement {
+  if (!persistentCaptchaContainer) {
+    persistentCaptchaContainer = document.createElement('div');
+    persistentCaptchaContainer.id = MSG91_CAPTCHA_CONTAINER_ID;
+    persistentCaptchaContainer.className = 'flex justify-center';
+  }
+  return persistentCaptchaContainer;
+}
 
 interface Msg91SendSuccess {
   message: string; // request/reqId used by verifyOtp's failure paths
@@ -163,9 +175,9 @@ export function initMsg91Widget(forceRemount = false): Promise<void> {
     // re-entrant: two overlapping init calls leave a stray captcha instance
     // that the visible one isn't actually wired to, so sendOtp hangs forever
     // waiting on a challenge nobody can complete.
+    // waiting on a challenge nobody can complete.
     if (!initSettled) return initPromise;
-    const container = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
-    if (container && container.hasAttribute('data-msg91-initialized')) {
+    if (persistentCaptchaContainer && persistentCaptchaContainer.hasAttribute('data-msg91-initialized')) {
       return initPromise;
     }
   }
@@ -186,12 +198,10 @@ export function initMsg91Widget(forceRemount = false): Promise<void> {
     }
     console.log('[MSG91] calling initSendOTP with widgetId:', widgetId);
     
-    const container = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
-    if (container) {
-      // Clear any existing children just in case, though it should be empty
-      container.innerHTML = '';
-      container.setAttribute('data-msg91-initialized', 'true');
-    }
+    const container = getPersistentCaptchaContainer();
+    // Clear any existing children just in case, though it should be empty
+    container.innerHTML = '';
+    container.setAttribute('data-msg91-initialized', 'true');
 
     window.initSendOTP({
       widgetId,

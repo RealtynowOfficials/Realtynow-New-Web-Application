@@ -76,8 +76,13 @@ export async function publishDraft({ draftId, ownerId, purpose, answers, allFiel
   }
 
   payload.features = features;
+  payload.submission_id = draftId;
 
-  const { data, error } = await supabase.from('properties').insert(payload).select('id').single();
+  const { data, error } = await supabase
+    .from('properties')
+    .upsert(payload, { onConflict: 'submission_id' })
+    .select('id')
+    .single();
   if (error) throw error;
 
   const propertyId = (data as { id: string }).id;

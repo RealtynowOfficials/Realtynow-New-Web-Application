@@ -570,15 +570,26 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
       {/* ── Main header (56px) ── */}
       <header className="sticky top-0 z-50 border-b border-navy-100 bg-white text-navy-900 shadow-xs">
         <div className="container-wide">
-          <div className="grid h-[56px] grid-cols-[auto_1fr_auto] items-center gap-3">
+          <div className="flex h-[56px] items-center justify-between gap-3">
             {/* Logo */}
             <Logo to="/" size={140} className="shrink-0" />
 
             {/* Desktop / tablet nav — centered, compact on lg, spacious on xl */}
             <nav
-              className="hidden min-w-0 items-center justify-center gap-0.5 whitespace-nowrap lg:flex xl:gap-1"
+              className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap lg:flex xl:gap-1"
               aria-label={t('common.mainNavigation', 'Main navigation')}
             >
+              <Link
+                to="/"
+                className={cn(
+                  'nav-link flex items-center justify-center rounded-xl p-2 transition-colors lg:px-2.5 xl:px-4',
+                  isRouteActive('/', location.pathname) ? 'bg-[#D8232A]/5 text-[#D8232A]' : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]'
+                )}
+                aria-label="Home"
+                title={t('common.home', 'Home')}
+              >
+                <Home className="h-[18px] w-[18px]" />
+              </Link>
               {dynamicNavLinks.map((item) => {
                 const configKey = item.key || item.label;
                 const config = megaMenuConfig[configKey];
@@ -590,8 +601,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                     <div
                       key={item.label}
                       className="relative"
-                      onMouseEnter={() => setHoveredMenu(configKey)}
-                      onMouseLeave={() => setHoveredMenu(null)}
                       onBlur={(e) => {
                         if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoveredMenu(null);
                       }}
@@ -599,8 +608,12 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                         if (e.key === 'Escape') setHoveredMenu(null);
                       }}
                     >
-                      <Link
-                        to={item.to}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setHoveredMenu(hoveredMenu === configKey ? null : configKey);
+                        }}
                         onFocus={() => setHoveredMenu(configKey)}
                         aria-haspopup="true"
                         aria-expanded={isOpen}
@@ -615,7 +628,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                         <ChevronDown
                           className={cn('h-4 w-4 text-navy-400 transition-transform duration-200', isOpen && 'rotate-180 text-[#D8232A]')}
                         />
-                      </Link>
+                      </button>
 
                       <AnimatePresence>
                         {isOpen && (
@@ -707,8 +720,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               {/* Services — glassmorphism flyout, not a full mega menu */}
               <div
                 className="relative"
-                onMouseEnter={() => setHoveredMenu('Services')}
-                onMouseLeave={() => setHoveredMenu(null)}
                 onBlur={(e) => {
                   if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoveredMenu(null);
                 }}
@@ -719,7 +730,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onFocus={() => setHoveredMenu('Services')}
-                  onClick={() => setHoveredMenu('Services')}
+                  onClick={() => setHoveredMenu(hoveredMenu === 'Services' ? null : 'Services')}
                   aria-haspopup="true"
                   aria-expanded={hoveredMenu === 'Services'}
                   className={cn(
@@ -815,7 +826,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             </nav>
 
             {/* Right actions */}
-            <div className="flex items-center gap-2 shrink-0 justify-self-end">
+            <div className="flex items-center gap-2 shrink-0">
               {/* Search toggle — opens overlay, only navigates once a query is submitted */}
               <button
                 type="button"
@@ -969,6 +980,15 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               className="overflow-hidden border-t border-navy-100 bg-white lg:hidden"
             >
               <div className="container-wide max-h-[75vh] space-y-1 overflow-y-auto py-4">
+                <Link
+                  to="/"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800 border-b border-navy-50 hover:text-[#D8232A]"
+                  aria-label="Home"
+                  title={t('common.home', 'Home')}
+                >
+                  <Home className="h-5 w-5" />
+                </Link>
                 {dynamicNavLinks.map((item) => {
                   const configKey = item.key || item.label;
                   const config = megaMenuConfig[configKey];

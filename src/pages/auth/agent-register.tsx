@@ -152,6 +152,7 @@ export function AgentRegisterPage() {
   const prev = () => setStep((s) => s - 1);
 
   const submit = async () => {
+    if (submitting) return;
     setLoading(true);
     setServerError(null);
     try {
@@ -203,29 +204,29 @@ export function AgentRegisterPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-navy-50 flex items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md text-center"
         >
-          <div className="h-24 w-24 mx-auto rounded-full bg-gold-400/20 flex items-center justify-center mb-6">
-            <CheckCircle2 className="h-12 w-12 text-gold-400" />
+          <div className="h-24 w-24 mx-auto rounded-full bg-gold-500/20 flex items-center justify-center mb-6">
+            <CheckCircle2 className="h-12 w-12 text-gold-600" />
           </div>
-          <h1 className="font-display text-3xl font-bold text-white">Application Submitted!</h1>
-          <p className="mt-3 text-navy-200">
+          <h1 className="font-display text-3xl font-bold text-navy-900">Application Submitted!</h1>
+          <p className="mt-3 text-navy-600">
             Thank you, <span className="text-gold-300 font-semibold">{form.first_name}</span>! Our team will review your
             application and contact you at <span className="text-gold-300">{form.email}</span> within 2–3 business days.
           </p>
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-navy-300 space-y-2">
+          <div className="mt-6 rounded-xl border border-navy-200 bg-navy-50/50 p-4 text-sm text-navy-500 space-y-2">
             <p className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-gold-400" /> Review: 2–3 business days
+              <Clock className="h-4 w-4 text-gold-600" /> Review: 2–3 business days
             </p>
             <p className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-gold-400" /> Document verification
+              <ShieldCheck className="h-4 w-4 text-gold-600" /> Document verification
             </p>
             <p className="flex items-center gap-2">
-              <Star className="h-4 w-4 text-gold-400" /> License validation
+              <Star className="h-4 w-4 text-gold-600" /> License validation
             </p>
           </div>
           <Link to="/" className="mt-8 inline-block">
@@ -239,15 +240,15 @@ export function AgentRegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800">
+    <div className="min-h-screen bg-navy-50">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gold-400/10 blur-3xl" />
+        <div className="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" />
         <div className="absolute bottom-0 -left-20 h-96 w-96 rounded-full bg-navy-700/20 blur-3xl" />
       </div>
 
       <div className="relative grid lg:grid-cols-[380px,1fr] min-h-screen">
         {/* LEFT PANEL */}
-        <div className="hidden lg:flex flex-col justify-between bg-white/5 backdrop-blur-sm border-r border-white/10 p-10">
+        <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 border-r border-navy-800 p-10 relative overflow-hidden z-10">
           <LogoLight to="/" size={220} />
 
           <div>
@@ -303,7 +304,7 @@ export function AgentRegisterPage() {
               {STEPS.map((s) => (
                 <div
                   key={s.id}
-                  className={`h-2 rounded-full transition-all ${step === s.id ? 'w-8 bg-gold-400' : step > s.id ? 'w-4 bg-success-500' : 'w-4 bg-white/20'}`}
+                  className={`h-2 rounded-full transition-all ${step === s.id ? 'w-8 bg-gold-500' : step > s.id ? 'w-4 bg-success-500' : 'w-4 bg-white/20'}`}
                 />
               ))}
             </div>
@@ -319,33 +320,33 @@ export function AgentRegisterPage() {
                 {/* Step 1 – Personal Info */}
                 {step === 1 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Personal Information</h1>
-                    <p className="mt-1 text-sm text-navy-300">Tell us about yourself</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Personal Information</h1>
+                    <p className="mt-1 text-sm text-navy-500">Tell us about yourself</p>
                     <div className="mt-6 space-y-4">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-medium text-navy-200 mb-1.5">First Name *</label>
+                          <label className="block text-sm font-medium text-navy-600 mb-1.5">First Name *</label>
                           <input
                             value={form.first_name}
                             onChange={(e) => set('first_name', e.target.value)}
-                            className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                            className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                             placeholder="Arjun"
                           />
-                          {errors.first_name && <p className="mt-1 text-xs text-error-400">{errors.first_name}</p>}
+                          {errors.first_name && <p className="mt-1 text-xs text-error-600">{errors.first_name}</p>}
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-navy-200 mb-1.5">Last Name *</label>
+                          <label className="block text-sm font-medium text-navy-600 mb-1.5">Last Name *</label>
                           <input
                             value={form.last_name}
                             onChange={(e) => set('last_name', e.target.value)}
-                            className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                            className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                             placeholder="Sharma"
                           />
-                          {errors.last_name && <p className="mt-1 text-xs text-error-400">{errors.last_name}</p>}
+                          {errors.last_name && <p className="mt-1 text-xs text-error-600">{errors.last_name}</p>}
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">
                           <Mail className="inline h-3.5 w-3.5 mr-1" />
                           Email Address *
                         </label>
@@ -353,13 +354,13 @@ export function AgentRegisterPage() {
                           type="email"
                           value={form.email}
                           onChange={(e) => set('email', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="arjun@realty.com"
                         />
-                        {errors.email && <p className="mt-1 text-xs text-error-400">{errors.email}</p>}
+                        {errors.email && <p className="mt-1 text-xs text-error-600">{errors.email}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">
                           <Phone className="inline h-3.5 w-3.5 mr-1" />
                           Phone Number *
                         </label>
@@ -367,19 +368,19 @@ export function AgentRegisterPage() {
                           type="tel"
                           value={form.phone}
                           onChange={(e) => set('phone', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="+91 98000 00000"
                         />
-                        {errors.phone && <p className="mt-1 text-xs text-error-400">{errors.phone}</p>}
+                        {errors.phone && <p className="mt-1 text-xs text-error-600">{errors.phone}</p>}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">
                           Company / Brokerage (optional)
                         </label>
                         <input
                           value={form.company}
                           onChange={(e) => set('company', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="Sharma Realty Pvt Ltd"
                         />
                       </div>
@@ -390,15 +391,15 @@ export function AgentRegisterPage() {
                 {/* Step 2 – Professional */}
                 {step === 2 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Professional Details</h1>
-                    <p className="mt-1 text-sm text-navy-300">Help clients understand your expertise</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Professional Details</h1>
+                    <p className="mt-1 text-sm text-navy-500">Help clients understand your expertise</p>
                     <div className="mt-6 space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Specialization *</label>
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">Specialization *</label>
                         <select
                           value={form.specialization}
                           onChange={(e) => set('specialization', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-navy-800 px-3.5 py-2.5 text-sm text-white focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                         >
                           <option value="">Select specialization…</option>
                           {SPECIALIZATIONS.map((s) => (
@@ -408,54 +409,54 @@ export function AgentRegisterPage() {
                           ))}
                         </select>
                         {errors.specialization && (
-                          <p className="mt-1 text-xs text-error-400">{errors.specialization}</p>
+                          <p className="mt-1 text-xs text-error-600">{errors.specialization}</p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Years of Experience *</label>
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">Years of Experience *</label>
                         <input
                           type="number"
                           min="0"
                           max="50"
                           value={form.experience_years}
                           onChange={(e) => set('experience_years', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="5"
                         />
                         {errors.experience_years && (
-                          <p className="mt-1 text-xs text-error-400">{errors.experience_years}</p>
+                          <p className="mt-1 text-xs text-error-600">{errors.experience_years}</p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">
                           RERA License Number (if available)
                         </label>
                         <input
                           value={form.license_number}
                           onChange={(e) => set('license_number', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="MH/RERA/XXXXXX"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">
                           <MapPin className="inline h-3.5 w-3.5 mr-1" />
                           Areas You Cover (comma separated)
                         </label>
                         <input
                           value={form.assigned_areas}
                           onChange={(e) => set('assigned_areas', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="Banjara Hills, Jubilee Hills, Gachibowli"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Bio / About You</label>
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">Bio / About You</label>
                         <textarea
                           rows={3}
                           value={form.bio}
                           onChange={(e) => set('bio', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30 resize-none"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30 resize-none"
                           placeholder="Tell us about your experience and what makes you a great agent…"
                         />
                       </div>
@@ -466,8 +467,8 @@ export function AgentRegisterPage() {
                 {/* Step 3 – Documents */}
                 {step === 3 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Upload Documents</h1>
-                    <p className="mt-1 text-sm text-navy-300">Help us verify your identity and credentials</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Upload Documents</h1>
+                    <p className="mt-1 text-sm text-navy-500">Help us verify your identity and credentials</p>
                     <div className="mt-6 space-y-5">
                       <FileUploadArea
                         label="Government ID (Aadhaar / PAN / Passport) *"
@@ -481,9 +482,9 @@ export function AgentRegisterPage() {
                         file={form.license_doc}
                         onChange={(f) => set('license_doc', f)}
                       />
-                      <div className="rounded-xl border border-gold-400/20 bg-gold-400/5 p-4 text-xs text-navy-300">
-                        <ShieldCheck className="h-4 w-4 text-gold-400 mb-2" />
-                        <p className="font-semibold text-white">Your documents are safe</p>
+                      <div className="rounded-xl border border-gold-200 bg-gold-500/5 p-4 text-xs text-navy-500">
+                        <ShieldCheck className="h-4 w-4 text-gold-600 mb-2" />
+                        <p className="font-semibold text-navy-900">Your documents are safe</p>
                         <p className="mt-1">
                           All documents are encrypted and only reviewed by our verified team. They will not be shared
                           publicly.
@@ -496,8 +497,8 @@ export function AgentRegisterPage() {
                 {/* Step 4 – Review */}
                 {step === 4 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Review & Submit</h1>
-                    <p className="mt-1 text-sm text-navy-300">Please check your details before submitting</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Review & Submit</h1>
+                    <p className="mt-1 text-sm text-navy-500">Please check your details before submitting</p>
                     <div className="mt-6 space-y-3">
                       {[
                         { label: 'Name', value: `${form.first_name} ${form.last_name}` },
@@ -513,10 +514,10 @@ export function AgentRegisterPage() {
                       ].map(({ label, value }) => (
                         <div
                           key={label}
-                          className="flex justify-between items-start gap-4 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5"
+                          className="flex justify-between items-start gap-4 rounded-lg border border-navy-200 bg-navy-50/50 px-4 py-2.5"
                         >
-                          <span className="text-xs text-navy-400 flex-shrink-0 w-32">{label}</span>
-                          <span className="text-sm text-white text-right break-all">{value}</span>
+                          <span className="text-xs text-navy-500 flex-shrink-0 w-32">{label}</span>
+                          <span className="text-sm text-navy-900 text-right break-all">{value}</span>
                         </div>
                       ))}
                     </div>
@@ -527,13 +528,13 @@ export function AgentRegisterPage() {
                       </div>
                     )}
 
-                    <p className="mt-4 text-xs text-navy-400">
+                    <p className="mt-4 text-xs text-navy-500">
                       By submitting, you agree to our{' '}
-                      <Link to="/terms" className="text-gold-400 hover:underline">
+                      <Link to="/terms" className="text-gold-600 hover:underline">
                         Terms of Service
                       </Link>{' '}
                       and{' '}
-                      <Link to="/privacy" className="text-gold-400 hover:underline">
+                      <Link to="/privacy" className="text-gold-600 hover:underline">
                         Privacy Policy
                       </Link>
                       .
@@ -548,12 +549,12 @@ export function AgentRegisterPage() {
               {step > 1 ? (
                 <button
                   onClick={prev}
-                  className="flex items-center gap-2 text-sm text-navy-300 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-sm text-navy-500 hover:text-navy-900 transition-colors"
                 >
                   <ArrowLeft className="h-4 w-4" /> Back
                 </button>
               ) : (
-                <Link to="/agent/login" className="text-sm text-navy-400 hover:text-white transition-colors">
+                <Link to="/agent/login" className="text-sm text-navy-500 hover:text-navy-900 transition-colors">
                   Already registered?
                 </Link>
               )}

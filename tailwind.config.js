@@ -154,6 +154,8 @@ export default {
           to: { opacity: 1, transform: 'translateY(0)' },
         },
         marquee: { '0%': { transform: 'translateX(0)' }, '100%': { transform: 'translateX(-50%)' } },
+        'hero-ken-burns': { from: { transform: 'scale(1)' }, to: { transform: 'scale(1.08)' } },
+        'hero-progress': { from: { transform: 'scaleX(0)' }, to: { transform: 'scaleX(1)' } },
       },
       animation: {
         'fade-in': 'fade-in 0.5s ease-out',
@@ -166,6 +168,9 @@ export default {
         pulse2: 'pulse2 2s ease-in-out infinite',
         'spin-slow': 'spin3d 12s linear infinite',
         marquee: 'marquee 22s linear infinite',
+        // Duration matches HERO_SLIDE_INTERVAL_MS in home.tsx — CSS can't read the JS constant.
+        'hero-ken-burns': 'hero-ken-burns 6000ms ease-out forwards',
+        'hero-progress': 'hero-progress 5000ms linear forwards',
       },
     },
   },

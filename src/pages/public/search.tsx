@@ -37,11 +37,12 @@ import {
   Filter,
   SortDesc,
   LayoutGrid,
-  Rows3,
   Share2,
   ShieldCheck,
+  Sparkles,
+  Rows3,
 } from 'lucide-react';
-import { type PropertyFilters } from '../../lib/properties';
+import { type PropertyFilters, fetchPublishedProperties, sanitizeSearchQuery } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useAuth } from '../../lib/auth';
@@ -54,7 +55,14 @@ import { useSEO } from '../../hooks/use-seo';
 
 const PAGE_SIZE = 10;
 type ViewMode = 'list' | 'grid' | 'map';
-type SortOption = 'newest' | 'price_asc' | 'price_desc' | 'popular' | 'area';
+type SortOption =
+  | 'newest'
+  | 'price_asc'
+  | 'price_desc'
+  | 'ai_recommended'
+  | 'most_viewed'
+  | 'most_contacted'
+  | 'featured';
 
 
 // ──────────────────────────────────────────────────────────────
@@ -66,16 +74,28 @@ interface HorizontalCardProps {
   onCompare?: (id: string) => void;
   saved?: boolean;
   compared?: boolean;
+  isAiRecommended?: boolean;
 }
 
-function HorizontalCard({ property: p, onSave, onCompare, saved = false, compared = false }: HorizontalCardProps) {
+function HorizontalCard({ property: p, onSave, onCompare, saved = false, compared = false, isAiRecommended = false }: HorizontalCardProps) {
   const { t } = useLanguageContext();
   const navigate = useNavigate();
   const [activeImg, setActiveImg] = useState(0);
   const [imgHovered, setImgHovered] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
-  const images = p.images?.length ? p.images : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
+  let parsedImages = p.images;
+  if (typeof parsedImages === 'string') {
+    try {
+      parsedImages = JSON.parse(parsedImages);
+    } catch {
+      parsedImages = [parsedImages as unknown as string];
+    }
+  } else if (parsedImages && !Array.isArray(parsedImages)) {
+    parsedImages = [parsedImages as any];
+  }
+  const images = Array.isArray(parsedImages) && parsedImages.length > 0 ? parsedImages : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
+
   const investScore = useMemo(() => Math.floor(60 + Math.random() * 35), [p.id]);
   const pricePerSqft = p.built_up_area && p.price ? Math.round(p.price / p.built_up_area) : null;
 
@@ -161,8 +181,19 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
           )}
         </div>
 
-        {/* Save + Compare */}
+        {/* Save, Compare + Share */}
         <div className="absolute top-3 right-3 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.share?.({ title: p.title, url: window.location.origin + generatePropertyUrl(p) })
+                .catch(() => navigator.clipboard.writeText(window.location.origin + generatePropertyUrl(p)));
+            }}
+            title="Share"
+            className="grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110 text-slate-500 hover:text-slate-900"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -213,6 +244,11 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
 
       {/* ── RIGHT: PROPERTY DETAILS ── */}
       <div className="flex flex-1 flex-col p-4 sm:p-5 min-w-0">
+        {isAiRecommended && (
+          <div className="mb-2 flex items-center gap-1.5 w-fit rounded-full bg-gradient-to-r from-purple-50 to-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-purple-700 border border-purple-100 shadow-sm" title="Recommended by our AI based on your search patterns and property quality">
+            <Sparkles className="h-3 w-3 text-purple-500" /> AI Recommended
+          </div>
+        )}
         {/* Title + Price */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -851,8 +887,19 @@ export function SearchPage() {
   const { addToast } = useToast();
   const [params, setParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
-  const [view, setView] = useState<ViewMode>('list');
-  const [sort, setSort] = useState<SortOption>('newest');
+  const view = (params.get('view') as ViewMode) || 'list';
+  const setView = (v: ViewMode) => {
+    const next = new URLSearchParams(params);
+    next.set('view', v);
+    setParams(next);
+  };
+  
+  const sort = (params.get('sort') as SortOption) || 'newest';
+  const setSort = (s: SortOption) => {
+    const next = new URLSearchParams(params);
+    next.set('sort', s);
+    setParams(next);
+  };
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [comparedIds, setComparedIds] = useState<Set<string>>(new Set());
@@ -884,11 +931,19 @@ export function SearchPage() {
   const query = params.get('q') || '';
 
   const searchSuggestions = useCallback(async (q: string) => {
-    if (q.length < 2) {
+    const cleaned = sanitizeSearchQuery(q);
+    if (cleaned.length < 2) {
       setSuggestions([]);
       return;
     }
-    const { data } = await supabase.from('properties').select('title').ilike('title', `%${q}%`).limit(6);
+    // Same source/status/fields as the main search so a suggestion always
+    // resolves to a non-empty result when selected.
+    const { data } = await supabase
+      .from('v_properties_search')
+      .select('title')
+      .or('status.eq.published,is_live.eq.true')
+      .ilike('search_text', `%${cleaned}%`)
+      .limit(6);
     setSuggestions((data ?? []).map((p: { title: string }) => p.title));
   }, []);
 
@@ -943,73 +998,19 @@ export function SearchPage() {
       furnishing: params.get('furnishing') || undefined,
       facing: params.get('facing') || undefined,
       is_luxury: params.get('luxury') === '1' || undefined,
+      sort_by: sort,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
     };
-  }, [params, types, cities, localities]);
+  }, [params, types, cities, localities, sort, page]);
 
-  const sortClause = useMemo(() => {
-    switch (sort) {
-      case 'price_asc':
-        return { order: 'price', ascending: true } as const;
-      case 'price_desc':
-        return { order: 'price', ascending: false } as const;
-      case 'popular':
-        return { order: 'view_count', ascending: false } as const;
-      case 'area':
-        return { order: 'built_up_area', ascending: false } as const;
-      default:
-        return { order: 'published_at', ascending: false } as const;
-    }
-  }, [sort]);
-
+  // Same data source and filters as every other listing surface (home, category
+  // pages) — v_properties_search's search_text covers locality/city/project/title
+  // in one ilike, so a locality-only query no longer returns 0 results just
+  // because the property's own title/description doesn't mention it.
   const { data, isLoading } = useQuery({
-    queryKey: ['search', filters, sort, page],
-    queryFn: async () => {
-      let q = supabase
-        .from('properties')
-        .select('*, cities!inner(name), localities(name), property_types(name)', { count: 'estimated' })
-        .eq('status', 'published');
-      if (filters.purpose) {
-        if (filters.purpose.toLowerCase() === 'pg') {
-          q = q.or('purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,title.ilike.%pg%,description.ilike.%pg%');
-        } else {
-          q = q.eq('purpose', filters.purpose);
-        }
-      }
-      if (filters.city_id) q = q.eq('city_id', filters.city_id);
-      // Phase 11: Apply resolved locality filter
-      if ((filters as any).locality_id) q = q.eq('locality_id', (filters as any).locality_id);
-      if (filters.property_type_id) q = q.eq('property_type_id', filters.property_type_id);
-      if (filters.min_price != null) q = q.gte('price', filters.min_price);
-      if (filters.max_price != null) q = q.lte('price', filters.max_price);
-      if (filters.bedrooms != null) q = q.eq('bedrooms', filters.bedrooms);
-      if (filters.bathrooms != null) q = q.eq('bathrooms', filters.bathrooms);
-      if (filters.min_area != null) q = q.gte('built_up_area', filters.min_area);
-      if (filters.max_area != null) q = q.lte('built_up_area', filters.max_area);
-      if (filters.furnishing) q = q.eq('furnishing', filters.furnishing);
-      if (filters.facing) q = q.eq('facing', filters.facing);
-      if (filters.is_luxury) q = q.eq('is_luxury', true);
-      if (filters.q)
-        q = q.or(`title.ilike.%${filters.q}%,description.ilike.%${filters.q}%,address.ilike.%${filters.q}%`);
-      q = q
-        .order(sortClause.order, { ascending: sortClause.ascending })
-        .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-      const { data, error, count } = await q;
-      if (error) throw error;
-      const mapped = (data ?? []).map((p) => {
-        const r = p as unknown as {
-          cities?: { name: string };
-          localities?: { name: string };
-          property_types?: { name: string };
-        };
-        return {
-          ...p,
-          city_name: r.cities?.name ?? null,
-          locality_name: r.localities?.name ?? null,
-          property_type_name: r.property_types?.name ?? null,
-        };
-      });
-      return { data: mapped, count: count ?? 0 };
-    },
+    queryKey: ['search', filters],
+    queryFn: () => fetchPublishedProperties(filters),
   });
 
   const setFilter = (key: string, value: string) => {
@@ -1081,9 +1082,20 @@ export function SearchPage() {
                   searchSuggestions(e.target.value);
                 }}
                 placeholder={t('search.placeholder', 'City, locality, project or builder...')}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-12 text-sm text-slate-800 placeholder:text-slate-400 focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-20 text-sm text-slate-800 placeholder:text-slate-400 focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                {query && (
+                  <button
+                    onClick={() => {
+                      setFilter('q', '');
+                      setSuggestions([]);
+                    }}
+                    className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
                 <VoiceSearchButton
                   onResult={(text) => {
                     setFilter('q', text);
@@ -1140,8 +1152,6 @@ export function SearchPage() {
                   <option value="newest">Newest First</option>
                   <option value="price_asc">Price: Low to High</option>
                   <option value="price_desc">Price: High to Low</option>
-                  <option value="area_asc">Area: Low to High</option>
-                  <option value="area_desc">Area: High to Low</option>
                   <option value="ai_recommended">AI Recommended</option>
                   <option value="most_viewed">Most Viewed</option>
                   <option value="most_contacted">Most Contacted</option>
@@ -1500,23 +1510,26 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
     };
   }, [params, types, category, typeFilter, cities]);
 
+  // Same v_properties_search source/status as the main search page and every
+  // other listing surface — search_text covers locality/city/project/title so
+  // a locality-only q never returns 0 just because title/description omit it.
   const { data, isLoading } = useQuery({
     queryKey: ['category', category, filters, page],
     queryFn: async () => {
       let q = supabase
-        .from('properties')
-        .select('*, cities!inner(name), localities(name), property_types(name)', { count: 'estimated' })
-        .eq('status', 'published');
-      
+        .from('v_properties_search')
+        .select('*', { count: 'estimated' })
+        .or('status.eq.published,is_live.eq.true');
+
       if (filters.purpose) q = q.eq('purpose', filters.purpose);
       if (filters.city_id) q = q.eq('city_id', filters.city_id);
-      
+
       if (filters.property_type_id) {
         q = q.eq('property_type_id', filters.property_type_id);
       } else if (typeFilter && typeFilter.length > 0) {
         q = q.in('property_type_id', typeFilter);
       }
-      
+
       if (filters.min_price != null) q = q.gte('price', filters.min_price);
       if (filters.max_price != null) q = q.lte('price', filters.max_price);
       if (filters.bedrooms != null) q = q.eq('bedrooms', filters.bedrooms);
@@ -1526,29 +1539,19 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
       if (filters.furnishing) q = q.eq('furnishing', filters.furnishing);
       if (filters.facing) q = q.eq('facing', filters.facing);
       if (filters.is_luxury) q = q.eq('is_luxury', true);
-      if (filters.q) q = q.or(`title.ilike.%${filters.q}%,description.ilike.%${filters.q}%,address.ilike.%${filters.q}%`);
-      
+      if (filters.q) {
+        const cleaned = sanitizeSearchQuery(filters.q);
+        if (cleaned) q = q.ilike('search_text', `%${cleaned}%`);
+      }
+
       q = q
         .order('is_featured', { ascending: false })
         .order('published_at', { ascending: false })
         .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-      
+
       const { data, error, count } = await q;
       if (error) throw error;
-      const mapped = (data ?? []).map((p) => {
-        const r = p as unknown as {
-          cities?: { name: string };
-          localities?: { name: string };
-          property_types?: { name: string };
-        };
-        return {
-          ...p,
-          city_name: r.cities?.name ?? null,
-          locality_name: r.localities?.name ?? null,
-          property_type_name: r.property_types?.name ?? null,
-        };
-      });
-      return { data: mapped, count: count ?? mapped.length };
+      return { data: (data ?? []) as unknown as Property[], count: count ?? (data?.length ?? 0) };
     },
   });
 

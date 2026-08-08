@@ -69,24 +69,8 @@ import { AppShowcase } from '../../components/app-showcase';
 import type { HeroCampaign, Property } from '../../lib/types';
 import { useLocationContext } from '../../contexts/location-context';
 
-// Lightweight, localStorage-backed favorites — same minimal pattern as
-// components/property-card.tsx, kept local to this file (no new data-layer files).
-const HOME_FAVORITES_KEY = 'realtynow_favorite_ids';
-function readHomeFavoriteIds(): string[] {
-  try {
-    const raw = localStorage.getItem(HOME_FAVORITES_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-function writeHomeFavoriteIds(ids: string[]) {
-  try {
-    localStorage.setItem(HOME_FAVORITES_KEY, JSON.stringify(ids));
-  } catch {
-    /* ignore */
-  }
-}
+import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
+import { useAuth } from '../../lib/auth';
 
 type HomeCardProperty = Property & {
   city_name?: string | null;
@@ -98,33 +82,44 @@ type HomeCardProperty = Property & {
 /* ============================================================
    Compact premium property card — shared by the homepage carousels
 ============================================================ */
-function HomePropertyCard({
-  property: p,
+export function HomePropertyCard({
+  property,
   badge,
 }: {
   property: HomeCardProperty;
   badge?: { label: string; className: string; icon?: React.ReactNode };
 }) {
+  const { t } = useLanguageContext();
+  const { user } = useAuth();
   const { addToast } = useToast();
-  const [favorited, setFavorited] = useState(() => readHomeFavoriteIds().includes(p.id));
-  const reraNumber = (p as { rera_number?: string | null }).rera_number ?? null;
+  const { data: favoriteIds } = useFavorites(user?.id);
+  const favorited = favoriteIds ? favoriteIds.includes(property.id) : false;
+  
+  const [localFavorited, setLocalFavorited] = useState(() => getLocalFavoriteIds().includes(property.id));
+  useEffect(() => {
+    if (!user) {
+      const handleSyncFavorites = () => setLocalFavorited(getLocalFavoriteIds().includes(property.id));
+      window.addEventListener('realtynow-favorites-updated', handleSyncFavorites);
+      return () => window.removeEventListener('realtynow-favorites-updated', handleSyncFavorites);
+    }
+  }, [property.id, user]);
 
-  const handleFavoriteClick = (e: React.MouseEvent) => {
+  const isCurrentlyFavorited = user ? favorited : localFavorited;
+  const reraNumber = (property as { rera_number?: string | null }).rera_number ?? null;
+
+  const handleFavorite = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const ids = readHomeFavoriteIds();
-    const isNowFavorited = !ids.includes(p.id);
-    writeHomeFavoriteIds(isNowFavorited ? [...ids, p.id] : ids.filter((id) => id !== p.id));
-    setFavorited(isNowFavorited);
+    await toggleFavoriteProperty(property.id, user?.id, isCurrentlyFavorited);
   };
 
   const handleShareClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}${generatePropertyUrl(p)}`;
+    const url = `${window.location.origin}${generatePropertyUrl(property)}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: p.title, url });
+        await navigator.share({ title: property.title, url });
         return;
       }
       await navigator.clipboard.writeText(url);
@@ -136,13 +131,13 @@ function HomePropertyCard({
 
   return (
     <Link
-      to={generatePropertyUrl(p)}
+      to={generatePropertyUrl(property)}
       className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-shadow duration-300 hover:shadow-[0_16px_36px_rgba(0,0,0,0.12)]"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-slate-100">
         <img
-          src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
-          alt={p.title}
+          src={property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+          alt={property.title}
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
         />
@@ -158,14 +153,14 @@ function HomePropertyCard({
         )}
         <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
           <button
-            onClick={handleFavoriteClick}
-            aria-label={favorited ? 'Remove from favorites' : 'Add to favorites'}
+            onClick={handleFavorite}
             className={cn(
-              'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110',
-              favorited ? 'bg-white text-red-500' : 'bg-white/90 text-slate-600 hover:bg-white',
+              'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-transform hover:scale-110 cursor-pointer',
+              isCurrentlyFavorited ? 'text-red-500' : 'text-slate-600 hover:text-slate-900',
             )}
+            title={isCurrentlyFavorited ? t('common.removeFromFavorites', 'Remove') : t('common.addToFavorites', 'Save')}
           >
-            <Heart className={cn('h-3.5 w-3.5', favorited && 'fill-red-500')} />
+            <Heart className={cn('h-4 w-4', isCurrentlyFavorited && 'fill-red-500')} />
           </button>
           <button
             onClick={handleShareClick}
@@ -175,9 +170,9 @@ function HomePropertyCard({
             <Share2 className="h-3.5 w-3.5" />
           </button>
         </div>
-        {p.possession_status && (
+        {property.possession_status && (
           <span className="absolute bottom-2.5 left-2.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">
-            {p.possession_status}
+            {property.possession_status}
           </span>
         )}
         {reraNumber && (
@@ -189,22 +184,22 @@ function HomePropertyCard({
 
       <div className="flex flex-1 flex-col p-3.5">
         <p className="font-display text-base font-extrabold text-slate-900">
-          {formatCompactPrice(p.price)}
-          {p.purpose === 'Rent' && <span className="text-[10px] font-medium text-slate-400">/mo</span>}
+          {formatCompactPrice(property.price)}
+          {property.purpose === 'Rent' && <span className="text-[10px] font-medium text-slate-400">/mo</span>}
         </p>
         <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
-          {p.title}
+          {property.title}
         </h3>
         <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
           <MapPin className="h-3 w-3 shrink-0" />
           <span className="line-clamp-1">
-            {p.locality_name ? `${p.locality_name}, ` : ''}
-            {p.city_name ?? 'Hyderabad'}
+            {property.locality_name ? `${property.locality_name}, ` : ''}
+            {property.city_name ?? 'Hyderabad'}
           </span>
         </p>
-        {p.bedrooms != null && (
+        {property.bedrooms != null && (
           <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-            <Bed className="h-3 w-3 text-slate-400" /> {p.bedrooms} BHK
+            <Bed className="h-3 w-3 text-slate-400" /> {property.bedrooms} BHK
           </span>
         )}
       </div>
@@ -305,7 +300,12 @@ const HERO_SLIDES: HeroSlide[] = [
   },
 ];
 
-const HERO_SLIDE_INTERVAL_MS = 5000;
+const HERO_SLIDE_INTERVAL_MS = 5000; // Keep in sync with the `hero-progress` animation duration in tailwind.config.js
+
+const heroTextVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' as const } },
+};
 
 function mapCampaignToHeroSlide(c: HeroCampaign): HeroSlide {
   return {
@@ -327,8 +327,9 @@ function mapCampaignToHeroSlide(c: HeroCampaign): HeroSlide {
 }
 
 function HeroSection() {
-  const [slideIndex, setSlideIndex] = useState(0);
   const { cityId } = useLocationContext();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isHovering, setIsHovering] = useState(false);
 
   const { data: campaigns } = useQuery({
     queryKey: ['hero-campaigns'],
@@ -382,60 +383,136 @@ function HeroSection() {
     return sortedLive.length > 0 ? sortedLive.map(mapCampaignToHeroSlide) : HERO_SLIDES;
   }, [campaigns, cityId]);
 
-  // Keep slideIndex in range if the live slide list shrinks/refreshes.
-  useEffect(() => {
-    if (slideIndex >= slides.length) setSlideIndex(0);
-  }, [slides.length, slideIndex]);
+  // Plugin instance must stay referentially stable across renders — recreating it
+  // inline on every render (e.g. after setSelectedIndex) re-triggers Autoplay's
+  // init/reset logic and was causing scrollNext() to advance by two slides.
+  const autoplayPlugin = useRef(Autoplay({ delay: HERO_SLIDE_INTERVAL_MS, stopOnInteraction: false }));
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, align: 'start', duration: 32 }, [autoplayPlugin.current]);
 
-  // Autoplay every 5s.
+  // Drive pause-on-hover explicitly off our own hover state rather than the
+  // plugin's built-in stopOnMouseEnter, which didn't reliably see hover/leave
+  // on this nested container and let the timer keep firing underneath.
+  useEffect(() => {
+    if (!emblaApi) return;
+    try {
+      if (isHovering) autoplayPlugin.current.stop();
+      else autoplayPlugin.current.play();
+    } catch {
+      // Autoplay can be mid-(re)init during React StrictMode's double-effect
+      // dev-mode cycle; a missed play/stop here self-corrects on the next
+      // hover change, so failing silently beats crashing the whole section.
+    }
+  }, [isHovering, emblaApi]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    const onSelect = () => setSelectedIndex(emblaApi.selectedScrollSnap());
+    emblaApi.on('select', onSelect);
+    onSelect();
+    return () => {
+      emblaApi.off('select', onSelect);
+    };
+  }, [emblaApi]);
+
+  // Live campaigns can load after mount and change the slide count — re-measure
+  // embla's scroll snaps so autoplay/drag stay in sync with the new slide list.
+  useEffect(() => {
+    emblaApi?.reInit();
+  }, [emblaApi, slides.length]);
+
+  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
+  const scrollTo = useCallback((index: number) => emblaApi?.scrollTo(index), [emblaApi]);
+
+  // Arrow-key navigation, scoped to pointer-over-hero so it doesn't hijack arrow
+  // keys used elsewhere on the page (search box, forms).
+  const isHoveringRef = useRef(false);
+  useEffect(() => {
+    isHoveringRef.current = isHovering;
+  }, [isHovering]);
   useEffect(() => {
     if (slides.length <= 1) return;
-    const timer = setInterval(() => {
-      setSlideIndex((i) => (i + 1) % slides.length);
-    }, HERO_SLIDE_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [slides.length]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isHoveringRef.current) return;
+      if (e.key === 'ArrowLeft') scrollPrev();
+      else if (e.key === 'ArrowRight') scrollNext();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [scrollPrev, scrollNext, slides.length]);
 
-  const prevSlide = () => setSlideIndex((i) => (i - 1 + slides.length) % slides.length);
-  const nextSlide = () => setSlideIndex((i) => (i + 1) % slides.length);
+  // Wheel navigation — deliberately never calls preventDefault, so a mouse/trackpad
+  // flick over the hero still scrolls the page; it just also nudges the slide.
+  const wheelLockRef = useRef(false);
+  const onWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (slides.length <= 1 || wheelLockRef.current) return;
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(delta) < 24) return;
+      wheelLockRef.current = true;
+      if (delta > 0) scrollNext();
+      else scrollPrev();
+      window.setTimeout(() => {
+        wheelLockRef.current = false;
+      }, 700);
+    },
+    [scrollNext, scrollPrev, slides.length],
+  );
 
-  const activeSlide = slides[slideIndex] ?? slides[0];
-  const isFirstSlide = slideIndex === 0;
+  const activeSlide = slides[selectedIndex] ?? slides[0];
 
   return (
-    <section className="relative overflow-hidden bg-white">
+    <section
+      className="relative overflow-hidden bg-navy-950 focus:outline-none"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      onWheel={onWheel}
+    >
       <div className="relative h-[380px] sm:h-[430px] lg:h-[470px] max-h-[470px] w-full">
-        {/* Full-bleed banner image — no tint/gradient over it */}
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={activeSlide.id}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.7, ease: 'easeInOut' }}
-            className="absolute inset-0"
-          >
-            <picture>
-              {activeSlide.imageMobile && activeSlide.imageMobile !== activeSlide.imageDesktop && (
-                <source media="(max-width: 640px)" srcSet={activeSlide.imageMobile} />
-              )}
-              <img
-                src={activeSlide.imageDesktop}
-                alt={activeSlide.title}
-                className="h-full w-full object-cover object-center"
-                loading={isFirstSlide ? 'eager' : 'lazy'}
-                {...{ fetchpriority: isFirstSlide ? 'high' : 'low' }}
-              />
-            </picture>
-          </motion.div>
-        </AnimatePresence>
+        {/* Sliding track — slides sit edge-to-edge so the next banner is always
+           physically adjacent, never a blank gap, during the transition. */}
+        <div className="h-full w-full overflow-hidden" ref={emblaRef}>
+          <div className="flex h-full">
+            {slides.map((slide, index) => {
+              const isActive = index === selectedIndex;
+              return (
+                <div key={slide.id} className="relative h-full min-w-0 flex-[0_0_100%]">
+                  <motion.div
+                    className="absolute inset-0 will-change-transform"
+                    animate={isActive ? 'active' : 'inactive'}
+                    initial="inactive"
+                    variants={{
+                      active: { scale: 1, opacity: 1, filter: 'blur(0px)' },
+                      inactive: { scale: 1.05, opacity: 0.55, filter: 'blur(6px)' },
+                    }}
+                    transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <picture>
+                      {slide.imageMobile && slide.imageMobile !== slide.imageDesktop && (
+                        <source media="(max-width: 640px)" srcSet={slide.imageMobile} />
+                      )}
+                      <img
+                        key={isActive ? `${slide.id}-kb-${selectedIndex}` : slide.id}
+                        src={slide.imageDesktop}
+                        alt={slide.title}
+                        className={cn('h-full w-full object-cover object-center', isActive && 'animate-hero-ken-burns')}
+                        loading={index === 0 ? 'eager' : 'lazy'}
+                        {...{ fetchpriority: index === 0 ? 'high' : 'low' }}
+                      />
+                    </picture>
+                  </motion.div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Left/right navigation arrows */}
         {slides.length > 1 && (
           <>
             <button
               type="button"
-              onClick={prevSlide}
+              onClick={scrollPrev}
               aria-label="Previous slide"
               className="absolute left-3 top-1/2 -translate-y-1/2 sm:left-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
             >
@@ -443,7 +520,7 @@ function HeroSection() {
             </button>
             <button
               type="button"
-              onClick={nextSlide}
+              onClick={scrollNext}
               aria-label="Next slide"
               className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
             >
@@ -452,20 +529,26 @@ function HeroSection() {
           </>
         )}
 
-        {/* Pagination dots */}
+        {/* Animated progress indicator — fills over the autoplay dwell time instead of a static dot */}
         {slides.length > 1 && (
-          <div className="absolute bottom-4 right-4 z-20 flex gap-2 sm:right-6">
+          <div className="absolute bottom-4 right-4 z-20 flex gap-1.5 sm:right-6">
             {slides.map((s, idx) => (
               <button
                 type="button"
                 key={s.id}
-                onClick={() => setSlideIndex(idx)}
+                onClick={() => scrollTo(idx)}
                 aria-label={`Go to slide ${idx + 1}`}
-                className={cn(
-                  'h-2 rounded-full transition-all',
-                  idx === slideIndex ? 'w-6 bg-red-600' : 'w-2 bg-white/80 hover:bg-white',
-                )}
-              />
+                className="relative h-1 w-7 overflow-hidden rounded-full bg-white/30 sm:w-9"
+              >
+                <span
+                  key={idx === selectedIndex ? `progress-${selectedIndex}` : undefined}
+                  className={cn(
+                    'absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white',
+                    idx < selectedIndex ? 'scale-x-100' : idx > selectedIndex ? 'scale-x-0' : 'animate-hero-progress',
+                  )}
+                  style={idx === selectedIndex ? { animationPlayState: isHovering ? 'paused' : 'running' } : undefined}
+                />
+              </button>
             ))}
           </div>
         )}
@@ -474,64 +557,78 @@ function HeroSection() {
         <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-t from-navy-950/85 via-navy-950/35 to-navy-950/10" />
 
         {/* Slide info — centered directly over the banner image */}
-        <div className="absolute inset-0 z-10 flex items-center justify-center px-4 text-center sm:px-8">
-          <AnimatePresence mode="wait">
+        <div className="absolute inset-0 z-10">
+          <AnimatePresence initial={false}>
             <motion.div
-              key={`panel-${activeSlide.id}`}
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -18 }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-              className="max-w-2xl"
+              key={`panel-${activeSlide.id}-${selectedIndex}`}
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+              variants={{ visible: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } } }}
+              className="absolute inset-0 flex items-center justify-center px-4 text-center sm:px-8"
             >
-              {activeSlide.companyLogo && (
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white/95 p-1 shadow-lg sm:h-12 sm:w-12">
-                  <img src={activeSlide.companyLogo} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
-                </div>
-              )}
-
-              {activeSlide.locationText && (
-                <p className="mb-2 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 [text-shadow:0_1px_6px_rgba(0,0,0,0.6)] sm:text-sm">
-                  <MapPin className="h-3.5 w-3.5 shrink-0 text-red-400" />
-                  {activeSlide.locationText}
-                </p>
-              )}
-
-              <h2 className="font-display text-2xl font-extrabold uppercase leading-[1.15] tracking-wide text-white [text-shadow:0_4px_24px_rgba(0,0,0,0.55)] sm:text-4xl lg:text-5xl">
-                {activeSlide.title}
-              </h2>
-
-              {activeSlide.subtitle && (
-                <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/90 [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base">
-                  {activeSlide.subtitle}
-                </p>
-              )}
-
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-5">
-                {activeSlide.priceText && (
-                  <span className="text-sm font-bold text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base">
-                    {activeSlide.priceText}
-                  </span>
-                )}
-                {activeSlide.ctaLink.startsWith('http') ? (
-                  <a
-                    href={activeSlide.ctaLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
+              <div className="max-w-2xl">
+                {activeSlide.companyLogo && (
+                  <motion.div
+                    variants={heroTextVariants}
+                    className="mx-auto mb-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white/95 p-1 shadow-lg sm:h-12 sm:w-12"
                   >
-                    {activeSlide.ctaText}
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </a>
-                ) : (
-                  <Link
-                    to={activeSlide.ctaLink}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
-                  >
-                    {activeSlide.ctaText}
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
+                    <img src={activeSlide.companyLogo} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                  </motion.div>
                 )}
+
+                {activeSlide.locationText && (
+                  <motion.p
+                    variants={heroTextVariants}
+                    className="mb-2 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 [text-shadow:0_1px_6px_rgba(0,0,0,0.6)] sm:text-sm"
+                  >
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                    {activeSlide.locationText}
+                  </motion.p>
+                )}
+
+                <motion.h2
+                  variants={heroTextVariants}
+                  className="font-display text-2xl font-extrabold uppercase leading-[1.15] tracking-wide text-white [text-shadow:0_4px_24px_rgba(0,0,0,0.55)] sm:text-4xl lg:text-5xl"
+                >
+                  {activeSlide.title}
+                </motion.h2>
+
+                {activeSlide.subtitle && (
+                  <motion.p
+                    variants={heroTextVariants}
+                    className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/90 [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base"
+                  >
+                    {activeSlide.subtitle}
+                  </motion.p>
+                )}
+
+                <motion.div variants={heroTextVariants} className="mt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-5">
+                  {activeSlide.priceText && (
+                    <span className="text-sm font-bold text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base">
+                      {activeSlide.priceText}
+                    </span>
+                  )}
+                  {activeSlide.ctaLink.startsWith('http') ? (
+                    <a
+                      href={activeSlide.ctaLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
+                    >
+                      {activeSlide.ctaText}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </a>
+                  ) : (
+                    <Link
+                      to={activeSlide.ctaLink}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
+                    >
+                      {activeSlide.ctaText}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                </motion.div>
               </div>
             </motion.div>
           </AnimatePresence>
@@ -1548,20 +1645,20 @@ function SignatureCollection() {
     <section className="mt-4 mb-8 sm:mt-6 sm:mb-12 w-full bg-[#F8FAFC] py-8 lg:py-12 overflow-hidden relative">
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50 to-[#F8FAFC] opacity-80 pointer-events-none" />
       
-      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 relative z-10">
+      <div className="container-wide relative z-10">
         
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight">
+            <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
               Signature Collection
             </h2>
-            <p className="mt-3 text-base sm:text-lg text-slate-600 font-medium">
+            <p className="mt-1 text-sm text-slate-600 font-medium">
               Ultra Luxury Homes for the Discerning Buyer
             </p>
           </motion.div>

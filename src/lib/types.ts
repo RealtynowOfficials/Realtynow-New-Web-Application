@@ -142,6 +142,7 @@ export interface Property {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  cover_image_url?: string | null;
   // AI Verified Listings (denormalized from ai_verifications for fast badge rendering)
   verification_status?: 'Pending AI' | 'AI Verified' | 'Manual Review' | 'Rejected' | null;
   ai_verified_at?: string | null;

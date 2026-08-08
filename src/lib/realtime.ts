@@ -105,16 +105,6 @@ export function useRealtimeNotifications(userId: string | undefined) {
               .is('read_at', null);
             setUnreadCount(count ?? 0);
           })();
-
-          if (payload.eventType === 'INSERT') {
-            const newNotif = payload.new as any;
-            if (Notification.permission === 'granted') {
-              new Notification(newNotif.title, {
-                body: newNotif.body,
-                icon: '/pwa-192x192.png',
-              });
-            }
-          }
         },
       )
       .subscribe();

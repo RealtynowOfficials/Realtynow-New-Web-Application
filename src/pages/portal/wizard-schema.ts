@@ -75,10 +75,10 @@ export const propertyWizardSchema = z.object({
   images: z.array(z.string()).default([]),
   media_urls: z
     .object({
-      videos: z.array(z.string()).optional(),
-      virtual_tour: z.string().optional(),
-      floor_plan: z.string().optional(),
-      brochure: z.string().optional(),
+      videos: z.array(z.string().optional().nullable().or(z.literal(''))).optional(),
+      virtual_tour: z.string().optional().nullable().or(z.literal('')),
+      floor_plan: z.string().optional().nullable().or(z.literal('')),
+      brochure: z.string().optional().nullable().or(z.literal('')),
     })
     .optional(),
 
@@ -99,6 +99,42 @@ export const propertyWizardSchema = z.object({
   ownership_type: z.string().optional(),
   rera_number: z.string().optional(),
   property_tax_id: z.string().optional(),
+
+  // Rent / Lease Specific
+  minimum_rental_period: z.string().optional(),
+  notice_period: z.string().optional(),
+  preferred_tenant: z.string().optional(),
+  family_bachelor: z.string().optional(),
+  pets_allowed: z.boolean().optional(),
+  lease_duration: z.string().optional(),
+  lock_in_period: z.string().optional(),
+  escalation_percentage: z.string().optional(),
+  renewal_terms: z.string().optional(),
+  maintenance_responsibility: z.string().optional(),
+  registration_charges: z.string().optional(),
+
+  // PG / Hostel / CoLiving Specific
+  total_beds: z.string().optional(),
+  available_beds: z.string().optional(),
+  room_size: z.string().optional(),
+  attached_bathroom: z.boolean().optional(),
+  ac_non_ac: z.string().optional(),
+  food_availability: z.string().optional(), // 'Breakfast,Lunch,Dinner'
+  total_rooms: z.string().optional(),
+
+  // Vacation Specific
+  maximum_guests: z.string().optional(),
+  beds: z.string().optional(),
+  check_in_time: z.string().optional(),
+  check_out_time: z.string().optional(),
+  minimum_stay: z.string().optional(),
+  maximum_stay: z.string().optional(),
+  weekday_price: z.string().optional(),
+  weekend_price: z.string().optional(),
+  seasonal_price: z.string().optional(),
+  cleaning_fee: z.string().optional(),
+  extra_guest_fee: z.string().optional(),
+  cancellation_policy: z.string().optional(),
 });
 
 export type PropertyWizardForm = z.infer<typeof propertyWizardSchema>;
@@ -113,7 +149,7 @@ export const WIZARD_STEPS = [
   'Media',
   'Pricing',
   'Availability',
-  'Ownership',
+  'SEO',
   'Review',
   'Submit',
 ];

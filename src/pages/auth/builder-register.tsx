@@ -163,6 +163,7 @@ export function BuilderRegisterPage() {
   const prev = () => setStep((s) => s - 1);
 
   const submit = async () => {
+    if (submitting) return;
     setLoading(true);
     setServerError(null);
     try {
@@ -216,17 +217,17 @@ export function BuilderRegisterPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-navy-50 flex items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md text-center"
         >
-          <div className="h-24 w-24 mx-auto rounded-full bg-gold-400/20 flex items-center justify-center mb-6">
-            <CheckCircle2 className="h-12 w-12 text-gold-400" />
+          <div className="h-24 w-24 mx-auto rounded-full bg-gold-500/20 flex items-center justify-center mb-6">
+            <CheckCircle2 className="h-12 w-12 text-gold-600" />
           </div>
-          <h1 className="font-display text-3xl font-bold text-white">Application Received!</h1>
-          <p className="mt-3 text-navy-200">
+          <h1 className="font-display text-3xl font-bold text-navy-900">Application Received!</h1>
+          <p className="mt-3 text-navy-600">
             Thank you, <span className="text-gold-300 font-semibold">{form.company_name}</span>! We'll verify your
             company and GST details. Expect to hear from us at <span className="text-gold-300">{form.email}</span>{' '}
             within 3–5 business days.
@@ -237,9 +238,9 @@ export function BuilderRegisterPage() {
               { icon: BadgeCheck, label: 'GST Verified' },
               { icon: ShieldCheck, label: 'RERA Checked' },
             ].map(({ icon: Icon, label }) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3 text-center">
-                <Icon className="h-5 w-5 text-gold-400 mx-auto mb-1" />
-                <p className="text-xs text-navy-300">{label}</p>
+              <div key={label} className="rounded-xl border border-navy-200 bg-navy-50/50 p-3 text-center">
+                <Icon className="h-5 w-5 text-gold-600 mx-auto mb-1" />
+                <p className="text-xs text-navy-500">{label}</p>
               </div>
             ))}
           </div>
@@ -254,15 +255,15 @@ export function BuilderRegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800">
+    <div className="min-h-screen bg-navy-50">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gold-400/10 blur-3xl" />
+        <div className="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" />
         <div className="absolute bottom-0 -left-20 h-96 w-96 rounded-full bg-navy-700/20 blur-3xl" />
       </div>
 
       <div className="relative grid lg:grid-cols-[360px,1fr] min-h-screen">
         {/* LEFT PANEL */}
-        <div className="hidden lg:flex flex-col justify-between bg-white/5 backdrop-blur-sm border-r border-white/10 p-10">
+        <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 border-r border-navy-800 p-10 relative overflow-hidden z-10">
           <LogoLight to="/" size={220} />
           <div>
             <div className="h-14 w-14 rounded-2xl bg-gold-400/20 grid place-items-center mb-4">
@@ -313,7 +314,7 @@ export function BuilderRegisterPage() {
               {STEPS.map((s) => (
                 <div
                   key={s.id}
-                  className={`h-2 rounded-full transition-all ${step === s.id ? 'w-8 bg-gold-400' : step > s.id ? 'w-4 bg-success-500' : 'w-4 bg-white/20'}`}
+                  className={`h-2 rounded-full transition-all ${step === s.id ? 'w-8 bg-gold-500' : step > s.id ? 'w-4 bg-success-500' : 'w-4 bg-white/20'}`}
                 />
               ))}
             </div>
@@ -328,8 +329,8 @@ export function BuilderRegisterPage() {
               >
                 {step === 1 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Company Information</h1>
-                    <p className="mt-1 text-sm text-navy-300">Basic details about your organization</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Company Information</h1>
+                    <p className="mt-1 text-sm text-navy-500">Basic details about your organization</p>
                     <div className="mt-6 space-y-4">
                       <DarkInput
                         label="Company / Developer Name"
@@ -390,12 +391,12 @@ export function BuilderRegisterPage() {
                         placeholder="https://www.company.com"
                       />
                       <div>
-                        <label className="block text-sm font-medium text-navy-200 mb-1.5">Company Description</label>
+                        <label className="block text-sm font-medium text-navy-600 mb-1.5">Company Description</label>
                         <textarea
                           rows={3}
                           value={form.description}
                           onChange={(e) => set('description', e.target.value)}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30 resize-none"
+                          className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30 resize-none"
                           placeholder="Tell buyers about your company, portfolio, and signature projects…"
                         />
                       </div>
@@ -405,8 +406,8 @@ export function BuilderRegisterPage() {
 
                 {step === 2 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Legal & Compliance</h1>
-                    <p className="mt-1 text-sm text-navy-300">Government registration numbers for verification</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Legal & Compliance</h1>
+                    <p className="mt-1 text-sm text-navy-500">Government registration numbers for verification</p>
                     <div className="mt-6 space-y-4">
                       <DarkInput
                         label="GST Number"
@@ -431,9 +432,9 @@ export function BuilderRegisterPage() {
                         placeholder="AABCU9603R"
                         hint="Company PAN (10 characters)"
                       />
-                      <div className="rounded-xl border border-gold-400/20 bg-gold-400/5 p-4 text-xs text-navy-300">
-                        <BadgeCheck className="h-4 w-4 text-gold-400 mb-1.5" />
-                        <p className="text-white font-semibold">Why we collect this?</p>
+                      <div className="rounded-xl border border-gold-200 bg-gold-500/5 p-4 text-xs text-navy-500">
+                        <BadgeCheck className="h-4 w-4 text-gold-600 mb-1.5" />
+                        <p className="text-navy-900 font-semibold">Why we collect this?</p>
                         <p className="mt-1">
                           These details are required to verify your legal business entity and display the "Verified
                           Builder" badge on your listings.
@@ -445,8 +446,8 @@ export function BuilderRegisterPage() {
 
                 {step === 3 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Supporting Documents</h1>
-                    <p className="mt-1 text-sm text-navy-300">Upload supporting documents for verification</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Supporting Documents</h1>
+                    <p className="mt-1 text-sm text-navy-500">Upload supporting documents for verification</p>
                     <div className="mt-6 space-y-5">
                       <DocUpload
                         label="GST Certificate *"
@@ -478,8 +479,8 @@ export function BuilderRegisterPage() {
 
                 {step === 4 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-white">Review & Submit</h1>
-                    <p className="mt-1 text-sm text-navy-300">Please confirm all details are correct</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">Review & Submit</h1>
+                    <p className="mt-1 text-sm text-navy-500">Please confirm all details are correct</p>
                     <div className="mt-5 space-y-2">
                       {[
                         { label: 'Company', value: form.company_name },
@@ -495,10 +496,10 @@ export function BuilderRegisterPage() {
                       ].map(({ label, value }) => (
                         <div
                           key={label}
-                          className="flex justify-between items-start gap-4 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5"
+                          className="flex justify-between items-start gap-4 rounded-lg border border-navy-200 bg-navy-50/50 px-4 py-2.5"
                         >
-                          <span className="text-xs text-navy-400 w-24 flex-shrink-0">{label}</span>
-                          <span className="text-sm text-white text-right break-all">{value}</span>
+                          <span className="text-xs text-navy-500 w-24 flex-shrink-0">{label}</span>
+                          <span className="text-sm text-navy-900 text-right break-all">{value}</span>
                         </div>
                       ))}
                     </div>
@@ -507,13 +508,13 @@ export function BuilderRegisterPage() {
                         {serverError}
                       </div>
                     )}
-                    <p className="mt-4 text-xs text-navy-400">
+                    <p className="mt-4 text-xs text-navy-500">
                       By submitting, you agree to our{' '}
-                      <Link to="/terms" className="text-gold-400 hover:underline">
+                      <Link to="/terms" className="text-gold-600 hover:underline">
                         Terms
                       </Link>{' '}
                       and{' '}
-                      <Link to="/privacy" className="text-gold-400 hover:underline">
+                      <Link to="/privacy" className="text-gold-600 hover:underline">
                         Privacy Policy
                       </Link>
                       .
@@ -527,12 +528,12 @@ export function BuilderRegisterPage() {
               {step > 1 ? (
                 <button
                   onClick={prev}
-                  className="flex items-center gap-2 text-sm text-navy-300 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-sm text-navy-500 hover:text-navy-900 transition-colors"
                 >
                   <ArrowLeft className="h-4 w-4" /> Back
                 </button>
               ) : (
-                <Link to="/builder/login" className="text-sm text-navy-400 hover:text-white transition-colors">
+                <Link to="/builder/login" className="text-sm text-navy-500 hover:text-navy-900 transition-colors">
                   Already registered?
                 </Link>
               )}

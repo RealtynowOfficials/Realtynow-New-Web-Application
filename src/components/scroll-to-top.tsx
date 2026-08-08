@@ -20,8 +20,14 @@ export function ScrollToTop() {
   const navigationType = useNavigationType();
   const savedScrollY = useRef<number | undefined>(undefined);
 
+  // Disable browser's automatic scroll restoration to avoid fighting with our logic
+  useLayoutEffect(() => {
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual';
+    }
+  }, []);
+
   // Capture the saved position synchronously before paint so we can use it
-  // in the effect below (by then the DOM will have committed the new page).
   useLayoutEffect(() => {
     if (navigationType === 'POP') {
       savedScrollY.current = getSavedScrollPosition();
@@ -44,9 +50,9 @@ export function ScrollToTop() {
     };
   }, [location.key]);
 
-  // Apply scroll after paint
-  useEffect(() => {
-    // ── Hash navigation: scroll to anchor ─────────────────────────────────
+  // Apply scroll BEFORE paint for fresh navigations to eliminate flash
+  useLayoutEffect(() => {
+    // Hash navigation: defer until after paint so the element exists
     if (location.hash) {
       requestAnimationFrame(() => {
         const el = document.getElementById(location.hash.slice(1));
@@ -55,17 +61,20 @@ export function ScrollToTop() {
       return;
     }
 
-    // ── POP (Back/Forward): restore saved position ─────────────────────────
-    if (navigationType === 'POP') {
+    // PUSH / REPLACE: reset to top synchronously before the browser paints
+    if (navigationType !== 'POP') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, [location.key, location.hash, navigationType]);
+
+  // Apply scroll AFTER paint for Back/Forward restores (needs DOM to be fully laid out)
+  useEffect(() => {
+    if (navigationType === 'POP' && !location.hash) {
       const scrollY = savedScrollY.current ?? getSavedScrollPosition();
       if (scrollY !== undefined && scrollY > 0) {
         restoreScrollPosition(scrollY);
       }
-      return;
     }
-
-    // ── PUSH / REPLACE: reset to top ──────────────────────────────────────
-    window.scrollTo({ top: 0, behavior: 'instant' });
   }, [location.key, location.hash, navigationType]);
 
   return null;

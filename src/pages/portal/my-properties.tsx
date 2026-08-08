@@ -99,25 +99,27 @@ export function PortalMyProperties() {
     }).length;
   };
 
-  const filtered = (data ?? []).filter((p) => {
-    if (tab === 'all') {
-      /* no-op, status-tab passes everything through */
-    } else if (tab === 'draft') {
-      if (p.status !== 'draft') return false;
-    } else if (tab === 'pending') {
-      if (!(['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending')) return false;
-    } else if (tab === 'published') {
-      if (!((p.status === 'published' || p.is_live) && p.status !== 'rejected')) return false;
-    } else if (tab === 'rejected') {
-      if (!(['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected')) return false;
-    } else if (p.status !== tab) return false;
+  const filtered = useMemo(() => {
+    return (data ?? []).filter((p) => {
+      if (tab === 'all') {
+        /* no-op, status-tab passes everything through */
+      } else if (tab === 'draft') {
+        if (p.status !== 'draft') return false;
+      } else if (tab === 'pending') {
+        if (!(['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending')) return false;
+      } else if (tab === 'published') {
+        if (!((p.status === 'published' || p.is_live) && p.status !== 'rejected')) return false;
+      } else if (tab === 'rejected') {
+        if (!(['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected')) return false;
+      } else if (p.status !== tab) return false;
 
-    if (rich.city && p.city_id !== rich.city) return false;
-    if (rich.type && p.property_type_id !== rich.type) return false;
-    if (rich.minPrice && p.price < Number(rich.minPrice)) return false;
-    if (rich.maxPrice && p.price > Number(rich.maxPrice)) return false;
-    return true;
-  });
+      if (rich.city && p.city_id !== rich.city) return false;
+      if (rich.type && p.property_type_id !== rich.type) return false;
+      if (rich.minPrice && p.price < Number(rich.minPrice)) return false;
+      if (rich.maxPrice && p.price > Number(rich.maxPrice)) return false;
+      return true;
+    });
+  }, [data, tab, rich]);
 
   const filterOptions = useMemo(() => {
     const cities = new Map<string, string>();
@@ -166,7 +168,7 @@ export function PortalMyProperties() {
     });
   };
 
-  const columns: Column<Property>[] = [
+  const columns = useMemo<Column<Property>[]>(() => [
     {
       key: 'title',
       header: t('compare.propertyCol', 'Property'),
@@ -308,7 +310,7 @@ export function PortalMyProperties() {
         </div>
       ),
     },
-  ];
+  ], [t, submitMutation.isPending, resubmitMutation.isPending]);
 
   return (
     <DashboardLayout sections={sections} title={t('common.saved', 'My Properties')}>
@@ -316,7 +318,7 @@ export function PortalMyProperties() {
         title={t('common.saved', 'My Properties')}
         subtitle={t('portal.manageListingsSub', 'Manage all your listings across every status.')}
         action={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="relative z-30 flex flex-wrap items-center gap-2">
             <SavedFiltersMenu
               presets={savedFilters.presets}
               onSave={(name) => savedFilters.save(name, rich)}
@@ -353,7 +355,7 @@ export function PortalMyProperties() {
         }
       />
 
-      <div className="sticky top-0 z-20 -mx-1 mb-4 space-y-3 bg-navy-50/95 px-1 pb-3 pt-1 backdrop-blur-sm">
+      <div className="sticky top-16 z-20 -mx-1 mb-4 space-y-3 bg-navy-50/95 px-1 pb-3 pt-1 backdrop-blur-sm">
         <div className="flex gap-2 overflow-x-auto">
           {tabs.map((tItem) => {
             const count = getTabCount(tItem.key);

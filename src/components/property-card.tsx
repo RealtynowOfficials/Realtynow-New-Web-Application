@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bed, MapPin, Heart, Star, GitCompare, Share2, ShieldCheck } from 'lucide-react';
+import { Bed, MapPin, Heart, Star, GitCompare, Share2, ShieldCheck, Sparkles } from 'lucide-react';
 import type { Property } from '../lib/types';
 import { formatCompactPrice, cn , generatePropertyUrl} from '../lib/utils';
 import { Badge } from './ui';
@@ -11,32 +11,41 @@ import { useToast } from './toast';
 import { useLanguageContext } from '../lib/i18n/language-context';
 import { SharePropertyModal } from './share-property-modal';
 
-// Lightweight, localStorage-backed favorites — mirrors the pattern used by
-// lib/compare.ts but kept local to this component (no new data-layer files).
-const FAVORITES_KEY = 'realtynow_favorite_ids';
-function readFavoriteIds(): string[] {
-  try {
-    const raw = localStorage.getItem(FAVORITES_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-function writeFavoriteIds(ids: string[]) {
-  try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
-  } catch {
-    /* ignore */
-  }
-}
+import { useQueryClient } from '@tanstack/react-query';
+import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../lib/favorites';
 
-export function PropertyCard({ property, compact }: { property: Property; compact?: boolean }) {
+export function PropertyCard({ property, compact, isAiRecommended = false }: { property: Property; compact?: boolean, isAiRecommended?: boolean }) {
   const { user } = useAuth();
   const { addToast } = useToast();
   const { t } = useLanguageContext();
   const [compared, setCompared] = useState(() => isCompared(property.id));
-  const [favorited, setFavorited] = useState(() => readFavoriteIds().includes(property.id));
-  const img = property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
+  const queryClient = useQueryClient();
+  const { data: favoriteIds } = useFavorites(user?.id);
+  const favorited = favoriteIds ? favoriteIds.includes(property.id) : false;
+  
+  // Sync logic for unauthenticated users since the hook relies on events
+  const [localFavorited, setLocalFavorited] = useState(() => getLocalFavoriteIds().includes(property.id));
+  
+  useEffect(() => {
+    if (!user) {
+      const handleSyncFavorites = () => setLocalFavorited(getLocalFavoriteIds().includes(property.id));
+      window.addEventListener('realtynow-favorites-updated', handleSyncFavorites);
+      return () => window.removeEventListener('realtynow-favorites-updated', handleSyncFavorites);
+    }
+  }, [property.id, user]);
+  
+  const isCurrentlyFavorited = user ? favorited : localFavorited;
+  let parsedImages = property.images;
+  if (typeof parsedImages === 'string') {
+    try {
+      parsedImages = JSON.parse(parsedImages);
+    } catch {
+      parsedImages = [parsedImages as unknown as string];
+    }
+  } else if (parsedImages && !Array.isArray(parsedImages)) {
+    parsedImages = [parsedImages as any];
+  }
+  const img = property.cover_image_url || (Array.isArray(parsedImages) && parsedImages.length > 0 ? parsedImages[0] : 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg');
   // RERA data isn't present on the Property model / v_properties_search view — badge stays hidden until it is.
   const reraNumber = (property as { rera_number?: string | null }).rera_number ?? null;
 
@@ -68,14 +77,16 @@ export function PropertyCard({ property, compact }: { property: Property; compac
     }
   };
 
-  const handleFavoriteClick = (e: React.MouseEvent) => {
+  const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const ids = readFavoriteIds();
-    const isNowFavorited = !ids.includes(property.id);
-    const updated = isNowFavorited ? [...ids, property.id] : ids.filter((id) => id !== property.id);
-    writeFavoriteIds(updated);
-    setFavorited(isNowFavorited);
+    
+    // Optimistic update for unauthenticated users is handled by toggleFavoriteProperty's event
+    await toggleFavoriteProperty(property.id, user?.id, isCurrentlyFavorited);
+    
+    if (user) {
+      queryClient.invalidateQueries({ queryKey: ['favorites', user.id] });
+    }
   };
 
   const handleShareClick = (e: React.MouseEvent) => {
@@ -133,16 +144,13 @@ export function PropertyCard({ property, compact }: { property: Property; compac
             <button
               onClick={handleFavoriteClick}
               title={
-                favorited
+                isCurrentlyFavorited
                   ? t('common.removeFromFavorites', 'Remove from favorites')
                   : t('common.addToFavorites', 'Add to favorites')
               }
-              className={cn(
-                'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110',
-                favorited ? 'bg-white text-error-500' : 'bg-white/90 text-navy-600 hover:bg-white',
-              )}
+              className={cn('grid h-7 w-7 place-items-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-transform hover:scale-110', isCurrentlyFavorited ? 'text-error-500' : 'text-navy-600 hover:text-navy-900')}
             >
-              <Heart className={cn('h-3.5 w-3.5', favorited && 'fill-error-500')} />
+              <Heart className={cn('h-3.5 w-3.5', isCurrentlyFavorited && 'fill-error-500')} />
             </button>
             <button
               onClick={handleShareClick}
@@ -159,6 +167,11 @@ export function PropertyCard({ property, compact }: { property: Property; compac
           )}
         </div>
         <div className={cn('flex flex-1 flex-col', compact ? 'p-3' : 'p-3.5')}>
+          {isAiRecommended && (
+            <div className="mb-2 flex items-center gap-1.5 w-fit rounded-full bg-gradient-to-r from-purple-50 to-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-purple-700 border border-purple-100 shadow-sm" title="Recommended by our AI based on your search patterns and property quality">
+              <Sparkles className="h-3 w-3 text-purple-500" /> AI Recommended
+            </div>
+          )}
           <p className="font-display text-base font-extrabold text-navy-900">
             {formatCompactPrice(property.price)}
             {property.purpose === 'Rent' && (

@@ -99,7 +99,7 @@ export const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Share Property" size="md">
+    <Modal open={isOpen} onClose={onClose} title="Share Property" size="md">
       <div className="space-y-6 p-1">
         {/* Property Preview Header */}
         <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ShieldCheck,
@@ -7,7 +7,6 @@ import {
   ArrowRight,
   RotateCw,
   Search,
-  Home,
   Briefcase,
   HardHat,
   Star,
@@ -23,7 +22,7 @@ import { useToast } from '../../components/toast';
 import { Input } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { cn } from '../../lib/utils';
-import { initMsg91Widget, sendMsg91Otp, verifyMsg91Otp, retryMsg91Otp, MSG91_CAPTCHA_CONTAINER_ID } from '../../lib/msg91';
+import { initMsg91Widget, sendMsg91Otp, verifyMsg91Otp, retryMsg91Otp, getPersistentCaptchaContainer } from '../../lib/msg91';
 
 const OTP_LENGTH = 4;
 const OTP_EXPIRY_SECONDS = 5 * 60;
@@ -35,10 +34,9 @@ type LoginTab = 'customer' | 'agent';
 // Purely presentational — four segments map onto the same two functional login intents
 // (LoginTab) that already exist. Buyer/Owner both drive the 'customer' OTP flow, Agent/
 // Builder both drive the 'agent' flow, exactly as the previous 2-tab UI did.
-type Segment = 'buyer' | 'owner' | 'agent' | 'builder';
+type Segment = 'buyer_owner' | 'agent' | 'builder';
 const SEGMENTS: { id: Segment; label: string; tab: LoginTab; icon: typeof Search }[] = [
-  { id: 'buyer', label: 'Buyer', tab: 'customer', icon: Search },
-  { id: 'owner', label: 'Owner', tab: 'customer', icon: Home },
+  { id: 'buyer_owner', label: 'Buyer/Owner', tab: 'customer', icon: Search },
   { id: 'agent', label: 'Agent', tab: 'agent', icon: Briefcase },
   { id: 'builder', label: 'Builder', tab: 'agent', icon: HardHat },
 ];
@@ -91,7 +89,7 @@ export function OtpLoginPage() {
   const { addToast } = useToast();
 
   const [tab, setTab] = useState<LoginTab>('customer');
-  const [segment, setSegment] = useState<Segment>('buyer');
+  const [segment, setSegment] = useState<Segment>('buyer_owner');
   const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
   const [mobile, setMobile] = useState('');
   const [mobileError, setMobileError] = useState<string | null>(null);
@@ -117,8 +115,17 @@ export function OtpLoginPage() {
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
 
+  const captchaMountRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (step !== 'mobile') return;
+    
+    // Append the persistent captcha container to the DOM
+    if (captchaMountRef.current) {
+      const container = getPersistentCaptchaContainer();
+      captchaMountRef.current.appendChild(container);
+    }
+
     // Pre-warm the widget so the H-Captcha checkbox is already rendered and
     // solvable before the user clicks "Send OTP", rather than only starting
     // init on click (which would leave sendOtp waiting on an unsolved captcha).
@@ -166,6 +173,7 @@ export function OtpLoginPage() {
   );
 
   const sendOtp = useCallback(async () => {
+    if (sending) return;
     const parsed = mobileSchema.safeParse(mobile);
     if (!parsed.success) {
       setMobileError(parsed.error.issues[0]?.message ?? 'Enter a valid mobile number');
@@ -419,7 +427,7 @@ export function OtpLoginPage() {
           </div>
 
           {step === 'mobile' && (
-            <div className="relative mb-7 grid grid-cols-4 gap-1 rounded-2xl bg-navy-100/70 p-1.5">
+            <div className="relative mb-7 grid grid-cols-3 gap-1 rounded-2xl bg-navy-100/70 p-1.5">
               {SEGMENTS.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -516,7 +524,7 @@ export function OtpLoginPage() {
 
                   {/* MSG91 renders its captcha challenge here — must stay visible/interactive,
                       it may require a click to resolve depending on the widget's dashboard config */}
-                  <div id={MSG91_CAPTCHA_CONTAINER_ID} className="flex justify-center" />
+                  <div ref={captchaMountRef} className="flex justify-center min-h-[80px]" />
 
                   {/* ── Terms & Privacy Policy Consent Checkbox ── */}
                   <label
@@ -585,10 +593,29 @@ export function OtpLoginPage() {
                   </button>
                 </form>
 
+                
                 <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-navy-400">
                   <Lock className="h-3 w-3" />
                   {t('auth.privacyNote', 'Protected by industry-standard encryption.')}
                 </p>
+
+                {segment === 'agent' && (
+                  <div className="mt-6 text-center text-sm text-navy-600">
+                    Don't have an Agent account?{' '}
+                    <Link to="/agent/register" className="font-semibold text-red-600 hover:underline">
+                      Register
+                    </Link>
+                  </div>
+                )}
+                {segment === 'builder' && (
+                  <div className="mt-6 text-center text-sm text-navy-600">
+                    Don't have a Builder account?{' '}
+                    <Link to="/builder/register" className="font-semibold text-red-600 hover:underline">
+                      Register
+                    </Link>
+                  </div>
+                )}
+
               </motion.div>
             ) : (
               <motion.div

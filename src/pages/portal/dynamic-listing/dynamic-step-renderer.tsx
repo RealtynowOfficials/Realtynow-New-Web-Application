@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Input, Textarea, Select } from '../../../components/ui';
 import { FileUploader } from '../../../components/uploader/file-uploader';
 import { supabase } from '../../../lib/supabase';
