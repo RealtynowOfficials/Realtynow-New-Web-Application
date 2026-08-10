@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -183,6 +183,9 @@ export function BuilderRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // Synchronous guard against double-submit — see agent-register.tsx for why
+  // React state alone isn't enough here.
+  const submittingRef = useRef(false);
 
   const set = (key: keyof FormData, val: string | File | null) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -207,7 +210,8 @@ export function BuilderRegisterPage() {
   const prev = () => setStep((s) => s - 1);
 
   const submit = async () => {
-    if (loading) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setServerError(null);
     try {
@@ -218,9 +222,13 @@ export function BuilderRegisterPage() {
 
       // Store the permanent storage PATH, not the temporary signed URL —
       // the admin portal generates fresh signed URLs on-demand when previewing.
+      // crypto.randomUUID() (not Date.now()) guarantees a unique path even if two
+      // uploads race (e.g. a fast double-click on Submit) — storage.objects has a
+      // unique (bucket_id, name) constraint, and a timestamp-only path let two
+      // concurrent uploads collide on it.
       const uploadDoc = async (file: File | null, prefix: string) => {
         if (!file) return null;
-        const r = await uploadFile('builder-documents', file, `applications/${prefix}-${Date.now()}-${file.name}`);
+        const r = await uploadFile('builder-documents', file, `applications/${prefix}-${crypto.randomUUID()}-${file.name}`);
         if (r.error) throw new Error(r.error);
         return r.path || null;
       };
@@ -258,6 +266,7 @@ export function BuilderRegisterPage() {
     } catch (e: unknown) {
       setServerError(getFriendlyErrorMessage(e));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };

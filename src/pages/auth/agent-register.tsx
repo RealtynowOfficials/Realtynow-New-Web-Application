@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -173,6 +173,11 @@ export function AgentRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // Synchronous guard against double-submit — a fast double-click can invoke
+  // submit() twice before the `loading` state re-render disables the button,
+  // which previously raced two uploads to the same storage path and hit
+  // storage's unique (bucket_id, name) constraint.
+  const submittingRef = useRef(false);
 
   const set = (key: keyof FormData, val: string | File | null) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -198,7 +203,8 @@ export function AgentRegisterPage() {
   const prev = () => setStep((s) => s - 1);
 
   const submit = async () => {
-    if (loading) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setServerError(null);
     try {
@@ -215,7 +221,11 @@ export function AgentRegisterPage() {
       }
 
       if (form.id_doc) {
-        const r = await uploadFile('agent-documents', form.id_doc, `applications/id-${Date.now()}-${form.id_doc.name}`);
+        // crypto.randomUUID() (not Date.now()) guarantees a unique storage path even
+        // if two uploads race (e.g. a fast double-click on Submit) — storage.objects
+        // has a unique (bucket_id, name) constraint, and a timestamp-only path let
+        // two concurrent uploads collide on it.
+        const r = await uploadFile('agent-documents', form.id_doc, `applications/id-${crypto.randomUUID()}-${form.id_doc.name}`);
         if (r.error) throw new Error(r.error);
         // Store permanent storage PATH (r.path), NOT the temporary signed URL (r.url).
         // Admin portal generates fresh signed URLs on-demand when previewing.
@@ -225,7 +235,7 @@ export function AgentRegisterPage() {
         const r = await uploadFile(
           'agent-documents',
           form.license_doc,
-          `applications/lic-${Date.now()}-${form.license_doc.name}`,
+          `applications/lic-${crypto.randomUUID()}-${form.license_doc.name}`,
         );
         if (r.error) throw new Error(r.error);
         license_doc_url = r.path || null;
@@ -265,6 +275,7 @@ export function AgentRegisterPage() {
     } catch (e: unknown) {
       setServerError(getFriendlyErrorMessage(e));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
