@@ -166,6 +166,25 @@ export async function exportToPdf(
     .save();
 }
 
+// Translates raw Postgres/Supabase/storage error text into a message safe to
+// show end users — never surface RLS policy names, column names, or SQL
+// error codes to them; the raw error still belongs in the console for
+// debugging.
+export function getFriendlyErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+  console.error(err);
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  if (/row-level security policy/i.test(raw)) {
+    return "We couldn't save that — please try again, and contact support if it keeps happening.";
+  }
+  if (/violates.*constraint|duplicate key/i.test(raw)) {
+    return 'This looks like a duplicate submission. Please check your details and try again.';
+  }
+  if (/network|fetch/i.test(raw)) {
+    return 'Network error — please check your connection and try again.';
+  }
+  return fallback;
+}
+
 export function generatePropertyUrl(p?: { id?: string | null; title?: string | null } | null): string {
   if (!p || !p.id) return '#';
   if (!p.title) return `/property/${p.id}`;

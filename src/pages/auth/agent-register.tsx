@@ -23,6 +23,7 @@ import { Button } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
 import { uploadProfilePhoto } from '../../lib/profile-photo';
+import { getFriendlyErrorMessage } from '../../lib/utils';
 
 const SPECIALIZATIONS = [
   'Residential',
@@ -262,7 +263,7 @@ export function AgentRegisterPage() {
       if (error) throw new Error(error.message);
       setSubmitted(true);
     } catch (e: unknown) {
-      setServerError(e instanceof Error ? e.message : 'Something went wrong');
+      setServerError(getFriendlyErrorMessage(e));
     } finally {
       setLoading(false);
     }

@@ -18,6 +18,7 @@ import { Button } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
 import { uploadProfilePhoto } from '../../lib/profile-photo';
+import { getFriendlyErrorMessage } from '../../lib/utils';
 
 const STEPS = [
   { id: 1, label: 'Company Info', icon: Building2 },
@@ -255,7 +256,7 @@ export function BuilderRegisterPage() {
       if (error) throw new Error(error.message);
       setSubmitted(true);
     } catch (e: unknown) {
-      setServerError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setServerError(getFriendlyErrorMessage(e));
     } finally {
       setLoading(false);
     }
