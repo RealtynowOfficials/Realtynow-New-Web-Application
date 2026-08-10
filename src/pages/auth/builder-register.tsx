@@ -246,6 +246,10 @@ export function BuilderRegisterPage() {
       }
 
       const { error } = await supabase.from('builder_applications').insert({
+        // Explicit, not relying on the column default — a prior mismatch between
+        // the default ('pending') and the status CHECK constraint (pipeline
+        // stages starting at 'submitted') made every insert fail silently.
+        status: 'submitted',
         company_name: form.company_name.trim(),
         contact_name: form.contact_name.trim(),
         email: form.email.trim().toLowerCase(),
