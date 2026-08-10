@@ -4,24 +4,36 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
+export function getPropertyPrice(p?: { purpose?: string | null; price?: number | null; rent_amount?: number | null }): number | null {
+  if (!p) return null;
+  const isRent = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'].includes(p.purpose || '');
+  if (isRent) {
+    return p.rent_amount && p.rent_amount > 0 ? p.rent_amount : null;
+  }
+  return p.price && p.price > 0 ? p.price : null;
+}
+
 export function formatPrice(value: number | null | undefined, purpose?: string): string {
   if (value == null) return '—';
-  const isRent = purpose === 'Rent';
+  const isRent = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'].includes(purpose || '');
   const formatter = new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
   });
   const formatted = formatter.format(value);
-  return isRent ? `${formatted}/mo` : formatted;
+  return isRent ? `${formatted}/month` : formatted;
 }
 
-export function formatCompactPrice(value: number | null | undefined): string {
+export function formatCompactPrice(value: number | null | undefined, purpose?: string): string {
   if (value == null) return '—';
-  if (value >= 10000000) return `₹${(value / 10000000).toFixed(2)} Cr`;
-  if (value >= 100000) return `₹${(value / 100000).toFixed(2)} L`;
-  if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
-  return `₹${value}`;
+  const isRent = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'].includes(purpose || '');
+  let formatted = `₹${value}`;
+  if (value >= 10000000) formatted = `₹${(value / 10000000).toFixed(2)} Cr`;
+  else if (value >= 100000) formatted = `₹${(value / 100000).toFixed(2)} L`;
+  else if (value >= 1000) formatted = `₹${(value / 1000).toFixed(0)}K`;
+  
+  return isRent ? `${formatted}/month` : formatted;
 }
 
 export function formatNumber(value: number | null | undefined): string {

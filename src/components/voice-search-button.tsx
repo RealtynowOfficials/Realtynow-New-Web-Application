@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 import { useLanguageContext } from '../lib/i18n/language-context';
+import { useToast } from './toast';
 
 interface VoiceSearchButtonProps {
   onResult: (transcript: string) => void;
@@ -8,10 +9,22 @@ interface VoiceSearchButtonProps {
   placeholder?: string;
 }
 
+function voiceErrorMessage(code: string): string {
+  if (code === 'not-allowed' || code === 'permission-denied') {
+    return 'Microphone access was denied. Please allow microphone access in your browser settings and try again.';
+  }
+  if (code === 'no-speech') return "Didn't catch that — no speech detected. Please try again.";
+  if (code === 'audio-capture') return 'No microphone was found. Please connect a microphone and try again.';
+  if (code === 'network') return 'Network error during voice recognition. Please check your connection and try again.';
+  return 'Voice search failed. Please try again or type your search instead.';
+}
+
 export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, className = '' }) => {
   const { currentLanguage } = useLanguageContext();
+  const toast = useToast();
   const [isListening, setIsListening] = useState<boolean>(false);
   const [supported, setSupported] = useState<boolean>(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
@@ -21,11 +34,14 @@ export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, 
 
   const handleToggleListen = () => {
     if (!supported) {
-      alert('Voice search is not supported in this browser. Please try Chrome, Edge, or Safari.');
+      toast.addToast('error', 'Voice search is not supported in this browser. Please try Chrome, Edge, or Safari.');
       return;
     }
 
     if (isListening) {
+      // Stop the real recognition instance too — otherwise it keeps listening
+      // in the background even though the UI now shows the idle mic icon.
+      recognitionRef.current?.stop();
       setIsListening(false);
       return;
     }
@@ -39,6 +55,7 @@ export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, 
       if (!SpeechRecognition) return;
 
       const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
       recognition.continuous = false;
       recognition.interimResults = false;
       recognition.lang = currentLanguage.bcp47 || 'en-IN';
@@ -55,9 +72,10 @@ export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, 
         setIsListening(false);
       };
 
-      recognition.onerror = (event: Event) => {
-        console.error('Voice speech recognition error:', event);
+      recognition.onerror = (event: { error: string }) => {
         setIsListening(false);
+        // "aborted" fires when the user deliberately stopped listening (handled above) — not a real error.
+        if (event.error !== 'aborted') toast.addToast('error', voiceErrorMessage(event.error));
       };
 
       recognition.onend = () => {
@@ -68,6 +86,7 @@ export const VoiceSearchButton: React.FC<VoiceSearchButtonProps> = ({ onResult, 
     } catch (err) {
       console.error('Failed to start voice recognition:', err);
       setIsListening(false);
+      toast.addToast('error', 'Could not start voice search. Please try again.');
     }
   };
 
@@ -99,7 +118,7 @@ interface SpeechRecognitionInstance {
   lang: string;
   onstart: () => void;
   onresult: (event: SpeechRecognitionEvent) => void;
-  onerror: (event: Event) => void;
+  onerror: (event: { error: string }) => void;
   onend: () => void;
   start: () => void;
   stop: () => void;

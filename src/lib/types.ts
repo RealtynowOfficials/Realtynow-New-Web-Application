@@ -41,6 +41,12 @@ export interface Profile {
   assigned_areas: string[] | null;
   specialization: string | null;
   two_factor_enabled: boolean;
+  rera_document_url: string | null;
+  rera_verified: boolean;
+  rera_verification_status: 'not_submitted' | 'pending' | 'under_review' | 'verified' | 'rejected';
+  rera_verified_at: string | null;
+  rera_verified_by: string | null;
+  rera_rejection_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -507,6 +513,7 @@ export interface AgentApplication {
   experience_years: number | null;
   company: string | null;
   bio: string | null;
+  profile_image: string | null;
   id_doc_url: string | null;
   license_doc_url: string | null;
   status: ApplicationStatus;

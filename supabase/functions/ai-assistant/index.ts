@@ -15,6 +15,146 @@ interface AIRequestBody {
   payload: Record<string, unknown>;
 }
 
+// ── Server-side real-data guard for property-search-shaped chat messages ──
+// Mirrors src/lib/ai.ts's isPropertySearchIntent/answerRealtyNowPropertySearch:
+// this function can be called directly (bypassing the client bundle entirely),
+// so the "never fabricate a result count" guarantee must not depend solely on
+// the client-side intercept — it must also hold here, independent of it.
+const BHK_TEST_RE = /\d\s*bhk/i;
+const PROPERTY_TYPE_TEST_RE =
+  /\b(apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?|for sale|for rent)\b/i;
+const PROPERTY_TYPE_MATCH_RE =
+  /\b(apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?)\b/i;
+const RENT_INTENT_RE = /\b(rent|rental|lease|to let)\b/i;
+const BUY_INTENT_RE = /\b(buy|sale|sell|purchase)\b/i;
+const SEARCH_STOPWORDS_RE =
+  /\b(show me|find|search for|search|looking for|i want|i'm looking for|need|please|can you|could you|apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?|properties?|property|for rent|for sale|to buy|to rent|to let|rent|rental|lease|buy|sale|sell|purchase|in|or|and|near|around|at|me|a|an|the)\b/gi;
+const QUESTION_LIKE_RE =
+  /[?]|\b(what|how|why|when|who|which|does|do|is|are|can|could|should|would|documents?|requirements?|process|policy)\b/i;
+const CITY_ALIASES: Record<string, string> = {
+  bangalore: 'Bengaluru',
+  bengaluru: 'Bengaluru',
+  bombay: 'Mumbai',
+  mumbai: 'Mumbai',
+  madras: 'Chennai',
+  chennai: 'Chennai',
+  calcutta: 'Kolkata',
+  kolkata: 'Kolkata',
+  gurgaon: 'Gurugram',
+  gurugram: 'Gurugram',
+};
+const LAKH_INR = 100_000;
+const CRORE_INR = 10_000_000;
+const PRICE_AMOUNT_RE = '(\\d+(?:\\.\\d+)?)\\s*(crores?|cr|lakhs?|lac)';
+const MAX_PRICE_RE = new RegExp(`\\b(?:under|below|less than|up to|within)\\s+${PRICE_AMOUNT_RE}\\b`, 'i');
+const MIN_PRICE_RE = new RegExp(`\\b(?:above|over|more than)\\s+${PRICE_AMOUNT_RE}\\b`, 'i');
+
+function normalizeCityAliases(text: string): string {
+  const words = text.split(' ').filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const alias = CITY_ALIASES[words[i].toLowerCase()];
+    if (alias) {
+      out.push(alias);
+      if (words[i + 1]?.toLowerCase() === 'city') i++;
+      continue;
+    }
+    out.push(words[i]);
+  }
+  return out.join(' ');
+}
+
+function priceToInr(amount: number, unit: string): number {
+  return Math.round(amount * (/^cr/i.test(unit) ? CRORE_INR : LAKH_INR));
+}
+
+function isPropertySearchIntent(message: string): boolean {
+  if (BHK_TEST_RE.test(message) || PROPERTY_TYPE_TEST_RE.test(message)) return true;
+  const trimmed = message.trim();
+  const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
+  return wordCount > 0 && wordCount <= 4 && !QUESTION_LIKE_RE.test(trimmed);
+}
+
+function formatInr(value: number): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+}
+
+async function answerFromRealtyNowListings(message: string, supabaseUrl: string, anonKey: string): Promise<string> {
+  let rest = message;
+  let maxPrice: number | undefined;
+  let minPrice: number | undefined;
+  const maxMatch = rest.match(MAX_PRICE_RE);
+  if (maxMatch) {
+    maxPrice = priceToInr(parseFloat(maxMatch[1]), maxMatch[2]);
+    rest = rest.replace(maxMatch[0], ' ');
+  }
+  const minMatch = rest.match(MIN_PRICE_RE);
+  if (minMatch) {
+    minPrice = priceToInr(parseFloat(minMatch[1]), minMatch[2]);
+    rest = rest.replace(minMatch[0], ' ');
+  }
+
+  const bedrooms = Array.from(new Set(Array.from(rest.matchAll(/(\d+)\s*bhk/gi)).map((m) => Number(m[1]))));
+  const purpose = RENT_INTENT_RE.test(rest) ? 'Rent' : BUY_INTENT_RE.test(rest) ? 'Sale' : undefined;
+  const typeMatch = rest.match(PROPERTY_TYPE_MATCH_RE);
+  const typeLabel = typeMatch ? typeMatch[0].toLowerCase() : 'properties';
+  const typeSingular = typeMatch ? typeMatch[0].toLowerCase().replace(/s$/, '') : undefined;
+  const q = normalizeCityAliases(
+    rest
+      .replace(/\d+\s*bhk/gi, ' ')
+      .replace(SEARCH_STOPWORDS_RE, ' ')
+      .replace(/[^\p{L}\p{N}\s,]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
+
+  const bhkLabel = bedrooms.length > 0 ? `${bedrooms.map((b) => `${b}BHK`).join(' and ')} ` : '';
+  const placeLabel = q ? ` in ${q}` : '';
+  const priceLabel = maxPrice != null ? ` under ${formatInr(maxPrice)}` : minPrice != null ? ` above ${formatInr(minPrice)}` : '';
+  const intro = `Sure! I'll search RealtyNow for available ${bhkLabel}${typeLabel}${placeLabel}${priceLabel}.`;
+
+  try {
+    const params = new URLSearchParams();
+    params.set('select', '*');
+    params.set('or', '(status.eq.published,is_live.eq.true)');
+    params.set('order', 'published_at.desc');
+    params.set('limit', '5');
+    if (purpose) params.set('purpose', `eq.${purpose}`);
+    if (bedrooms.length > 0) params.set('bedrooms', `in.(${bedrooms.join(',')})`);
+    if (typeSingular) params.set('property_type_name', `ilike.*${typeSingular}*`);
+    // PostgREST ANDs repeated query params on the same column, so min/max price
+    // and each location token can each be appended independently.
+    if (maxPrice != null) params.append('price', `lte.${maxPrice}`);
+    if (minPrice != null) params.append('price', `gte.${minPrice}`);
+    for (const token of q.split(' ').filter(Boolean)) {
+      params.append('search_text', `ilike.*${token}*`);
+    }
+
+    const res = await fetch(`${supabaseUrl}/rest/v1/v_properties_search?${params.toString()}`, {
+      headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+    });
+    if (!res.ok) throw new Error(`search failed: ${res.status}`);
+    const matches = (await res.json()) as Record<string, unknown>[];
+
+    if (matches.length === 0) {
+      return `${intro}\n\nI couldn't find an exact match on RealtyNow right now. Try nearby locations or adjust your budget/preferences. You can also browse all current RealtyNow listings${placeLabel} on our search page.`;
+    }
+
+    const lines = matches.map((p, i) => {
+      const priceVal = (p.purpose === 'Rent' ? p.rent_amount ?? p.price : p.price) as number | null;
+      const priceText = priceVal != null ? `${formatInr(priceVal)}${p.purpose === 'Rent' ? '/mo' : ''}` : 'Price on request';
+      const bhk = p.bedrooms ? `${p.bedrooms}BHK ` : '';
+      const type = p.property_type_name ? `${p.property_type_name} ` : '';
+      const where = [p.locality_name, p.city_name].filter(Boolean).join(', ');
+      return `${i + 1}. ${p.title} — ${bhk}${type}in ${where} — ${priceText}`;
+    });
+
+    return `${intro}\n\nHere's what's currently listed on RealtyNow:\n${lines.join('\n')}\n\nOpen RealtyNow's search page for full details or to schedule a visit.`;
+  } catch {
+    return `${intro}\n\nI'm having trouble searching RealtyNow listings right now. Please try again in a moment or use the RealtyNow search page directly.`;
+  }
+}
+
 function buildPrompt(task: string, payload: Record<string, unknown>): { system: string; user: string } {
   const p = payload;
   switch (task) {
@@ -163,8 +303,22 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { system, user } = buildPrompt(body.task, body.payload);
-    const result = await callOpenRouter(system, user);
+    let result: string;
+    const message = typeof body.payload.message === 'string' ? body.payload.message : '';
+    if (body.task === 'chat' && message && isPropertySearchIntent(message)) {
+      // Answered directly from real listings — never reaches the LLM, so there's
+      // nothing here that can hallucinate a result count or fabricate a listing,
+      // regardless of whether this function is called via the client bundle or
+      // hit directly.
+      result = await answerFromRealtyNowListings(
+        message,
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      );
+    } else {
+      const { system, user } = buildPrompt(body.task, body.payload);
+      result = await callOpenRouter(system, user);
+    }
 
     // Log activity (best-effort)
     if (userId) {

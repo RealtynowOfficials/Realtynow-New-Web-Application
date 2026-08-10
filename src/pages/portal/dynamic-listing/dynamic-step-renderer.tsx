@@ -322,10 +322,9 @@ function LocationField({
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
-              // Clear out selection if user types
-              if (value.google_place_id) {
-                onChange({ ...value, google_place_id: undefined, formatted_address: undefined });
-              }
+              // If user types, we invalidate the structured selection
+              // and only retain the raw text they typed as 'address'
+              onChange({ address: e.target.value });
             }}
             onKeyDown={handleKeyDown}
             onFocus={() => {

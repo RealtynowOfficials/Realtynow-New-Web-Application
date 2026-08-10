@@ -5,6 +5,7 @@ import { AdminAuthProvider } from './contexts/admin-auth-context';
 import { AdminProtectedRoute } from './components/admin-protected-route';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PublicLayout } from './components/public-layout';
 import { AIAssistant } from './components/ai-assistant';
 import { PwaInstallPrompt } from './components/pwa-install-prompt';
@@ -56,6 +57,13 @@ const AboutUsPage = lazy(() => import('./pages/public/about').then((m) => ({ def
 const ComparePage = lazy(() => import('./pages/public/compare').then((m) => ({ default: m.ComparePage })));
 const AIHubPage = lazy(() => import('./pages/public/ai-hub').then((m) => ({ default: m.AIHubPage })));
 const AgentsPage = lazy(() => import('./pages/public/agents').then((m) => ({ default: m.AgentsPage })));
+const AgentProfilePage = lazy(() =>
+  import('./pages/public/agent-profile').then((m) => ({ default: m.AgentProfilePage })),
+);
+const BuildersPage = lazy(() => import('./pages/public/builders').then((m) => ({ default: m.BuildersPage })));
+const BuilderProfilePage = lazy(() =>
+  import('./pages/public/builder-profile').then((m) => ({ default: m.BuilderProfilePage })),
+);
 const EMICalculatorPage = lazy(() =>
   import('./pages/public/emi-calculator').then((m) => ({ default: m.EMICalculatorPage })),
 );
@@ -338,6 +346,9 @@ function AppRoutes() {
                 { path: '/ai_property_advisor', element: <AIHubPage /> },
                 { path: '/ai-hub', element: <AIHubPage /> },
                 { path: '/agents', element: <AgentsPage /> },
+                { path: '/agents/:id', element: <AgentProfilePage /> },
+                { path: '/builders', element: <BuildersPage /> },
+                { path: '/builders/:id', element: <BuilderProfilePage /> },
                 { path: '/hyderabad-localities', element: <HyderabadLocalitiesPage /> },
                 { path: '/emi-calculator', element: <EMICalculatorPage /> },
                 { path: '/borewell-services', element: <BorewellServicesPage /> },
@@ -447,7 +458,6 @@ function AppRoutes() {
               ],
             },
             { path: '/agents', element: <Navigate to="/agent/login" replace /> },
-            { path: '/builders', element: <Navigate to="/builder/login" replace /> },
             {
               element: <ProtectedRoute allowRoles={['builder']} />,
               children: [
@@ -548,6 +558,7 @@ export default function App() {
           </AdminAuthProvider>
         </AuthProvider>
       </ToastProvider>
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   );
 }

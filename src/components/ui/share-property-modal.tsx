@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Copy, Download, Share2, MapPin, Check } from 'lucide-react';
 import { toPng } from 'html-to-image';
@@ -160,10 +161,15 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
     { name: 'SMS', icon: Icons.SMS, color: 'text-purple-600', bg: 'bg-purple-50 hover:bg-purple-100' },
   ];
 
-  return (
+  // Portaled to <body> — this modal is opened from inside the property-detail
+  // hero's absolutely-positioned, z-indexed action bar, which establishes its
+  // own stacking context. A z-50 inside that context can't out-rank sibling
+  // page sections with their own stacking contexts (e.g. the sticky identity
+  // bar), which is why the popup could render behind other hero content.
+  return createPortal(
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-        
+
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -284,6 +290,7 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
 
       {/* Hidden QR Share Card Render Target */}
       <QRShareCard ref={qrRef} property={property} propertyUrl={propertyUrl} />
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

@@ -19,129 +19,34 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Card, EmptyState, Button, Skeleton, Input, Textarea } from '../../components/ui';
 import { cn } from '../../lib/utils';
 
-export const DETAILED_BLOGS = [
-  {
-    id: '1',
-    slug: 'future-of-real-estate-ai',
-    title: 'The Future of Real Estate: How AI is Transforming Property Search',
-    excerpt: 'Artificial intelligence is reshaping the way we find, buy, and sell properties. Discover the next generation of real estate technology.',
-    cover_image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    tags: ['Technology', 'AI', 'Trends'],
-    author_name: 'Sarah Jenkins',
-    published_at: '2026-07-25T10:00:00Z',
-    content: `
-      <div class="space-y-6">
-        <p class="text-lg leading-relaxed text-navy-700">The real estate industry has always been a cornerstone of the global economy, but it has traditionally been slow to adopt new technologies. However, with the advent of advanced Artificial Intelligence (AI), the landscape is shifting dramatically.</p>
-        
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">1. Smart Property Matching</h2>
-        <p class="leading-relaxed text-navy-700">Gone are the days of endlessly scrolling through irrelevant listings. AI algorithms now analyze your past behavior, preferences, and even life events to curate a personalized list of properties. This means buyers can find their dream homes faster, and sellers can connect with genuinely interested buyers.</p>
-        <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" alt="Smart Property Matching" class="rounded-xl w-full h-auto my-6 shadow-md" />
-
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">2. Predictive Pricing Models</h2>
-        <p class="leading-relaxed text-navy-700">Understanding the fair market value of a property is crucial. AI models utilize hundreds of data points, including neighborhood trends, historical prices, and economic indicators to predict property values with unprecedented accuracy. This helps investors make data-driven decisions.</p>
-
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">3. Virtual Reality and AI Tours</h2>
-        <p class="leading-relaxed text-navy-700">When AI is combined with machine learning algorithms that enhance image resolution and map 3D spaces, VR gives buyers an unprecedented feel for a home without leaving their living room. AI can even stage empty rooms dynamically based on the buyer's style preferences.</p>
-
-        <blockquote class="border-l-4 border-primary-500 pl-4 italic text-navy-600 bg-primary-50 p-4 rounded-r-lg my-6">
-          "The real estate agent of the future is an AI-empowered advisor, spending less time on paperwork and more time on human connection."
-        </blockquote>
-
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">Conclusion</h2>
-        <p class="leading-relaxed text-navy-700">The integration of AI in real estate is not just a passing trend; it's a fundamental shift. As these technologies mature, we can expect a more transparent, efficient, and user-centric real estate market.</p>
-      </div>
-    `
-  },
-  {
-    id: '2',
-    slug: 'top-10-investment-hotspots-2026',
-    title: 'Top 10 Emerging Real Estate Investment Hotspots for 2026',
-    excerpt: 'Looking to maximize your ROI? We analyze the data to bring you the top 10 most promising neighborhoods and cities for property investment this year.',
-    cover_image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    tags: ['Investment', 'Market Analysis', 'Growth'],
-    author_name: 'David Chen',
-    published_at: '2026-07-20T14:30:00Z',
-    content: `
-      <div class="space-y-6">
-        <p class="text-lg leading-relaxed text-navy-700">Finding the right location is the golden rule of real estate investment. As urban landscapes evolve and remote work continues to influence migration patterns, new hotspots are emerging across the country.</p>
-        
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">The Shift to Sub-Urban Tech Hubs</h2>
-        <p class="leading-relaxed text-navy-700">With major tech companies establishing satellite offices outside traditional metropolitan areas, we are seeing a massive surge in property values in what used to be considered "tier-2" cities. These areas offer a lower cost of living while maintaining high salaries, driving up housing demand.</p>
-        
-        <ul class="list-disc pl-6 space-y-3 text-navy-700">
-          <li><strong class="text-navy-900">Infrastructure Development:</strong> Areas with newly announced metro lines or highway expansions are seeing a 15-20% higher appreciation rate.</li>
-          <li><strong class="text-navy-900">Green Spaces:</strong> Post-2020, properties adjacent to large parks or nature reserves command a significant premium.</li>
-          <li><strong class="text-navy-900">Commercial Proximity:</strong> Mixed-use developments where people can live, work, and play within a 15-minute radius are highly sought after.</li>
-        </ul>
-
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">Top Picks for 2026</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
-          <div class="bg-navy-50 p-4 rounded-xl border border-navy-100">
-            <h3 class="font-bold text-navy-900 text-lg">1. West Corridor, Tech City</h3>
-            <p class="text-sm text-navy-600 mt-2">Expected ROI: 12-15% annually. Driven by the new international airport expansion.</p>
-          </div>
-          <div class="bg-navy-50 p-4 rounded-xl border border-navy-100">
-            <h3 class="font-bold text-navy-900 text-lg">2. North Hills Lake District</h3>
-            <p class="text-sm text-navy-600 mt-2">Expected ROI: 10-14% annually. High demand for luxury waterfront villas.</p>
-          </div>
-        </div>
-
-        <p class="leading-relaxed text-navy-700">Investors should focus on areas with strong local governance and proactive urban planning. Remember, while historical data is helpful, understanding future infrastructure plans is the key to unlocking massive returns.</p>
-      </div>
-    `
-  },
-  {
-    id: '3',
-    slug: 'sustainable-homes-eco-friendly-living',
-    title: 'The Rise of Sustainable Homes: Why Eco-Friendly Living is the New Luxury',
-    excerpt: 'From solar panels to smart climate control, discover why modern buyers are willing to pay a premium for green, sustainable properties.',
-    cover_image: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    tags: ['Architecture', 'Sustainability', 'Luxury'],
-    author_name: 'Elena Rodriguez',
-    published_at: '2026-07-15T09:15:00Z',
-    content: `
-      <div class="space-y-6">
-        <p class="text-lg leading-relaxed text-navy-700">Luxury in real estate used to mean marble floors and sprawling square footage. Today, it means zero-carbon footprints, energy independence, and harmony with nature. Sustainable homes are no longer a niche market; they are the new standard of premium living.</p>
-        
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">What Makes a Home "Sustainable"?</h2>
-        <p class="leading-relaxed text-navy-700">A truly eco-friendly home goes beyond just having a recycling bin. It encompasses the entire lifecycle of the building, from the materials used during construction to the energy consumed during its lifespan.</p>
-        
-        <div class="my-8 rounded-2xl overflow-hidden shadow-lg border border-navy-100">
-          <img src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" alt="Sustainable modern home" class="w-full h-64 object-cover" />
-          <div class="bg-white p-6">
-            <h3 class="font-bold text-navy-900 text-xl mb-2">Key Features of Green Homes</h3>
-            <ul class="space-y-2 text-navy-700">
-              <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span> Passive solar design for natural heating and cooling</li>
-              <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span> Rainwater harvesting and greywater recycling systems</li>
-              <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span> Smart energy grids with battery storage</li>
-              <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span> Use of reclaimed or highly renewable materials like bamboo</li>
-            </ul>
-          </div>
-        </div>
-
-        <h2 class="text-2xl font-bold text-navy-900 mt-8 mb-4">The Financial Benefits</h2>
-        <p class="leading-relaxed text-navy-700">While sustainable homes often have a higher upfront cost, the long-term savings are substantial. Homeowners see drastically reduced utility bills, and in many regions, they benefit from significant tax incentives. Furthermore, data shows that green homes sell 20% faster and at a 5-10% premium compared to conventional homes.</p>
-
-        <p class="leading-relaxed text-navy-700">Investing in sustainability is not just about saving the planet; it's a sound financial decision that future-proofs your property against rising energy costs and changing environmental regulations.</p>
-      </div>
-    `
-  }
-];
-
 export function BlogListPage() {
   const { t } = useLanguageContext();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const pageSize = 9;
+  const realtimeTick = useRealtimeCount('blogs');
 
-  const data = DETAILED_BLOGS.filter(b => {
+  const { data: allBlogs = [], isLoading } = useQuery({
+    queryKey: ['blogs', realtimeTick],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('blogs')
+        .select('*')
+        .eq('published', true)
+        .order('published_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((b) => ({ ...b, author_name: 'RealtyNow Team', tags: b.tags ?? [] }));
+    },
+  });
+
+  const data = allBlogs.filter((b) => {
     if (search && !b.title.toLowerCase().includes(search.toLowerCase()) && !b.tags.join(' ').toLowerCase().includes(search.toLowerCase())) return false;
     if (category && !b.tags.includes(category)) return false;
     return true;
   });
 
-  const allTags = Array.from(new Set(DETAILED_BLOGS.flatMap(b => b.tags)));
+  const allTags = Array.from(new Set(allBlogs.flatMap((b) => b.tags)));
 
   const totalPages = Math.ceil(data.length / pageSize);
   const paginatedData = data.slice((page - 1) * pageSize, page * pageSize);
@@ -191,7 +96,13 @@ export function BlogListPage() {
         )}
       </div>
 
-      {paginatedData.length > 0 ? (
+      {isLoading ? (
+        <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-96 rounded-3xl" />
+          ))}
+        </div>
+      ) : paginatedData.length > 0 ? (
         <>
           <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {paginatedData.map((b) => (
@@ -273,8 +184,30 @@ export function BlogListPage() {
 export function BlogDetailPage() {
   const { t } = useLanguageContext();
   const { slug } = useParams();
-  
-  const blog = DETAILED_BLOGS.find(b => b.slug === slug || b.id === slug);
+
+  const { data: blog, isLoading } = useQuery({
+    queryKey: ['blogs', 'detail', slug],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('blogs')
+        .select('*')
+        .eq('slug', slug)
+        .eq('published', true)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return { ...data, author_name: 'RealtyNow Team', tags: data.tags ?? [] };
+    },
+    enabled: Boolean(slug),
+  });
+
+  if (isLoading)
+    return (
+      <div className="container-page py-24 min-h-[60vh]">
+        <Skeleton className="h-10 w-2/3 mb-6" />
+        <Skeleton className="h-96 rounded-3xl" />
+      </div>
+    );
 
   if (!blog)
     return (
@@ -307,7 +240,7 @@ export function BlogDetailPage() {
           </Link>
           
           <div className="flex flex-wrap items-center gap-3 mb-6">
-            {blog.tags && blog.tags.map(tag => (
+            {blog.tags && blog.tags.map((tag: string) => (
               <span key={tag} className="inline-block rounded-full bg-red-600 px-4 py-1.5 text-xs font-bold text-white uppercase tracking-wider shadow-sm">
                 {tag}
               </span>
@@ -353,7 +286,7 @@ export function BlogDetailPage() {
           {/* Detailed Content rendered as HTML */}
           <div 
             className="prose prose-lg prose-slate max-w-none prose-headings:font-display prose-headings:font-bold prose-p:text-navy-700 prose-p:leading-relaxed prose-a:text-primary-600 prose-img:rounded-2xl"
-            dangerouslySetInnerHTML={{ __html: blog.content }} 
+            dangerouslySetInnerHTML={{ __html: blog.body }} 
           />
           
         </div>
@@ -539,14 +472,13 @@ export function ContactPage() {
           <Card className="p-0 overflow-hidden">
             <iframe
               title="Office map"
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3808.3625782531017!2d78.55135287498427!3d17.346277583533887!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bcb99baadab7055%3A0xacbdc355fc4609c4!2s24efiling%20Tax%20services!5e0!3m2!1sen!2sin!4v1786353610969!5m2!1sen!2sin"
               width="100%"
               height="250"
-              frameBorder="0"
-              scrolling="no"
-              marginHeight={0}
-              marginWidth={0}
-              src="https://www.openstreetmap.org/export/embed.html?bbox=77.05%2C28.45%2C77.08%2C28.48&layer=mapnik&marker=28.47%2C77.06"
               style={{ border: 0 }}
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="strict-origin-when-cross-origin"
             />
           </Card>
         </div>

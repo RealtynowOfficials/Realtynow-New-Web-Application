@@ -28,22 +28,61 @@ export interface PropertyFilters {
   offset?: number;
 }
 
+// Deterministic, explicit alias map for cities with well-known alternate names —
+// NOT fuzzy/semantic matching, so "Bangalore" normalizes to "Bengaluru" (the name
+// actually stored in public.cities) without any risk of loosely matching an
+// unrelated city like Hyderabad or Chennai. Extend this list only with genuine
+// former/alternate names, never near-matches.
+const CITY_ALIASES: Record<string, string> = {
+  bangalore: 'Bengaluru',
+  bengaluru: 'Bengaluru',
+  bombay: 'Mumbai',
+  mumbai: 'Mumbai',
+  madras: 'Chennai',
+  chennai: 'Chennai',
+  calcutta: 'Kolkata',
+  kolkata: 'Kolkata',
+  gurgaon: 'Gurugram',
+  gurugram: 'Gurugram',
+};
+
+// Normalizes known city aliases to the canonical name, and drops a redundant
+// "City" qualifier immediately following one (e.g. "Bangalore City" -> "Bengaluru")
+// so every phrasing in { Bangalore, Bengaluru, Bangalore City, Bengaluru City }
+// collapses to the same query. ILIKE matching is case-insensitive, so the
+// canonical casing here is purely for readable AI/UI text, not match correctness.
+export function normalizeCityAliases(text: string): string {
+  const words = text.split(' ').filter(Boolean);
+  const normalized: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const alias = CITY_ALIASES[words[i].toLowerCase()];
+    if (alias) {
+      normalized.push(alias);
+      if (words[i + 1]?.toLowerCase() === 'city') i++;
+      continue;
+    }
+    normalized.push(words[i]);
+  }
+  return normalized.join(' ');
+}
+
 // Trims, collapses whitespace, and drops characters that aren't meaningful for a
 // free-text locality/city/project/title search (also sidesteps '%'/'_' which are
 // ILIKE pattern metacharacters) — shared by every search entry point so autocomplete,
 // the search bar, and category pages all normalize a query the same way.
 export function sanitizeSearchQuery(raw: string): string {
-  return raw
+  const cleaned = raw
     .trim()
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  return normalizeCityAliases(cleaned);
 }
 
 export function buildPublishedQuery(filters: PropertyFilters = {}) {
   let q = supabase
     .from('v_properties_search')
-    .select('*', { count: 'estimated' })
+    .select('*', { count: 'exact' })
     .or('status.eq.published,is_live.eq.true');
 
   if (filters.purpose) {

@@ -14,12 +14,13 @@ import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { submitPropertyForReview } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate , generatePropertyUrl} from '../../lib/utils';
+import { formatPrice, formatDate , generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import type { Property } from '../../lib/types';
 import { ExportMenu } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
 import { PostPropertyLink } from '../../components/post-property-link';
+import { EditPropertyModal } from '../../components/portal/edit-property-modal';
 
 const MY_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -46,6 +47,7 @@ export function PortalMyProperties() {
   const [tab, setTab] = useState<string>('all');
   const [toDelete, setToDelete] = useState<string | null>(null);
   const [shareProperty, setShareProperty] = useState<Property | null>(null);
+  const [editPropertyId, setEditPropertyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleRows, setVisibleRows] = useState<Property[]>([]);
   const [rich, setRich] = useState<MyPropertiesFilterState>({ city: '', type: '', minPrice: '', maxPrice: '' });
@@ -201,9 +203,9 @@ export function PortalMyProperties() {
     },
     {
       key: 'price',
-      header: t('property.price', 'Price'),
+      header: 'Price / Rent',
       sortable: true,
-      render: (p) => <span className="font-semibold">{formatPrice(p.price, p.purpose)}</span>,
+      render: (p) => <span className="font-semibold">{formatPrice(getPropertyPrice(p), p.purpose)}</span>,
     },
     {
       key: 'status',
@@ -276,16 +278,13 @@ export function PortalMyProperties() {
               {t('portal.resubmit', 'Resubmit')}
             </Button>
           )}
-          <PostPropertyLink to={`/portal/list-property?edit=${p.id}`}>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Edit3 className="h-4 w-4" />}
-              disabled={
-                !['draft', 'submitted', 'pending_verification', 'rejected', 'changes_requested'].includes(p.status)
-              }
-            />
-          </PostPropertyLink>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Edit3 className="h-4 w-4" />}
+            title="Edit property"
+            onClick={() => setEditPropertyId(p.id)}
+          />
           <Link to={generatePropertyUrl(p)}>
             <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
           </Link>
@@ -475,7 +474,7 @@ export function PortalMyProperties() {
                   </div>
                 ) : (
                   <>
-                    <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(p.price, p.purpose)}</p>
+                    <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(getPropertyPrice(p), p.purpose)}</p>
                     <p className="text-xs text-navy-400 mt-1">
                       {t('portal.submitted', 'Submitted')}: {formatDate(p.created_at)}
                     </p>
@@ -512,14 +511,13 @@ export function PortalMyProperties() {
                 ) : null}
                 <div className="flex gap-1 ml-auto">
                   {p.status !== 'draft' && (
-                    <PostPropertyLink to={`/portal/list-property?edit=${p.id}`}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Edit3 className="h-4 w-4" />}
-                        disabled={!['submitted', 'pending_verification', 'rejected', 'changes_requested'].includes(p.status)}
-                      />
-                    </PostPropertyLink>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Edit3 className="h-4 w-4" />}
+                      title="Edit property"
+                      onClick={() => setEditPropertyId(p.id)}
+                    />
                   )}
                   <Link to={generatePropertyUrl(p)}>
                     <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
@@ -591,6 +589,8 @@ export function PortalMyProperties() {
           }}
         />
       )}
+
+      <EditPropertyModal propertyId={editPropertyId} onClose={() => setEditPropertyId(null)} />
     </DashboardLayout>
   );
 }

@@ -4,66 +4,127 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, Trash2, Ban, CheckCircle2, Edit3, Plus, FileText, Upload, ExternalLink, XCircle, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
+import { useAdminAuth } from '../../contexts/admin-auth-context';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
-import { Card, Button, Modal, Input, Select, Badge, Avatar, EmptyState, Skeleton } from '../../components/ui';
+import { Card, Button, Modal, Input, Select, Badge, Avatar, EmptyState, Skeleton, Textarea } from '../../components/ui';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { formatDate, cn } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { uploadFile } from '../../lib/storage';
 import { useToast } from '../../components/toast';
 import type { Profile } from '../../lib/types';
+import { Users, UserCheck, UserX, TrendingUp, AlertCircle, RefreshCw } from 'lucide-react';
+
+// Customer data/mutations go through the `admin-customers` edge function rather than
+// direct `supabase.from('profiles')` calls. The admin portal's session (admin-auth-context.tsx)
+// is a custom opaque token, never a real Supabase Auth session, so `auth.uid()` is always
+// null for these requests — profiles' RLS silently filtered out every customer row (that's
+// why this page showed "No records found" despite real customer data existing). The edge
+// function validates the admin's session token itself, then reads/writes with the service role.
+async function callAdminCustomers<T = any>(action: string, token: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('admin-customers', {
+    headers: { 'x-action': action },
+    body: { token, ...payload },
+  });
+  if (error) throw new Error(error.message || 'Request failed');
+  if (data?.error) throw new Error(data.error);
+  return data as T;
+}
+
+interface AdminCustomersStats {
+  total: number;
+  active: number;
+  inactive: number;
+  newThisMonth: number;
+}
+
+const DATE_RANGE_OPTIONS = [
+  { value: 'all', label: 'All Time' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: 'month', label: 'This Month' },
+] as const;
+
+function dateRangeToFrom(range: string): string | undefined {
+  const now = new Date();
+  if (range === 'today') return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  if (range === '7d') return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  if (range === '30d') return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  if (range === 'month') return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  return undefined;
+}
 
 export function AdminCustomers() {
   const queryClient = useQueryClient();
+  const { session } = useAdminAuth();
+  const toast = useToast();
+  const token = session?.token ?? '';
+
   const [toDelete, setToDelete] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Profile | null>(null);
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', status: 'active' });
   const [saving, setSaving] = useState(false);
-  
+
   // Advanced Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-customers'],
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['admin-customers', token, statusFilter, dateFilter],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'customer')
-        .order('created_at', { ascending: false });
-      return (data ?? []) as Profile[];
+      const result = await callAdminCustomers<{ customers: Profile[]; stats: AdminCustomersStats }>('list', token, {
+        status: statusFilter,
+        dateFrom: dateRangeToFrom(dateFilter),
+      });
+      return result;
     },
+    enabled: !!token,
   });
 
+  const customers = data?.customers ?? [];
+  const stats = data?.stats;
+
   const deleteMutation = useMutation({
-    mutationFn: async (ids: string[]) => {
-      await supabase.from('profiles').delete().in('id', ids);
-    },
+    mutationFn: async (ids: string[]) => callAdminCustomers('delete', token, { customerIds: ids }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
       setToDelete(null);
       setSelected(new Set());
+      toast.addToast('success', 'Customer deleted.');
     },
+    onError: (e: any) => toast.addToast('error', e.message || 'Failed to delete customer.'),
   });
 
   const saveEdit = async () => {
     if (!editing) return;
     setSaving(true);
-    await supabase.from('profiles').update(editForm).eq('id', editing.id);
-    setSaving(false);
-    setEditing(null);
-    queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+    try {
+      await callAdminCustomers('update-profile', token, { customerId: editing.id, ...editForm });
+      if (editForm.status !== editing.status) {
+        await callAdminCustomers('update-status', token, { customerId: editing.id, status: editForm.status });
+      }
+      queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+      setEditing(null);
+      toast.addToast('success', 'Profile updated successfully.');
+    } catch (e: any) {
+      toast.addToast('error', e.message || 'Profile update failed. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleStatus = async (p: Profile) => {
-    await supabase
-      .from('profiles')
-      .update({ status: p.status === 'active' ? 'suspended' : 'active' })
-      .eq('id', p.id);
-    queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+    const nextStatus = p.status === 'active' ? 'suspended' : 'active';
+    try {
+      await callAdminCustomers('update-status', token, { customerId: p.id, status: nextStatus });
+      queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+    } catch (e: any) {
+      toast.addToast('error', e.message || 'Failed to update status.');
+    }
   };
 
   const columns: Column<Profile>[] = [
@@ -88,7 +149,7 @@ export function AdminCustomers() {
       key: 'status',
       header: 'Status',
       render: (p) => (
-        <Badge variant={p.status === 'active' ? 'success' : p.status === 'suspended' ? 'error' : 'warning'}>
+        <Badge variant={p.status === 'active' ? 'success' : p.status === 'suspended' || p.status === 'blocked' ? 'error' : 'warning'}>
           {p.status}
         </Badge>
       ),
@@ -136,15 +197,38 @@ export function AdminCustomers() {
 
   const { t } = useLanguageContext();
   const adminSections = getAdminSections(t);
-  
-  const filteredData = (data ?? []).filter(p => {
-    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
-    return true;
-  });
+
+  const statCards = stats
+    ? [
+        { label: 'Total Customers', value: stats.total, icon: Users },
+        { label: 'Active Customers', value: stats.active, icon: UserCheck },
+        { label: 'Inactive Customers', value: stats.inactive, icon: UserX },
+        { label: 'New This Month', value: stats.newThisMonth, icon: TrendingUp },
+      ]
+    : [];
 
   return (
     <DashboardLayout sections={adminSections} title={t('dashboard:customers', 'Customers')}>
       <PageHeader title="Customers" subtitle="Manage all customer accounts." />
+
+      {statCards.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          {statCards.map((s) => (
+            <Card key={s.label} className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-navy-500">{s.label}</p>
+                  <p className="mt-1 font-display text-2xl font-bold text-navy-900">{s.value}</p>
+                </div>
+                <div className="h-10 w-10 rounded-xl bg-navy-50 grid place-items-center">
+                  <s.icon className="h-5 w-5 text-navy-600" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
       <div className="mb-4">
         <Card className="p-4 bg-navy-50/50">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -152,42 +236,71 @@ export function AdminCustomers() {
               <label className="block text-xs font-semibold text-navy-500 uppercase tracking-wider mb-1.5">
                 Account Status
               </label>
-              <Select 
-                value={statusFilter} 
+              <Select
+                value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
                 className="max-w-xs"
               >
                 <option value="all">All Statuses</option>
                 <option value="active">Active</option>
                 <option value="suspended">Suspended</option>
+                <option value="blocked">Blocked</option>
+                <option value="pending">Pending</option>
+              </Select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-navy-500 uppercase tracking-wider mb-1.5">
+                Date
+              </label>
+              <Select
+                value={dateFilter}
+                onChange={e => setDateFilter(e.target.value)}
+                className="max-w-xs"
+              >
+                {DATE_RANGE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </Select>
             </div>
           </div>
         </Card>
       </div>
-      <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
-      <DataTable
-        columns={columns}
-        rows={filteredData}
-        loading={isLoading}
-        getRowId={(p) => p.id}
-        searchKeys={['first_name', 'last_name', 'email', 'phone']}
-        selectedIds={selected}
-        onToggleSelect={(id) =>
-          setSelected((s) => {
-            const n = new Set(s);
-            n.has(id) ? n.delete(id) : n.add(id);
-            return n;
-          })
-        }
-        onSelectAll={(ids) =>
-          setSelected((s) => {
-            const n = new Set(s);
-            ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
-            return n;
-          })
-        }
-      />
+
+      {isError ? (
+        <Card className="p-8 text-center">
+          <AlertCircle className="h-8 w-8 text-error-500 mx-auto mb-2" />
+          <p className="text-sm text-navy-700 mb-3">Unable to load customers.</p>
+          <Button variant="secondary" size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => refetch()}>
+            Retry
+          </Button>
+        </Card>
+      ) : (
+        <>
+          <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
+          <DataTable
+            columns={columns}
+            rows={customers}
+            loading={isLoading}
+            getRowId={(p) => p.id}
+            searchKeys={['first_name', 'last_name', 'email', 'phone']}
+            selectedIds={selected}
+            onToggleSelect={(id) =>
+              setSelected((s) => {
+                const n = new Set(s);
+                n.has(id) ? n.delete(id) : n.add(id);
+                return n;
+              })
+            }
+            onSelectAll={(ids) =>
+              setSelected((s) => {
+                const n = new Set(s);
+                ids.forEach((id) => (n.has(id) ? n.delete(id) : n.add(id)));
+                return n;
+              })
+            }
+          />
+        </>
+      )}
       <Modal
         open={!!toDelete}
         onClose={() => setToDelete(null)}
@@ -250,11 +363,128 @@ export function AdminCustomers() {
             >
               <option value="active">Active</option>
               <option value="suspended">Suspended</option>
+              <option value="blocked">Blocked</option>
             </Select>
           </div>
         )}
       </Modal>
     </DashboardLayout>
+  );
+}
+
+async function callAdminAgentVerification<T = any>(action: string, token: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('admin-agent-verification', {
+    headers: { 'x-action': action },
+    body: { token, ...payload },
+  });
+  if (error) throw new Error(error.message || 'Request failed');
+  if (data?.error) throw new Error(data.error);
+  return data as T;
+}
+
+const RERA_STATUS_LABEL: Record<string, string> = {
+  not_submitted: 'Not Submitted',
+  pending: 'Pending',
+  under_review: 'Under Review',
+  verified: 'Verified',
+  rejected: 'Rejected',
+};
+
+function RERAVerificationPanel({ agent }: { agent: Profile }) {
+  const { session } = useAdminAuth();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const token = session?.token ?? '';
+  const [showReject, setShowReject] = useState(false);
+  const [reason, setReason] = useState('');
+  const [docUrl, setDocUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const status = agent.rera_verification_status ?? 'not_submitted';
+  if (status === 'not_submitted') return null;
+
+  const run = async (action: 'verify' | 'reject' | 'under-review', payload: Record<string, unknown> = {}) => {
+    setBusy(true);
+    try {
+      await callAdminAgentVerification(action, token, { agentId: agent.id, ...payload });
+      queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+      toast.addToast('success', `RERA ${action === 'verify' ? 'verified' : action === 'reject' ? 'rejected' : 'marked under review'}.`);
+      setShowReject(false);
+      setReason('');
+    } catch (e: any) {
+      toast.addToast('error', e.message || 'Action failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const viewDocument = async () => {
+    setBusy(true);
+    try {
+      const { url } = await callAdminAgentVerification<{ url: string }>('get-document', token, { agentId: agent.id });
+      setDocUrl(url);
+    } catch (e: any) {
+      toast.addToast('error', e.message || 'Could not load document.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-navy-100 bg-navy-50/50 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-bold uppercase tracking-wider text-navy-500">RERA Verification</p>
+        <Badge variant={status === 'verified' ? 'success' : status === 'rejected' ? 'error' : 'warning'}>
+          {RERA_STATUS_LABEL[status]}
+        </Badge>
+      </div>
+      {status === 'rejected' && agent.rera_rejection_reason && (
+        <p className="text-xs text-error-600 mb-3">Reason: {agent.rera_rejection_reason}</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {agent.rera_document_url && (
+          <Button size="sm" variant="ghost" onClick={viewDocument} loading={busy}>
+            View Document
+          </Button>
+        )}
+        {status !== 'verified' && (
+          <Button size="sm" variant="secondary" onClick={() => run('verify')} loading={busy}>
+            Verify RERA
+          </Button>
+        )}
+        {status !== 'rejected' && !showReject && (
+          <Button size="sm" variant="ghost" className="text-error-600" onClick={() => setShowReject(true)}>
+            Reject RERA
+          </Button>
+        )}
+      </div>
+      {showReject && (
+        <div className="mt-3 space-y-2">
+          <Textarea
+            label="Rejection reason (required)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="E.g. RERA number does not match the submitted document."
+            rows={2}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" variant="danger" disabled={!reason.trim()} onClick={() => run('reject', { reason })} loading={busy}>
+              Confirm Rejection
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowReject(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+      {docUrl && (
+        <Modal open onClose={() => setDocUrl(null)} title="RERA Document" size="lg">
+          {docUrl.toLowerCase().split('?')[0].endsWith('.pdf') ? (
+            <iframe src={docUrl} className="w-full h-[70vh]" title="RERA Document" />
+          ) : (
+            <img src={docUrl} alt="RERA Document" className="max-w-full max-h-[70vh] object-contain mx-auto" />
+          )}
+        </Modal>
+      )}
+    </div>
   );
 }
 
@@ -866,6 +1096,8 @@ export function AdminAgents() {
                 <option value="suspended">Suspended</option>
               </Select>
             </div>
+
+            {editing.role === 'agent' && <RERAVerificationPanel agent={editing} />}
           </div>
         )}
       </Modal>

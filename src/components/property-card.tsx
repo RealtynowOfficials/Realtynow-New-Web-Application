@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Bed, MapPin, Heart, Star, GitCompare, Share2, ShieldCheck, Sparkles } from 'lucide-react';
 import type { Property } from '../lib/types';
-import { formatCompactPrice, cn , generatePropertyUrl} from '../lib/utils';
+import { formatCompactPrice, cn, generatePropertyUrl, getPropertyPrice } from '../lib/utils';
 import { Badge } from './ui';
 import { isCompared, toggleCompareProperty } from '../lib/compare';
 import { useAuth } from '../lib/auth';
@@ -173,10 +173,7 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
             </div>
           )}
           <p className="font-display text-base font-extrabold text-navy-900">
-            {formatCompactPrice(property.price)}
-            {property.purpose === 'Rent' && (
-              <span className="text-xs font-medium text-navy-500">/{t('property.monthShort', 'mo')}</span>
-            )}
+            {formatCompactPrice(getPropertyPrice(property), property.purpose)}
           </p>
           <h3 className="mt-0.5 line-clamp-1 text-sm font-semibold text-navy-800 group-hover:text-navy-900">
             {property.title}

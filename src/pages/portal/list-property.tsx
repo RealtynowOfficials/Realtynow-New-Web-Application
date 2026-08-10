@@ -35,144 +35,26 @@ import { LocationAutocomplete, type SelectedPlace } from '../../components/locat
 import { supabase } from '../../lib/supabase';
 import { triggerAiVerification } from '../../lib/properties';
 import { uploadFile, deleteFile, type StorageBucket } from '../../lib/storage';
+import { cn } from '../../lib/utils';
+import {
+  type MediaItem,
+  MAX_MEDIA_FILES,
+  MAX_IMAGE_FILE_SIZE,
+  MAX_VIDEO_FILE_SIZE,
+  ACCEPTED_MEDIA_TYPES,
+  compressImage,
+  isVideoUrl,
+  isValidMediaUrl,
+  PURPOSE_OPTIONS,
+  AMENITIES_LIST,
+  FieldLabel,
+  InputField,
+  TextAreaField,
+  SelectField,
+  SectionTitle,
+} from './property-form-shared';
 
-export interface MediaItem {
-  id: string;
-  url: string;
-  type: 'image' | 'video';
-  isCover: boolean;
-  order: number;
-  // Present only for items uploaded to Supabase Storage (not pasted URLs) —
-  // needed to delete the underlying file, not just the reference.
-  bucket?: StorageBucket;
-  path?: string;
-  uploading?: boolean;
-  error?: string;
-}
-
-const MAX_MEDIA_FILES = 20;
-const MAX_IMAGE_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_VIDEO_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-const ACCEPTED_MEDIA_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-  'video/mp4',
-  'video/quicktime',
-];
-const COMPRESSIBLE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_IMAGE_DIMENSION = 1920;
-
-/**
- * Client-side resize + re-encode (canvas → WEBP, quality 0.82) so large phone-camera
- * photos don't eat the 5MB cap or user bandwidth. Skips HEIC (most browsers' canvas
- * can't decode it) and anything canvas fails on — caller just uploads the original
- * in that case rather than blocking the listing on a compression failure.
- */
-async function compressImage(file: File): Promise<File> {
-  if (!COMPRESSIBLE_IMAGE_TYPES.has(file.type)) return file;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const width = Math.round(bitmap.width * scale);
-    const height = Math.round(bitmap.height * scale);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
-
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.82));
-    if (!blob || blob.size >= file.size) return file; // compression didn't actually help — keep original
-    const newName = file.name.replace(/\.[^.]+$/, '') + '.webp';
-    return new File([blob], newName, { type: 'image/webp' });
-  } catch {
-    return file; // e.g. HEIC the browser can't decode — fall through to uploading the original
-  }
-}
-
-function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov)(\?|$)/i.test(url);
-}
-
-function isValidMediaUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (!/^https?:$/.test(parsed.protocol)) return false;
-  } catch {
-    return false;
-  }
-  return /\.(jpe?g|png|webp|gif|mp4|webm|mov)(\?|$)/i.test(url);
-}
-
-const PURPOSE_OPTIONS = [
-  { id: 'Sale', label: 'Sale', icon: '/icons/icon_sale_3d.png', desc: 'Sell your property' },
-  { id: 'Rent', label: 'Rent', icon: '/icons/icon_rent_3d.png', desc: 'Find a tenant' },
-  { id: 'Lease', label: 'Lease', icon: '/icons/icon_lease_3d.png', desc: 'Commercial lease' },
-  { id: 'PG', label: 'PG', icon: '/icons/icon_pg_3d.png', desc: 'Paying Guest' },
-  { id: 'CoLiving', label: 'CoLiving', icon: '/icons/icon_coliving_3d.png', desc: 'Shared spaces' },
-  { id: 'Hostel', label: 'Hostel', icon: '/icons/icon_hostel_3d.png', desc: 'Student hostels' },
-  { id: 'Vacation Rental', label: 'Vacation', icon: '🏖️', desc: 'Short stays' },
-];
-
-const AMENITIES_LIST = [
-  { id: 'parking', label: 'Parking', icon: '🚗' },
-  { id: 'gym', label: 'Gym', icon: '💪' },
-  { id: 'pool', label: 'Swimming Pool', icon: '🏊' },
-  { id: 'security', label: '24/7 Security', icon: '🔒' },
-  { id: 'lift', label: 'Lift / Elevator', icon: '🛗' },
-  { id: 'wifi', label: 'WiFi', icon: '📶' },
-  { id: 'power_backup', label: 'Power Backup', icon: '🔋' },
-  { id: 'garden', label: 'Garden', icon: '🌿' },
-  { id: 'clubhouse', label: 'Club House', icon: '🏛️' },
-  { id: 'cctv', label: 'CCTV', icon: '📷' },
-  { id: 'gas', label: 'Piped Gas', icon: '🔥' },
-  { id: 'intercom', label: 'Intercom', icon: '📞' },
-  { id: 'play_area', label: 'Play Area', icon: '🎠' },
-  { id: 'rainwater', label: 'Rainwater Harvesting', icon: '🌧️' },
-  { id: 'ev_charging', label: 'EV Charging', icon: '⚡' },
-  { id: 'servant', label: 'Servant Room', icon: '🛏️' },
-];
-
-// ── tiny reusable field wrapper ──
-const FieldLabel = ({ children }: { children: React.ReactNode }) => (
-  <label className="block text-xs font-semibold text-navy-500 uppercase tracking-widest mb-1.5 whitespace-nowrap truncate">{children}</label>
-);
-const InputField = ({ placeholder, type = 'text', ...rest }: React.InputHTMLAttributes<HTMLInputElement>) => (
-  <input
-    type={type}
-    placeholder={placeholder}
-    {...rest}
-    className={`w-full bg-white border border-navy-150 rounded-xl px-4 py-2.5 text-sm font-medium text-navy-900 focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/10 transition-all placeholder:text-navy-300 shadow-sm ${rest.className ?? ''}`}
-  />
-);
-const TextAreaField = ({ placeholder, rows = 3, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-  <textarea
-    placeholder={placeholder}
-    rows={rows}
-    {...rest}
-    className={`w-full bg-white border border-navy-150 rounded-xl px-4 py-2.5 text-sm font-medium text-navy-900 focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/10 transition-all placeholder:text-navy-300 shadow-sm resize-none ${rest.className ?? ''}`}
-  />
-);
-const SelectField = ({ children, ...rest }: React.SelectHTMLAttributes<HTMLSelectElement>) => (
-  <select
-    {...rest}
-    className={`w-full bg-white border border-navy-150 rounded-xl px-4 py-2.5 text-sm font-medium text-navy-900 focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/10 transition-all shadow-sm appearance-none ${rest.className ?? ''}`}
-  >
-    {children}
-  </select>
-);
-const SectionTitle = ({ title, sub }: { title: string; sub: string }) => (
-  <div className="text-center space-y-1.5 mb-6">
-    <h3 className="text-2xl md:text-3xl font-display font-bold text-navy-900 tracking-tight">{title}</h3>
-    <p className="text-navy-400 text-sm font-medium">{sub}</p>
-  </div>
-);
+export type { MediaItem };
 
 // ── Preview Modal ──
 function PreviewModal({
@@ -403,6 +285,18 @@ export function ListPropertyWizard() {
   const [showPreview, setShowPreview] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isRestoring, setIsRestoring] = useState(!!draftIdParam);
+  // Key of the field that failed validation on the last Next attempt, so the
+  // corresponding input can be highlighted — separate from the toast message,
+  // which only tells the user *what's* wrong, not *where*.
+  const [fieldError, setFieldError] = useState<string | null>(null);
+
+  const focusInvalidField = (fieldId: string) => {
+    requestAnimationFrame(() => {
+      const el = document.getElementById(fieldId);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.focus();
+    });
+  };
 
   // Step 3: Basic Details local state
   const [bedrooms, setBedrooms] = useState(2);
@@ -447,6 +341,69 @@ export function ListPropertyWizard() {
       }
     } finally {
       setCoverImageUploading(false);
+    }
+  };
+
+  // Video URL / Virtual Tour URL each support either a pasted external link
+  // (YouTube/Vimeo/any URL) or a direct file upload — the uploaded file's own
+  // public URL is written into the same media_urls.videos.0 / .virtual_tour
+  // field a pasted URL would occupy, so downstream consumers (property detail
+  // page, etc.) don't need to know which path produced it. bucket/path are
+  // tracked alongside so a later replace can clean up the old storage object.
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [virtualTourUploading, setVirtualTourUploading] = useState(false);
+
+  const handleVideoFileUpload = async (rawFile: File) => {
+    if (!rawFile.type.startsWith('video/')) {
+      toast.addToast('error', 'Please select a valid video file (MP4 or MOV)');
+      return;
+    }
+    if (rawFile.size > MAX_VIDEO_FILE_SIZE) {
+      toast.addToast('error', `${rawFile.name}: exceeds ${MAX_VIDEO_FILE_SIZE / 1024 / 1024}MB limit`);
+      return;
+    }
+    setVideoUploading(true);
+    try {
+      const { url, path, error } = await uploadFile('property-videos', rawFile);
+      if (error) {
+        toast.addToast('error', error);
+      } else if (url) {
+        setValue('media_urls.videos.0' as any, url, { shouldDirty: true });
+        setValue('media_urls.video_bucket' as any, 'property-videos', { shouldDirty: true });
+        setValue('media_urls.video_path' as any, path, { shouldDirty: true });
+      }
+    } finally {
+      setVideoUploading(false);
+    }
+  };
+
+  const handleVirtualTourFileUpload = async (rawFile: File) => {
+    if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type)) {
+      toast.addToast('error', 'Unsupported file type for virtual tour');
+      return;
+    }
+    const isVideo = rawFile.type.startsWith('video/');
+    if (isVideo && rawFile.size > MAX_VIDEO_FILE_SIZE) {
+      toast.addToast('error', `${rawFile.name}: exceeds ${MAX_VIDEO_FILE_SIZE / 1024 / 1024}MB limit`);
+      return;
+    }
+    if (!isVideo && rawFile.size > MAX_IMAGE_FILE_SIZE) {
+      toast.addToast('error', `${rawFile.name}: exceeds ${MAX_IMAGE_FILE_SIZE / 1024 / 1024}MB limit`);
+      return;
+    }
+    setVirtualTourUploading(true);
+    try {
+      const bucket = isVideo ? 'property-videos' : 'property-images';
+      const { url, path, error } = await uploadFile(bucket, rawFile);
+      if (error) {
+        toast.addToast('error', error);
+      } else if (url) {
+        setValue('media_urls.virtual_tour' as any, url, { shouldDirty: true });
+        setValue('media_urls.virtual_tour_bucket' as any, bucket, { shouldDirty: true });
+        setValue('media_urls.virtual_tour_path' as any, path, { shouldDirty: true });
+      }
+    } finally {
+      setVirtualTourUploading(false);
     }
   };
 
@@ -609,6 +566,7 @@ export function ListPropertyWizard() {
             if (draft.features?.negotiable !== undefined) {
               setNegotiable(draft.features.negotiable);
             }
+            if (draft.cover_image_url) setCoverImageUrl(draft.cover_image_url);
           }
           setIsRestoring(false);
         }).catch(err => {
@@ -646,39 +604,75 @@ export function ListPropertyWizard() {
   };
 
 
+  // Reports one failure at a time (first one found) — toast for *what's* wrong,
+  // fieldError + focusInvalidField for *where*. Every step that has a required
+  // (`*`-marked) field in its JSX must have a case here; a step with no case
+  // falls through to `return true`, which is exactly the bug that let Basic
+  // Details (and silently any future step) through with nothing filled in.
+  const fail = (field: string | null, message: string): false => {
+    setFieldError(field);
+    toast.addToast('error', message);
+    if (field) focusInvalidField(`wizard-field-${field}`);
+    return false;
+  };
+
+  const isBlank = (v: string | null | undefined) => !v || !v.trim();
+  const isInvalidNumber = (v: string | null | undefined) => !!v && v.trim() !== '' && (Number.isNaN(Number(v)) || Number(v) < 0);
+
   const validateStep = () => {
     const vals = getValues();
     const stepName = WIZARD_STEPS[activeStep];
-    
+    setFieldError(null);
+
     if (stepName === 'Purpose' && !vals.purpose) {
-      toast.addToast('error', 'Please select a listing purpose to continue.');
-      return false;
+      return fail(null, 'Please select a listing purpose to continue.');
     }
-    
+
     if (stepName === 'Category' && !vals.category) {
-      toast.addToast('error', 'Please select a property category to continue.');
-      return false;
+      return fail(null, 'Please select a property category to continue.');
     }
-    
+
     if (stepName === 'Property Type' && !vals.property_sub_type) {
-      toast.addToast('error', 'Please select a property type to continue.');
-      return false;
+      return fail(null, 'Please select a property type to continue.');
     }
-    
-    if (stepName === 'Location' && !vals.place_id) {
-      toast.addToast('error', 'Please search and select a location from Google Maps before continuing.');
-      return false;
+
+    if (stepName === 'Basic Details') {
+      if (isBlank(vals.title)) return fail('title', 'Title is required.');
+      const numericFields: { key: keyof PropertyWizardForm; label: string }[] = [
+        { key: 'carpet_area', label: 'Carpet area' },
+        { key: 'super_area', label: 'Super area' },
+        { key: 'built_up_area', label: 'Built-up area' },
+        { key: 'plot_area', label: 'Plot / land area' },
+      ];
+      for (const { key, label } of numericFields) {
+        if (isInvalidNumber(vals[key] as string | undefined)) {
+          return fail(key, `${label} must be a valid number.`);
+        }
+      }
     }
-    
+
+    if (stepName === 'Location') {
+      if (!vals.place_id) {
+        return fail(null, 'Please search and select a location from Google Maps before continuing.');
+      }
+      if (isBlank(vals.city_name)) return fail('city_name', 'City is required.');
+      if (isBlank(vals.locality_name)) return fail('locality_name', 'Locality is required.');
+      if (isBlank(vals.address)) return fail('address', 'Full address is required.');
+    }
+
     // Media validation: At least one cover photo or some images required
-    if (stepName === 'Media' && mediaItems.length === 0) {
-      toast.addToast('error', 'Please upload at least one image to continue.');
-      return false;
+    if (stepName === 'Media' && mediaItems.filter((m) => !m.uploading).length === 0) {
+      return fail(null, 'Please upload at least one image to continue.');
     }
-    
-    if (stepName === 'Pricing' && !vals.price && !vals.rent_amount) {
-      toast.addToast('error', 'Please enter the pricing details to continue.');
-      return false;
+
+    if (stepName === 'Pricing') {
+      const priceStr = vals.purpose === 'Rent' ? vals.rent_amount : vals.price;
+      if (isBlank(priceStr)) {
+        return fail(vals.purpose === 'Rent' ? 'rent_amount' : 'price', 'Please enter the pricing details to continue.');
+      }
+      if (isInvalidNumber(priceStr) || Number(priceStr) <= 0) {
+        return fail(vals.purpose === 'Rent' ? 'rent_amount' : 'price', 'Enter a valid price greater than zero.');
+      }
     }
 
     return true;
@@ -766,6 +760,8 @@ export function ListPropertyWizard() {
         .filter((m) => m.type === 'image' && !m.uploading)
         .sort((a, b) => (a.isCover === b.isCover ? a.order - b.order : a.isCover ? -1 : 1))
         .map((m) => m.url),
+      cover_image_url: coverImageUrl || null,
+      media_urls: vals.media_urls || null,
       ownership_type: vals.ownership_type || null,
       age_of_property: ageInt,
       facing: vals.facing || null,
@@ -1113,34 +1109,39 @@ export function ListPropertyWizard() {
                         <div className="space-y-4">
                           <div>
                             <FieldLabel>Title *</FieldLabel>
-                            <InputField {...register('title')} placeholder="e.g. 3BHK Luxury Apartment in Bandra" />
+                            <InputField
+                              {...register('title')}
+                              id="wizard-field-title"
+                              placeholder="e.g. 3BHK Luxury Apartment in Bandra"
+                              className={fieldError === 'title' ? 'border-red-500 ring-2 ring-red-200' : ''}
+                            />
                           </div>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div className="relative">
                               <FieldLabel>Carpet Area</FieldLabel>
-                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
-                                <input type="number" {...register('carpet_area')} placeholder="e.g. 1000" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                              <div className={cn('relative flex items-center bg-white border rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all', fieldError === 'carpet_area' ? 'border-red-500 ring-2 ring-red-200' : 'border-navy-150')}>
+                                <input id="wizard-field-carpet_area" type="number" {...register('carpet_area')} placeholder="e.g. 1000" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
                                 <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
                               </div>
                             </div>
                             <div className="relative">
                               <FieldLabel>Super Area</FieldLabel>
-                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
-                                <input type="number" {...register('super_area')} placeholder="Auto (1.25x)" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                              <div className={cn('relative flex items-center bg-white border rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all', fieldError === 'super_area' ? 'border-red-500 ring-2 ring-red-200' : 'border-navy-150')}>
+                                <input id="wizard-field-super_area" type="number" {...register('super_area')} placeholder="Auto (1.25x)" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
                                 <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
                               </div>
                             </div>
                             <div className="relative">
                               <FieldLabel>Built-up Area</FieldLabel>
-                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
-                                <input type="number" {...register('built_up_area')} placeholder="e.g. 1100" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                              <div className={cn('relative flex items-center bg-white border rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all', fieldError === 'built_up_area' ? 'border-red-500 ring-2 ring-red-200' : 'border-navy-150')}>
+                                <input id="wizard-field-built_up_area" type="number" {...register('built_up_area')} placeholder="e.g. 1100" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
                                 <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
                               </div>
                             </div>
                             <div className="relative">
                               <FieldLabel>Land / Plot Area</FieldLabel>
-                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
-                                <input type="number" {...register('plot_area')} placeholder="e.g. 1500" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
+                              <div className={cn('relative flex items-center bg-white border rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all', fieldError === 'plot_area' ? 'border-red-500 ring-2 ring-red-200' : 'border-navy-150')}>
+                                <input id="wizard-field-plot_area" type="number" {...register('plot_area')} placeholder="e.g. 1500" className="flex-1 w-full bg-transparent px-3 py-2.5 text-sm font-medium text-navy-900 focus:outline-none placeholder:text-navy-300" />
                                 <span className="px-2 py-2.5 text-xs font-bold text-red-500 border-l border-navy-100 bg-navy-50/50">Sq.ft</span>
                               </div>
                             </div>
@@ -1283,11 +1284,21 @@ export function ListPropertyWizard() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <FieldLabel>City *</FieldLabel>
-                            <InputField {...register('city_name')} placeholder="e.g. Mumbai" />
+                            <InputField
+                              {...register('city_name')}
+                              id="wizard-field-city_name"
+                              placeholder="e.g. Mumbai"
+                              className={fieldError === 'city_name' ? 'border-red-500 ring-2 ring-red-200' : ''}
+                            />
                           </div>
                           <div>
                             <FieldLabel>Locality *</FieldLabel>
-                            <InputField {...register('locality_name')} placeholder="e.g. Bandra West" />
+                            <InputField
+                              {...register('locality_name')}
+                              id="wizard-field-locality_name"
+                              placeholder="e.g. Bandra West"
+                              className={fieldError === 'locality_name' ? 'border-red-500 ring-2 ring-red-200' : ''}
+                            />
                           </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1308,8 +1319,10 @@ export function ListPropertyWizard() {
                           <FieldLabel>Full Address *</FieldLabel>
                           <TextAreaField
                             {...register('address')}
+                            id="wizard-field-address"
                             placeholder="Building name, Street, Landmark..."
                             rows={2}
+                            className={fieldError === 'address' ? 'border-red-500 ring-2 ring-red-200' : ''}
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -1420,7 +1433,7 @@ export function ListPropertyWizard() {
                           <Camera className="h-8 w-8 text-navy-400 mx-auto mb-3" />
                           <p className="text-sm font-semibold text-navy-700 mb-1">Drag & drop or Upload Photos/Videos</p>
                           <p className="text-xs text-navy-400 mb-4">
-                            JPG, PNG, WEBP, HEIC, MP4 or MOV · Max 5MB each (images auto-compressed) · Up to {MAX_MEDIA_FILES} files ({mediaItems.length}/{MAX_MEDIA_FILES} added)
+                            Images: Max 5MB each. Videos: Max 20MB each. Up to {MAX_MEDIA_FILES} files ({mediaItems.length}/{MAX_MEDIA_FILES} added)
                           </p>
                           <label className="cursor-pointer inline-flex items-center gap-2 bg-navy-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-navy-800 transition-all shadow-md">
                             <Camera className="h-4 w-4" /> Choose Files
@@ -1435,6 +1448,66 @@ export function ListPropertyWizard() {
                               }}
                             />
                           </label>
+                        </div>
+
+                        {/* ── COVER IMAGE ── */}
+                        <div className="rounded-2xl border border-navy-100 bg-navy-50/30 p-4 mb-4">
+                          <FieldLabel>COVER IMAGE</FieldLabel>
+                          <p className="mb-3 text-xs text-navy-400">
+                            Upload the main cover image for your property. Supported: JPG, JPEG, PNG, WEBP. Maximum size: 5 MB.
+                          </p>
+                          <div className="flex flex-col items-start gap-3 sm:flex-row">
+                            <div className="w-full flex-1 space-y-2">
+                              <InputField
+                                value={coverImageUrl ?? ''}
+                                onChange={(e) => setCoverImageUrl(e.target.value || null)}
+                                placeholder="Paste cover image URL..."
+                              />
+                              <div className="flex items-center gap-2">
+                                <div className="h-px flex-1 bg-navy-150" />
+                                <span className="text-[10px] font-bold uppercase text-navy-300">or</span>
+                                <div className="h-px flex-1 bg-navy-150" />
+                              </div>
+                              <label
+                                className={
+                                  'inline-flex cursor-pointer items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 py-2 text-xs font-semibold text-navy-700 shadow-sm transition-all hover:bg-navy-50' +
+                                  (coverImageUploading ? ' pointer-events-none opacity-60' : '')
+                                }
+                              >
+                                <Camera className="h-3.5 w-3.5" /> {coverImageUploading ? 'Uploading…' : 'Upload Cover Image'}
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleCoverImageUpload(file);
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                            </div>
+                            {coverImageUrl && (
+                              <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-navy-150 bg-navy-100">
+                                <img
+                                  src={coverImageUrl}
+                                  alt="Cover banner preview"
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200';
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setCoverImageUrl(null)}
+                                  title="Remove cover image"
+                                  className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Add URL */}
@@ -1555,6 +1628,8 @@ export function ListPropertyWizard() {
                           </div>
                         )}
 
+
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <FieldLabel>Video URL (YouTube / Vimeo)</FieldLabel>
@@ -1562,10 +1637,68 @@ export function ListPropertyWizard() {
                               {...register('media_urls.videos.0' as any)}
                               placeholder="https://youtube.com/..."
                             />
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="h-px flex-1 bg-navy-150" />
+                              <span className="text-[10px] font-bold uppercase text-navy-300">or</span>
+                              <div className="h-px flex-1 bg-navy-150" />
+                            </div>
+                            <label
+                              className={
+                                'mt-2 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 py-2 text-xs font-semibold text-navy-700 shadow-sm transition-all hover:bg-navy-50' +
+                                (videoUploading ? ' pointer-events-none opacity-60' : '')
+                              }
+                            >
+                              <Camera className="h-3.5 w-3.5" /> {videoUploading ? 'Uploading…' : 'Upload Video File'}
+                              <input
+                                type="file"
+                                accept="video/mp4,video/quicktime"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleVideoFileUpload(file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {watch('media_urls.videos.0' as any) && (
+                              <video
+                                src={watch('media_urls.videos.0' as any) as string}
+                                controls
+                                className="mt-2 h-28 w-full rounded-xl bg-black object-contain"
+                              />
+                            )}
                           </div>
                           <div>
                             <FieldLabel>Virtual Tour URL</FieldLabel>
                             <InputField {...register('media_urls.virtual_tour')} placeholder="https://..." />
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="h-px flex-1 bg-navy-150" />
+                              <span className="text-[10px] font-bold uppercase text-navy-300">or</span>
+                              <div className="h-px flex-1 bg-navy-150" />
+                            </div>
+                            <label
+                              className={
+                                'mt-2 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 py-2 text-xs font-semibold text-navy-700 shadow-sm transition-all hover:bg-navy-50' +
+                                (virtualTourUploading ? ' pointer-events-none opacity-60' : '')
+                              }
+                            >
+                              <Camera className="h-3.5 w-3.5" /> {virtualTourUploading ? 'Uploading…' : 'Upload Virtual Tour File'}
+                              <input
+                                type="file"
+                                accept={ACCEPTED_MEDIA_TYPES.join(',')}
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleVirtualTourFileUpload(file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {watch('media_urls.virtual_tour') && (
+                              <p className="mt-2 truncate text-xs font-medium text-navy-500">
+                                📎 {watch('media_urls.virtual_tour')}
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -1607,11 +1740,12 @@ export function ListPropertyWizard() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {watch('purpose') === 'Sale' ? (
                             <div>
-                              <FieldLabel>Asking Price (₹)</FieldLabel>
-                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                              <FieldLabel>Asking Price (₹) *</FieldLabel>
+                              <div className={cn('relative flex items-center bg-white border rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all', fieldError === 'price' ? 'border-red-500 ring-2 ring-red-200' : 'border-navy-150')}>
                                 <span className="pl-4 pr-2 text-sm font-bold text-navy-400">₹</span>
                                 <input
                                   {...register('price')}
+                                  id="wizard-field-price"
                                   type="number"
                                   placeholder="e.g. 8500000"
                                   className="flex-1 bg-transparent px-2 py-2.5 text-sm font-medium focus:outline-none placeholder:text-navy-300"
@@ -1620,11 +1754,12 @@ export function ListPropertyWizard() {
                             </div>
                           ) : (
                             <div>
-                              <FieldLabel>Monthly Rent (₹)</FieldLabel>
-                              <div className="relative flex items-center bg-white border border-navy-150 rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all">
+                              <FieldLabel>Monthly Rent (₹) *</FieldLabel>
+                              <div className={cn('relative flex items-center bg-white border rounded-xl overflow-hidden shadow-sm focus-within:border-red-400 transition-all', fieldError === 'rent_amount' ? 'border-red-500 ring-2 ring-red-200' : 'border-navy-150')}>
                                 <span className="pl-4 pr-2 text-sm font-bold text-navy-400">₹</span>
                                 <input
                                   {...register('rent_amount')}
+                                  id="wizard-field-rent_amount"
                                   type="number"
                                   placeholder="e.g. 25000"
                                   className="flex-1 bg-transparent px-2 py-2.5 text-sm font-medium focus:outline-none placeholder:text-navy-300"

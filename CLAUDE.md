@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# Token-Efficient Working Rules
+# Token-Efficient Working RulesQ
 
 - Minimize token usage.
 - Read only files required for the current task.

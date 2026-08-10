@@ -73,10 +73,17 @@ export const propertyWizardSchema = z.object({
 
   // Media
   images: z.array(z.string()).default([]),
+  cover_image_url: z.string().optional().nullable().or(z.literal('')),
   media_urls: z
     .object({
       videos: z.array(z.string().optional().nullable().or(z.literal(''))).optional(),
+      // Present only when the video/virtual tour was uploaded to Supabase Storage
+      // (not pasted as an external URL) — needed to delete the file on replace.
+      video_bucket: z.string().optional().nullable(),
+      video_path: z.string().optional().nullable(),
       virtual_tour: z.string().optional().nullable().or(z.literal('')),
+      virtual_tour_bucket: z.string().optional().nullable(),
+      virtual_tour_path: z.string().optional().nullable(),
       floor_plan: z.string().optional().nullable().or(z.literal('')),
       brochure: z.string().optional().nullable().or(z.literal('')),
     })

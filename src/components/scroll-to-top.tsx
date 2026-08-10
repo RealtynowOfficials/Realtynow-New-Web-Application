@@ -19,6 +19,12 @@ export function ScrollToTop() {
   const location = useLocation();
   const navigationType = useNavigationType();
   const savedScrollY = useRef<number | undefined>(undefined);
+  // Tracks the pathname across renders so a query-string-only update (filters,
+  // sort, page, etc. via setSearchParams — which still counts as a PUSH/REPLACE
+  // navigation with a fresh location.key) can be told apart from an actual
+  // navigation to a different page. Without this, typing into any filter bound
+  // to the URL yanks scroll back to the top on every keystroke.
+  const prevPathnameRef = useRef(location.pathname);
 
   // Disable browser's automatic scroll restoration to avoid fighting with our logic
   useLayoutEffect(() => {
@@ -52,6 +58,9 @@ export function ScrollToTop() {
 
   // Apply scroll BEFORE paint for fresh navigations to eliminate flash
   useLayoutEffect(() => {
+    const pathnameChanged = location.pathname !== prevPathnameRef.current;
+    prevPathnameRef.current = location.pathname;
+
     // Hash navigation: defer until after paint so the element exists
     if (location.hash) {
       requestAnimationFrame(() => {
@@ -61,11 +70,14 @@ export function ScrollToTop() {
       return;
     }
 
-    // PUSH / REPLACE: reset to top synchronously before the browser paints
-    if (navigationType !== 'POP') {
+    // PUSH / REPLACE to a genuinely different page: reset to top synchronously
+    // before the browser paints. A PUSH/REPLACE that only changed the query
+    // string (setSearchParams — filters, sort, pagination, ...) must NOT reset
+    // scroll; it's still the same page and the user is mid-interaction with it.
+    if (navigationType !== 'POP' && pathnameChanged) {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     }
-  }, [location.key, location.hash, navigationType]);
+  }, [location.key, location.hash, navigationType, location.pathname]);
 
   // Apply scroll AFTER paint for Back/Forward restores (needs DOM to be fully laid out)
   useEffect(() => {

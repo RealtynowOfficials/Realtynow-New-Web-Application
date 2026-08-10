@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -423,6 +424,11 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [pendingHandoff, setPendingHandoff] = useState<{ to: string; message: string } | null>(null);
 
+  const desktopNavRef = useRef<HTMLElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  useClickOutside(desktopNavRef, () => setHoveredMenu(null), hoveredMenu !== null);
+  useClickOutside(userMenuRef, () => setUserMenu(false), userMenu);
+
   useEffect(() => {
     const onScroll = () => setMobileOpen(false);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -577,6 +583,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
             {/* Desktop / tablet nav — centered, compact on lg, spacious on xl */}
             <nav
+              ref={desktopNavRef}
               className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap lg:flex xl:gap-1"
               aria-label={t('common.mainNavigation', 'Main navigation')}
             >
@@ -615,7 +622,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                           e.preventDefault();
                           setHoveredMenu(hoveredMenu === configKey ? null : configKey);
                         }}
-                        onFocus={() => setHoveredMenu(configKey)}
                         aria-haspopup="true"
                         aria-expanded={isOpen}
                         className={cn(
@@ -730,7 +736,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               >
                 <button
                   type="button"
-                  onFocus={() => setHoveredMenu('Services')}
                   onClick={() => setHoveredMenu(hoveredMenu === 'Services' ? null : 'Services')}
                   aria-haspopup="true"
                   aria-expanded={hoveredMenu === 'Services'}
@@ -842,17 +847,17 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               <PostPropertyLink to="/portal/list-property" className="hidden sm:block">
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 rounded-full bg-[#D8232A] px-4 py-2 text-sm font-bold text-white shadow-md shadow-[#D8232A]/25 transition-all duration-200 hover:scale-105 hover:bg-[#c01e24] hover:shadow-lg hover:shadow-[#D8232A]/35 active:scale-95"
+                  className="group flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#e5262d] to-[#c01e24] px-3.5 py-1.5 text-[13px] font-bold text-white shadow-sm shadow-[#D8232A]/20 ring-1 ring-inset ring-white/15 transition-all duration-200 hover:shadow-md hover:shadow-[#D8232A]/30 hover:brightness-110 active:scale-95"
                 >
                   <span>{t('forms.postProperty', 'Post Property')}</span>
-                  <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-950 shadow-xs">
+                  <span className="rounded-full bg-white/95 px-1.5 py-[1px] text-[9px] font-black uppercase tracking-wider text-[#c01e24] transition-colors group-hover:bg-amber-300 group-hover:text-slate-950">
                     FREE
                   </span>
                 </button>
               </PostPropertyLink>
 
               {/* Login / Profile */}
-              <div className="relative">
+              <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setUserMenu((v) => !v)}
                   aria-haspopup="true"

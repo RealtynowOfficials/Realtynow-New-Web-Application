@@ -11,6 +11,8 @@ import { getPortalSections } from './sections';
 import { Card, EmptyState, Skeleton, Badge, Button, Input, Avatar } from '../../components/ui';
 import { formatDate , generatePropertyUrl} from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
+import { enablePushNotifications, isPushRegistered } from '../../lib/push';
+import { useToast } from '../../components/toast';
 
 export function PortalEnquiries() {
   const { t } = useLanguageContext();
@@ -200,6 +202,7 @@ export function PortalSettings() {
   const { t } = useLanguageContext();
   const { user, profile, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [form, setForm] = useState({
     first_name: profile?.first_name ?? '',
     last_name: profile?.last_name ?? '',
@@ -211,25 +214,29 @@ export function PortalSettings() {
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
 
   useEffect(() => {
-    if ('Notification' in window) {
-      setPushEnabled(Notification.permission === 'granted');
-    }
-  }, []);
+    if (!user) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    isPushRegistered(user.id).then(setPushEnabled);
+  }, [user]);
 
   const requestPushPermission = async () => {
-    if (!('Notification' in window)) {
-      alert('Browser does not support notifications');
+    if (!user) return;
+    setPushLoading(true);
+    const result = await enablePushNotifications(user.id);
+    setPushLoading(false);
+
+    if (!result.success) {
+      toast.addToast('error', result.error ?? 'Could not enable notifications');
       return;
     }
-    const permission = await Notification.requestPermission();
-    setPushEnabled(permission === 'granted');
-    if (permission === 'granted') {
-      new Notification('Notifications enabled!', {
-        body: 'You will now receive alerts for new enquiries and updates.',
-        icon: '/pwa-192x192.png',
-      });
+    setPushEnabled(!result.degraded);
+    if (result.degraded) {
+      toast.addToast('info', 'Notifications enabled for this tab. Background push is not configured yet.');
+    } else {
+      toast.addToast('success', 'Push notifications enabled');
     }
   };
 
@@ -374,7 +381,7 @@ export function PortalSettings() {
                 </p>
               </div>
               {!pushEnabled ? (
-                <Button size="sm" onClick={requestPushPermission}>
+                <Button size="sm" onClick={requestPushPermission} loading={pushLoading}>
                   {t('portal.enable', 'Enable')}
                 </Button>
               ) : (

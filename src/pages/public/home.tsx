@@ -62,7 +62,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
-import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl } from '../../lib/utils';
+import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useToast } from '../../components/toast';
 import { AppShowcase } from '../../components/app-showcase';
@@ -185,8 +185,7 @@ export function HomePropertyCard({
 
       <div className="flex flex-1 flex-col p-3.5">
         <p className="font-display text-base font-extrabold text-slate-900">
-          {formatCompactPrice(property.price)}
-          {property.purpose === 'Rent' && <span className="text-[10px] font-medium text-slate-400">/mo</span>}
+          {formatCompactPrice(getPropertyPrice(property), property.purpose)}
         </p>
         <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
           {property.title}
@@ -718,6 +717,7 @@ function AISmartSearch() {
   const [listening, setListening] = useState(false);
   const [locating, setLocating] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
+  const [searchError, setSearchError] = useState('');
 
   const activePlaceholders = useMemo(() => SEARCH_PLACEHOLDERS[tab] || SEARCH_PLACEHOLDERS.Buy, [tab]);
   const typedPlaceholder = useTypingPlaceholder(activePlaceholders, !query);
@@ -785,27 +785,62 @@ function AISmartSearch() {
     );
   };
 
+  const voiceErrorMessage = (code: string): string => {
+    if (code === 'not-allowed' || code === 'permission-denied') {
+      return 'Microphone access was denied. Please allow microphone access in your browser settings and try again.';
+    }
+    if (code === 'no-speech') return "Didn't catch that — no speech detected. Please try again.";
+    if (code === 'audio-capture') return 'No microphone was found. Please connect a microphone and try again.';
+    if (code === 'network') return 'Network error during voice recognition. Please check your connection and try again.';
+    return 'Voice search failed. Please try again or type your search instead.';
+  };
+
   const handleVoice = () => {
-    const SR = (window as unknown as { webkitSpeechRecognition?: new () => { start: () => void; stop: () => void; onresult: (e: { results: { 0: { 0: { transcript: string } } } }) => void; onerror: () => void; onend: () => void; lang: string; continuous: boolean; interimResults: boolean } }).webkitSpeechRecognition;
-    if (!SR) { setQuery('Voice search not supported in this browser'); return; }
+    if (listening) return;
+    const SR = (
+      window as unknown as {
+        webkitSpeechRecognition?: new () => {
+          start: () => void;
+          stop: () => void;
+          onresult: (e: { results: { 0: { 0: { transcript: string } } } }) => void;
+          onerror: (e: { error: string }) => void;
+          onend: () => void;
+          lang: string;
+          continuous: boolean;
+          interimResults: boolean;
+        };
+      }
+    ).webkitSpeechRecognition;
+    if (!SR) {
+      toast.addToast('error', 'Voice search is not supported in this browser. Please try Chrome, Edge, or Safari.');
+      return;
+    }
     setListening(true);
     const rec = new SR();
     rec.lang = 'en-IN';
     rec.continuous = false;
     rec.interimResults = false;
     rec.onresult = (e) => { setQuery(e.results[0][0].transcript); setListening(false); };
-    rec.onerror = () => setListening(false);
+    rec.onerror = (e) => {
+      setListening(false);
+      toast.addToast('error', voiceErrorMessage(e.error));
+    };
     rec.onend = () => setListening(false);
     rec.start();
   };
 
   const handleAISearch = async () => {
+    if (aiThinking) return;
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setSearchError('Please enter a location, property name, or search keyword.');
+      return;
+    }
+    setSearchError('');
     setAiThinking(true);
     try {
       const params = new URLSearchParams();
-      if (query.trim()) {
-        params.set('q', query.trim());
-      }
+      params.set('q', trimmedQuery);
       if (tab === 'Rent') {
         params.set('purpose', 'Rent');
       } else if (tab === 'PG') {
@@ -822,7 +857,7 @@ function AISmartSearch() {
 
       navigate(`/search?${params.toString()}`);
     } catch {
-      navigate(`/search?q=${encodeURIComponent(query)}`);
+      navigate(`/search?q=${encodeURIComponent(trimmedQuery)}`);
     } finally {
       setAiThinking(false);
     }
@@ -867,10 +902,19 @@ function AISmartSearch() {
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  if (searchError) setSearchError('');
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleAISearch()}
                 aria-label="Search properties"
-                className="w-full rounded-2xl border border-slate-200/80 bg-slate-50/70 py-3.5 pl-12 pr-32 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-all"
+                aria-invalid={!!searchError}
+                className={cn(
+                  'w-full rounded-2xl border bg-slate-50/70 py-3.5 pl-12 pr-32 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 transition-all',
+                  searchError
+                    ? 'border-red-400 focus:ring-red-500/30 focus:border-red-500'
+                    : 'border-slate-200/80 focus:ring-red-500/30 focus:border-red-400',
+                )}
               />
               {!query && (
                 <div className="pointer-events-none absolute left-12 top-1/2 -translate-y-1/2 text-sm sm:text-base text-slate-400">
@@ -911,6 +955,11 @@ function AISmartSearch() {
               <span>{aiThinking ? 'AI Analyzing…' : 'Search'}</span>
             </button>
           </div>
+          {searchError && (
+            <p role="alert" className="mt-2 px-1 text-xs sm:text-sm font-semibold text-red-600">
+              {searchError}
+            </p>
+          )}
         </motion.div>
 
         {/* AI Robot — sits outside the (now centered) search panel, offset to its right */}
@@ -1753,61 +1802,199 @@ function SignatureCollection() {
 }
 
 /* ============================================================
-   Top Builders
+   Verified Builders Carousel
 ============================================================ */
-function TopBuilders() {
-  const { t } = useLanguageContext();
-  const { data: builders } = useQuery({
-    queryKey: ['home-builders'],
+const BUILDER_COVER_FALLBACKS = [
+  'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80',
+];
+
+function VerifiedBuilders() {
+  const { data: builders, isLoading, isError } = useQuery({
+    queryKey: ['home-verified-builders'],
     queryFn: async () => {
-      const { data } = await supabase.from('builders').select('*').limit(6);
-      return data ?? [];
+      const { data, error } = await supabase
+        .from('builders')
+        .select('*')
+        .eq('status', 'approved')
+        .eq('public_visible', true)
+        .order('is_featured', { ascending: false })
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(12);
+      if (error) throw error;
+
+      const builderRows = data ?? [];
+      const ids = builderRows.map((b) => b.id);
+      const projectCounts = new Map<string, number>();
+      if (ids.length > 0) {
+        const { data: projectRows } = await supabase.from('projects').select('builder_id').in('builder_id', ids);
+        (projectRows ?? []).forEach((p: { builder_id: string }) => {
+          projectCounts.set(p.builder_id, (projectCounts.get(p.builder_id) ?? 0) + 1);
+        });
+      }
+      return builderRows.map((b, i) => ({
+        ...b,
+        _projectCount: projectCounts.get(b.id) ?? 0,
+        _cover: b.cover_image || BUILDER_COVER_FALLBACKS[i % BUILDER_COVER_FALLBACKS.length],
+      }));
     },
   });
-  if (!builders || builders.length === 0) return null;
+
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    { align: 'start', loop: false, containScroll: 'trimSnaps' },
+    [Autoplay({ delay: 6000, stopOnInteraction: true, stopOnMouseEnter: true })],
+  );
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.on('select', () => setSelectedIndex(emblaApi.selectedScrollSnap()));
+  }, [emblaApi]);
+
+  const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
+
+  if (isError) return null;
+  if (!isLoading && (!builders || builders.length === 0)) return null;
 
   return (
-    <SectionShell
-      title={t('home.topBuilders', 'Top Builders')}
-      subtitle={t('home.trustedDevelopers', "Hyderabad's most trusted developers")}
-      id="builders"
-    >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {builders.map((b, i) => (
-          <motion.div
-            key={b.id}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.05 }}
-            whileHover={{ y: -5 }}
-            className="card-premium flex items-center gap-4 p-5 hover:shadow-cardHover"
-          >
-            <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white">
-              <Building2 className="h-8 w-8" />
+    <section className="py-12 sm:py-16 bg-white" id="verified-builders">
+      <div className="container-wide">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                Verified Builders
+              </h2>
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100">
+                <BadgeCheck className="h-3 w-3" /> RealtyNow Verified
+              </span>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-display font-bold text-navy-900 truncate">{b.name}</p>
-              {b.established_year && (
-                <p className="text-xs text-navy-500">
-                  {t('home.since', 'Since')} {b.established_year}
-                </p>
-              )}
-              {b.description && <p className="mt-1 text-sm text-navy-600 line-clamp-1">{b.description}</p>}
-              <div className="mt-2 flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <Star
-                    key={s}
-                    className={cn('h-3.5 w-3.5', s <= 4 ? 'fill-gold-400 text-gold-400' : 'text-navy-200')}
-                  />
+            <p className="text-sm text-slate-500">
+              Meet the trusted developers shaping India's next generation of premium living spaces.
+            </p>
+          </div>
+          <Link
+            to="/builders"
+            className="inline-flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
+          >
+            View All Builders <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        {isLoading ? (
+          <div className="flex gap-4 overflow-hidden">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="skeleton min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] h-[340px] rounded-2xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="relative">
+            <div className="overflow-hidden" ref={emblaRef}>
+              <div className="flex gap-4">
+                {(builders ?? []).map((b, i) => (
+                  <motion.div
+                    key={b.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05 }}
+                    whileHover={{ y: -4 }}
+                    className="min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)]"
+                  >
+                    <Link
+                      to={`/builders/${b.id}`}
+                      className="group block h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-xl transition-all duration-300"
+                    >
+                      {/* Cover image */}
+                      <div className="relative h-40 overflow-hidden bg-slate-100">
+                        <img
+                          src={b._cover}
+                          alt={b.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                        />
+                        <span className="absolute top-3 left-3 inline-flex items-center gap-1 rounded-full bg-white/95 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-emerald-700 shadow-sm">
+                          <BadgeCheck className="h-3 w-3" /> Verified
+                        </span>
+                        {/* Logo overlapping bottom of cover */}
+                        <div className="absolute -bottom-6 left-4 h-14 w-14 rounded-xl bg-white border border-slate-200 shadow-md grid place-items-center overflow-hidden">
+                          {b.logo_url ? (
+                            <img src={b.logo_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Building2 className="h-6 w-6 text-navy-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-8 pb-5 px-4">
+                        <p className="font-display font-bold text-navy-900 truncate">{b.name}</p>
+                        {b.description && (
+                          <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{b.description}</p>
+                        )}
+                        <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
+                          {b._projectCount > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400" /> {b._projectCount} Projects
+                            </span>
+                          )}
+                          {b.established_year && (
+                            <span className="flex items-center gap-1">
+                              <Award className="h-3.5 w-3.5 text-slate-400" />
+                              {new Date().getFullYear() - b.established_year}+ Yrs
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                          <span className="text-xs font-bold text-red-600 group-hover:text-red-700 inline-flex items-center gap-1">
+                            View Builder <ArrowRight className="h-3.5 w-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
                 ))}
-                <span className="ml-1 text-xs text-navy-500">4.0 {t('home.trustScore', 'Trust Score')}</span>
               </div>
             </div>
-          </motion.div>
-        ))}
+
+            {(builders?.length ?? 0) > 4 && (
+              <>
+                <button
+                  onClick={scrollPrev}
+                  className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                  aria-label="Previous builder"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={scrollNext}
+                  className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                  aria-label="Next builder"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
+
+            {(builders?.length ?? 0) > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-2 lg:hidden">
+                {(builders ?? []).map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => emblaApi && emblaApi.scrollTo(i)}
+                    className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-red-600' : 'w-1.5 bg-slate-300'}`}
+                    aria-label={`Go to builder ${i + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    </SectionShell>
+    </section>
   );
 }
 
@@ -3167,7 +3354,7 @@ export function HomePage() {
       <TopAgents />
       <PostPropertyBanner />
       <SignatureCollection />
-      <TopBuilders />
+      <VerifiedBuilders />
       <ThreeColumnAdBannersSection />
       <LatestBlogs />
       <RealtynowExclusiveSection />

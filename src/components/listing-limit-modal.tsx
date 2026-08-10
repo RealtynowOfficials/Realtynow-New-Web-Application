@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +16,13 @@ export function ListingLimitModal({ isOpen, onClose, usage }: Props) {
 
   if (!usage) return null;
 
-  return (
+  // Portaled straight to <body> — dashboard pages wrap their content in a
+  // motion.div (DashboardLayout) that keeps a non-"none" transform applied at
+  // rest, which per the CSS spec makes it the containing block for any
+  // position:fixed descendant. Without the portal this modal centers inside
+  // that (sidebar-offset) content box instead of the real viewport, making it
+  // look shifted toward the right edge of the page instead of truly centered.
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
@@ -27,10 +34,10 @@ export function ListingLimitModal({ isOpen, onClose, usage }: Props) {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md bg-white rounded-2xl shadow-2xl z-[101] overflow-hidden"
+            initial={{ opacity: 0, scale: 0.95, x: '-50%', y: '-45%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+            exit={{ opacity: 0, scale: 0.95, x: '-50%', y: '-45%' }}
+            className="fixed left-1/2 top-1/2 w-[90vw] max-w-md bg-white rounded-2xl shadow-2xl z-[101] overflow-hidden"
           >
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -82,6 +89,15 @@ export function ListingLimitModal({ isOpen, onClose, usage }: Props) {
                   Upgrade Now
                 </button>
                 <button
+                  onClick={() => {
+                    onClose();
+                    navigate('/portal/my-properties');
+                  }}
+                  className="w-full py-3 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-medium transition-colors"
+                >
+                  Manage Properties
+                </button>
+                <button
                   onClick={onClose}
                   className="w-full py-3 px-4 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl font-medium transition-colors"
                 >
@@ -92,6 +108,7 @@ export function ListingLimitModal({ isOpen, onClose, usage }: Props) {
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

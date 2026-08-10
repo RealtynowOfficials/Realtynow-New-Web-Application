@@ -5,7 +5,7 @@ import { GitCompare, MapPin, X, CheckCircle2, XCircle, ArrowLeft, Home, Shield, 
 import { fetchComparedProperties, clearCompareList, toggleCompareProperty } from '../../lib/compare';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { formatCompactPrice, formatPrice , generatePropertyUrl} from '../../lib/utils';
+import { formatCompactPrice, formatPrice, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import type { Property } from '../../lib/types';
 import { useToast } from '../../components/toast';
 import { Spinner } from '../../components/ui';
@@ -20,7 +20,7 @@ export function ComparePage() {
   const [loading, setLoading] = useState(true);
 
   const specRows: { label: string; key: keyof Property; format?: (v: unknown, p: Property) => string }[] = [
-    { label: t('property.price', 'Price'), key: 'price', format: (_, p) => formatPrice(p.price) },
+    { label: t('property.price', 'Price'), key: 'price', format: (_, p) => formatPrice(getPropertyPrice(p)) },
     { label: t('search.purposeLabel', 'Purpose'), key: 'purpose' },
     { label: t('search.propertyTypeLabel', 'Property Type'), key: 'property_type_name' },
     { label: t('property.bedrooms', 'Bedrooms'), key: 'bedrooms', format: (v) => (v != null ? `${v} BHK` : '') },
@@ -216,8 +216,7 @@ export function ComparePage() {
 
                         {/* Price */}
                         <p className="text-lg font-bold text-red-600 border-t border-gray-100 pt-2">
-                          {formatCompactPrice(p.price)}
-                          {p.purpose === 'Rent' && <span className="text-xs text-gray-400 font-medium">/mo</span>}
+                          {formatCompactPrice(getPropertyPrice(p), p.purpose)}
                         </p>
                       </motion.div>
                     </th>

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { PropertyCard } from '../../components/property-card';
-import { Heart, Search } from 'lucide-react';
+import { Heart, Search, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui';
 import { Link } from 'react-router-dom';
-import { useFavorites, getLocalFavoriteIds } from '../../lib/favorites';
+import { useFavorites, getLocalFavoriteIds, toggleFavoriteProperty } from '../../lib/favorites';
 import { useLanguageContext } from '../../lib/i18n/language-context';
+import { useToast } from '../../components/toast';
 import { DashboardLayout } from '../../components/dashboard-layout';
 import { getPortalSections } from './sections';
 
@@ -14,8 +16,11 @@ export default function SavedProperties() {
   const { user, profile } = useAuth();
   const { t } = useLanguageContext();
   const sections = getPortalSections(t);
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   // Sync state for guest users
   const [guestFavoriteIds, setGuestFavoriteIds] = useState<string[]>([]);
@@ -62,6 +67,20 @@ export default function SavedProperties() {
     }
   }, [currentFavoriteIds, user, isLoadingFavorites]);
 
+  const handleRemove = async (propertyId: string) => {
+    setRemovingId(propertyId);
+    try {
+      await toggleFavoriteProperty(propertyId, user?.id, true);
+      setProperties((prev) => prev.filter((p) => p.id !== propertyId));
+      if (user) queryClient.invalidateQueries({ queryKey: ['favorites', user.id] });
+      toast.addToast('success', 'Removed from saved properties');
+    } catch (err) {
+      toast.addToast('error', err instanceof Error ? err.message : 'Could not remove property');
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
   return (
     <DashboardLayout sections={sections} title={t('common.saved', 'Saved Properties')}>
       <div className="space-y-6">
@@ -96,7 +115,17 @@ export default function SavedProperties() {
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {properties.map(p => (
-            <PropertyCard key={p.id} property={p} />
+            <div key={p.id} className="relative">
+              <button
+                onClick={() => handleRemove(p.id)}
+                disabled={removingId === p.id}
+                title="Remove from saved properties"
+                className="absolute left-2.5 top-11 z-10 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-navy-500 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-error-50 hover:text-error-600 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+              <PropertyCard property={p} />
+            </div>
           ))}
         </div>
       )}

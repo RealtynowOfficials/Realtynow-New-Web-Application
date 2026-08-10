@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import i18n from './i18n/i18n';
-import { formatPrice, generatePropertyUrl } from './utils';
+import { formatPrice, formatCompactPrice, generatePropertyUrl } from './utils';
+import { normalizeCityAliases } from './properties';
 import type { Property } from './types';
 
 export type AITask =
@@ -47,43 +48,100 @@ const RENT_INTENT_RE = /\b(rent|rental|lease|to let)\b/i;
 const BUY_INTENT_RE = /\b(buy|sale|sell|purchase)\b/i;
 const SEARCH_STOPWORDS_RE =
   /\b(show me|find|search for|search|looking for|i want|i'm looking for|need|please|can you|could you|apartments?|flats?|villas?|independent houses?|houses?|plots?|studios?|penthouses?|properties?|property|for rent|for sale|to buy|to rent|to let|rent|rental|lease|buy|sale|sell|purchase|in|or|and|near|around|at|me|a|an|the)\b/gi;
+// Messages that look like a genuine question rather than a bare location/keyword —
+// used to keep FAQ-style chat ("What documents do I need...?") out of the property
+// search fast-path below.
+const QUESTION_LIKE_RE = /[?]|\b(what|how|why|when|who|which|does|do|is|are|can|could|should|would|documents?|requirements?|process|policy)\b/i;
+
+const LAKH_INR = 100_000;
+const CRORE_INR = 10_000_000;
+const PRICE_AMOUNT_RE = '(\\d+(?:\\.\\d+)?)\\s*(crores?|cr|lakhs?|lac)';
+const MAX_PRICE_RE = new RegExp(`\\b(?:under|below|less than|up to|within)\\s+${PRICE_AMOUNT_RE}\\b`, 'i');
+const MIN_PRICE_RE = new RegExp(`\\b(?:above|over|more than)\\s+${PRICE_AMOUNT_RE}\\b`, 'i');
+
+function priceUnitToInr(amount: number, unit: string): number {
+  return Math.round(amount * (/^cr/i.test(unit) ? CRORE_INR : LAKH_INR));
+}
+
+// Pulls a budget constraint ("under 1 crore", "above 50 lakhs") out of the raw
+// message and returns the message with that phrase removed — the phrase must not
+// leak into the free-text location query below, or numbers/units like "crore"
+// end up required as literal substrings of search_text and silently zero out
+// every result.
+function extractPriceConstraint(message: string): { max_price?: number; min_price?: number; rest: string } {
+  let rest = message;
+  let max_price: number | undefined;
+  let min_price: number | undefined;
+
+  const maxMatch = rest.match(MAX_PRICE_RE);
+  if (maxMatch) {
+    max_price = priceUnitToInr(parseFloat(maxMatch[1]), maxMatch[2]);
+    rest = rest.replace(maxMatch[0], ' ');
+  }
+  const minMatch = rest.match(MIN_PRICE_RE);
+  if (minMatch) {
+    min_price = priceUnitToInr(parseFloat(minMatch[1]), minMatch[2]);
+    rest = rest.replace(minMatch[0], ' ');
+  }
+  return { max_price, min_price, rest };
+}
 
 function isPropertySearchIntent(message: string): boolean {
-  return BHK_TEST_RE.test(message) || PROPERTY_TYPE_TEST_RE.test(message);
+  if (BHK_TEST_RE.test(message) || PROPERTY_TYPE_TEST_RE.test(message)) return true;
+
+  // A voice/chat utterance that's just a short, non-question phrase (e.g. "Bangalore",
+  // "Kondapur Hyderabad") is almost always a bare location search on a real estate site.
+  // Route it through the real-DB search too, rather than letting it fall through to a
+  // free-form LLM reply that has no grounding and can invent a result count.
+  const trimmed = message.trim();
+  const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
+  if (wordCount > 0 && wordCount <= 4 && !QUESTION_LIKE_RE.test(trimmed)) return true;
+
+  return false;
 }
 
 function parseSearchFiltersFromMessage(message: string): {
   bedrooms: number[];
   purpose?: 'Sale' | 'Rent';
   typeLabel: string;
+  typeSingular?: string;
   q: string;
+  max_price?: number;
+  min_price?: number;
 } {
-  const bedrooms = Array.from(new Set(Array.from(message.matchAll(/(\d+)\s*bhk/gi)).map((m) => Number(m[1]))));
-  const purpose: 'Sale' | 'Rent' | undefined = RENT_INTENT_RE.test(message)
+  const { max_price, min_price, rest } = extractPriceConstraint(message);
+
+  const bedrooms = Array.from(new Set(Array.from(rest.matchAll(/(\d+)\s*bhk/gi)).map((m) => Number(m[1]))));
+  const purpose: 'Sale' | 'Rent' | undefined = RENT_INTENT_RE.test(rest)
     ? 'Rent'
-    : BUY_INTENT_RE.test(message)
+    : BUY_INTENT_RE.test(rest)
       ? 'Sale'
       : undefined;
-  const typeMatch = message.match(PROPERTY_TYPE_MATCH_RE);
+  const typeMatch = rest.match(PROPERTY_TYPE_MATCH_RE);
   const typeLabel = typeMatch ? typeMatch[0].toLowerCase() : 'properties';
+  const typeSingular = typeMatch ? typeMatch[0].toLowerCase().replace(/s$/, '') : undefined;
 
-  const q = message
-    .replace(/\d+\s*bhk/gi, ' ')
-    .replace(SEARCH_STOPWORDS_RE, ' ')
-    .replace(/[^\p{L}\p{N}\s,]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const q = normalizeCityAliases(
+    rest
+      .replace(/\d+\s*bhk/gi, ' ')
+      .replace(SEARCH_STOPWORDS_RE, ' ')
+      .replace(/[^\p{L}\p{N}\s,]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
 
-  return { bedrooms, purpose, typeLabel, q };
+  return { bedrooms, purpose, typeLabel, typeSingular, q, max_price, min_price };
 }
 
 // Answers property-search-style chat messages directly from RealtyNow's own listings,
 // bypassing the LLM entirely so results can never include fabricated data or competitor mentions.
 async function answerRealtyNowPropertySearch(message: string): Promise<string> {
-  const { bedrooms, purpose, typeLabel, q } = parseSearchFiltersFromMessage(message);
+  const { bedrooms, purpose, typeLabel, typeSingular, q, max_price, min_price } = parseSearchFiltersFromMessage(message);
   const bhkLabel = bedrooms.length > 0 ? `${bedrooms.map((b) => `${b}BHK`).join(' and ')} ` : '';
   const placeLabel = q ? ` in ${q}` : '';
-  const intro = `Sure! I'll search RealtyNow for available ${bhkLabel}${typeLabel}${placeLabel}.`;
+  const priceLabel =
+    max_price != null ? ` under ${formatCompactPrice(max_price)}` : min_price != null ? ` above ${formatCompactPrice(min_price)}` : '';
+  const intro = `Sure! I'll search RealtyNow for available ${bhkLabel}${typeLabel}${placeLabel}${priceLabel}.`;
 
   try {
     // Match each locality/city word independently (rather than as one phrase) since
@@ -98,6 +156,9 @@ async function answerRealtyNowPropertySearch(message: string): Promise<string> {
 
     if (purpose) query = query.eq('purpose', purpose);
     if (bedrooms.length > 0) query = query.in('bedrooms', bedrooms);
+    if (typeSingular) query = query.ilike('property_type_name', `%${typeSingular}%`);
+    if (max_price != null) query = query.lte('price', max_price);
+    if (min_price != null) query = query.gte('price', min_price);
     for (const token of q.split(' ').filter(Boolean)) {
       query = query.ilike('search_text', `%${token}%`);
     }

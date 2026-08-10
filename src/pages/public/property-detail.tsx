@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
-import { Bed, Bath, Maximize, MapPin, Phone, Heart, Share2, Check, ChevronLeft, ChevronRight, Car, Calendar, Home, Eye, Star, Send, ShieldCheck, Bot, GitCompare, Play, Printer, X, Building, Zap, Ruler, Images, HelpCircle, TrendingUp, Layers, Flag, Download, ChevronDown, Sparkles, Box, Navigation2, Clock, Compass, User } from 'lucide-react';
+import { Bed, Bath, Maximize, MapPin, Phone, Heart, Share2, Check, ChevronLeft, ChevronRight, Car, Calendar, Home, Eye, Star, Send, ShieldCheck, Bot, GitCompare, Play, Printer, X, Building, Zap, Ruler, Images, HelpCircle, TrendingUp, Layers, Flag, Download, ChevronDown, Sparkles, Box, Navigation2, Clock, Compass, User, Edit3, Trash2 } from 'lucide-react';
 import { fetchProperty, trackPropertyView } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
@@ -12,7 +12,7 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { SharePropertyModal } from '../../components/share-property-modal';
 import { Button, Card, Input, Textarea, Badge, Avatar, EmptyState, Spinner, Modal, Select } from '../../components/ui';
 import { PropertyCard, StatusBadge, RatingStars } from '../../components/property-card';
-import { formatCompactPrice, formatNumber, cn } from '../../lib/utils';
+import { formatCompactPrice, formatNumber, cn, getPropertyPrice } from '../../lib/utils';
 import { isCompared, toggleCompareProperty } from '../../lib/compare';
 import { useToast } from '../../components/toast';
 import { PostPropertyBanner } from '../../components/post-property-banner';
@@ -213,11 +213,12 @@ export function PropertyDetailPage() {
   const [contactOpen, setContactOpen] = useState(false);
   const [apptOpen, setApptOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewDeleteConfirm, setReviewDeleteConfirm] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [showVirtualTour, setShowVirtualTour] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
   const [apptForm, setApptForm] = useState({ date: '', time: '', notes: '' });
-  const [reviewForm, setReviewForm] = useState({ rating: 5, title: '', comment: '' });
+  const [reviewForm, setReviewForm] = useState({ id: '', rating: 5, title: '', comment: '' });
   const [reportForm, setReportForm] = useState({ reason: '', details: '' });
   const [saved, setSaved] = useState(false);
   const [compared, setCompared] = useState(false);
@@ -225,6 +226,17 @@ export function PropertyDetailPage() {
   const [activeTab, setActiveTab] = useState('overview');
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [Autoplay({ delay: 5000, stopOnInteraction: true })]);
+  const [heroSlide, setHeroSlide] = useState(0);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    const onSelect = () => setHeroSlide(emblaApi.selectedScrollSnap());
+    emblaApi.on('select', onSelect);
+    onSelect();
+    return () => {
+      emblaApi.off('select', onSelect);
+    };
+  }, [emblaApi]);
 
   const { data: property, isLoading } = useQuery({
     queryKey: ['property', id],
@@ -323,6 +335,21 @@ export function PropertyDetailPage() {
     enabled: !!id,
   });
 
+  const myReview = user ? reviews?.find((r: any) => r.user_id === user.id) : undefined;
+
+  const openReviewModal = () => {
+    if (!user) {
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
+      return;
+    }
+    if (myReview) {
+      setReviewForm({ id: myReview.id, rating: myReview.rating, title: myReview.title ?? '', comment: myReview.comment ?? '' });
+    } else {
+      setReviewForm({ id: '', rating: 5, title: '', comment: '' });
+    }
+    setReviewOpen(true);
+  };
+
   const { data: priceHistory } = useQuery({
     queryKey: ['price-history', id],
     queryFn: async () => {
@@ -333,8 +360,18 @@ export function PropertyDetailPage() {
   });
 
   useEffect(() => {
-    if (id) trackPropertyView(id, user?.id);
-  }, [id, user?.id]);
+    if (!id || !property) return;
+    
+    // Only track public views for published properties
+    // Exclude owner previews from view counting
+    if (property.status === 'published' && property.owner_id !== user?.id) {
+      const sessionKey = `viewed_property_${id}`;
+      if (!sessionStorage.getItem(sessionKey)) {
+        sessionStorage.setItem(sessionKey, '1');
+        trackPropertyView(id, user?.id);
+      }
+    }
+  }, [id, property?.status, property?.owner_id, user?.id]);
 
   useEffect(() => {
     if (id) {
@@ -444,16 +481,37 @@ export function PropertyDetailPage() {
   const reviewMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Please sign in to leave a review');
-      const { error } = await supabase.from('reviews').insert({ property_id: id, user_id: user.id, rating: reviewForm.rating, title: reviewForm.title || null, comment: reviewForm.comment });
+      const { error } = await supabase
+        .from('reviews')
+        .upsert(
+          { property_id: id, user_id: user.id, rating: reviewForm.rating, title: reviewForm.title || null, comment: reviewForm.comment },
+          { onConflict: 'property_id,user_id' },
+        );
       if (error) throw error;
     },
     onSuccess: () => {
+      const wasEdit = !!reviewForm.id;
       setReviewOpen(false);
-      setReviewForm({ rating: 5, title: '', comment: '' });
+      setReviewForm({ id: '', rating: 5, title: '', comment: '' });
       queryClient.invalidateQueries({ queryKey: ['reviews', id] });
-      addToast('success', 'Review submitted successfully!');
+      addToast('success', wasEdit ? 'Review updated successfully!' : 'Review submitted successfully!');
     },
     onError: (err: any) => addToast('error', err.message || 'Failed to submit review'),
+  });
+
+  const deleteReviewMutation = useMutation({
+    mutationFn: async () => {
+      if (!user || !reviewForm.id) return;
+      const { error } = await supabase.from('reviews').delete().eq('id', reviewForm.id).eq('user_id', user.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setReviewDeleteConfirm(false);
+      setReviewForm({ id: '', rating: 5, title: '', comment: '' });
+      queryClient.invalidateQueries({ queryKey: ['reviews', id] });
+      addToast('success', 'Review deleted');
+    },
+    onError: (err: any) => addToast('error', err.message || 'Failed to delete review'),
   });
 
   const reportMutation = useMutation({
@@ -598,14 +656,57 @@ export function PropertyDetailPage() {
   return (
     <div className="min-h-screen bg-white pb-24 lg:pb-0">
       {/* 1. CINEMATIC HERO */}
-      <section className="relative h-[60vh] min-h-[500px] w-full bg-navy-950 overflow-hidden">
-        <img src={coverImage} alt={property.title} className="absolute inset-0 h-full w-full object-cover opacity-50 transition-transform duration-1000 scale-105" loading="eager" />
+      <section className="relative h-[36vh] min-h-[320px] w-full bg-navy-950 overflow-hidden">
+        {/* Background image carousel */}
+        <div className="absolute inset-0 overflow-hidden" ref={emblaRef}>
+          <div className="flex h-full">
+            {images.map((img, i) => (
+              <div key={i} className="relative h-full min-w-0 flex-[0_0_100%]">
+                <img
+                  src={img}
+                  alt={`${property.title} photo ${i + 1}`}
+                  className="h-full w-full object-cover opacity-50"
+                  loading={i === 0 ? 'eager' : 'lazy'}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="absolute inset-0 bg-gradient-to-t from-navy-950 via-navy-950/40 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-navy-950/80 to-transparent" />
 
+        {images.length > 1 && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); emblaApi?.scrollPrev(); }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 grid h-9 w-9 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white transition-all hover:bg-white/20"
+              title="Previous photo"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); emblaApi?.scrollNext(); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 grid h-9 w-9 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white transition-all hover:bg-white/20"
+              title="Next photo"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex gap-1.5">
+              {images.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => { e.stopPropagation(); emblaApi?.scrollTo(i); }}
+                  className={cn('h-1.5 rounded-full transition-all', i === heroSlide ? 'w-5 bg-white' : 'w-1.5 bg-white/40 hover:bg-white/60')}
+                  title={`Go to photo ${i + 1}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
         {/* Top Bar: Breadcrumbs & Actions */}
-        <div className="absolute top-0 left-0 right-0 p-6 z-20 flex justify-between items-start">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+        <div className="absolute top-0 left-0 right-0 p-4 z-20 flex justify-between items-start">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
             {breadcrumbs.map((b, i) => (
               <span key={b.to} className="flex items-center gap-2">
                 {i > 0 && <ChevronLeft className="h-3 w-3 rotate-180" />}
@@ -617,68 +718,49 @@ export function PropertyDetailPage() {
             <ChevronLeft className="h-3 w-3 rotate-180" />
             <span className="text-white font-medium truncate max-w-[150px] sm:max-w-[300px]">{property.title}</span>
           </div>
-          
-          <div className="flex gap-3">
-            <button onClick={(e) => { e.stopPropagation(); toggleSave(); }} className={cn('grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 transition-all hover:bg-white/20 hover:scale-110', saved ? 'text-red-500' : 'text-white')} title="Save property">
-              <Heart className={cn('h-5 w-5', saved && 'fill-red-500')} />
+
+          <div className="flex gap-2.5">
+            <button onClick={(e) => { e.stopPropagation(); toggleSave(); }} className={cn('grid h-9 w-9 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 transition-all hover:bg-white/20 hover:scale-110', saved ? 'text-red-500' : 'text-white')} title="Save property">
+              <Heart className={cn('h-4 w-4', saved && 'fill-red-500')} />
             </button>
-            <div className="relative">
-              <button onClick={(e) => { e.stopPropagation(); setShowShare(true); }} className="grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 transition-all hover:bg-white/20 hover:scale-110 text-white" title="Share">
-                <Share2 className="h-5 w-5" />
-              </button>
-              <SharePropertyModal property={property} isOpen={showShare} onClose={() => setShowShare(false)} />
-            </div>
+            <button onClick={(e) => { e.stopPropagation(); setShowShare(true); }} className="grid h-9 w-9 place-items-center rounded-full bg-white/10 backdrop-blur-md border border-white/20 transition-all hover:bg-white/20 hover:scale-110 text-white" title="Share">
+              <Share2 className="h-4 w-4" />
+            </button>
+            <SharePropertyModal property={property} isOpen={showShare} onClose={() => setShowShare(false)} />
           </div>
         </div>
 
         {/* Hero Content */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 md:p-12 z-20">
-          <div className="container-page px-0 flex flex-col md:flex-row md:items-end justify-between gap-8">
-            <div className="max-w-3xl text-white space-y-4">
-              <Badge variant={property.purpose === 'Rent' ? 'info' : 'gold'} className="shadow-lg backdrop-blur-md bg-opacity-90 border-0 px-3 py-1.5 text-sm uppercase tracking-wider font-bold">
+        <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 z-20">
+          <div className="container-page px-0 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="max-w-3xl text-white space-y-2.5">
+              <Badge variant={property.purpose === 'Rent' ? 'info' : 'gold'} className="shadow-lg backdrop-blur-md bg-opacity-90 border-0 px-2.5 py-1 text-xs uppercase tracking-wider font-bold">
                 {t('common.for', 'For')} {property.purpose === 'Rent' ? 'Rent' : 'Sale'}
               </Badge>
-              <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-tight drop-shadow-lg">{property.title}</h1>
-              <p className="text-lg text-slate-200 flex items-center gap-2 drop-shadow-md">
-                <MapPin className="h-5 w-5 text-red-500" /> {property.address ?? `${property.locality_name ?? ''}, ${property.city_name ?? ''}`}
+              <h1 className="font-display text-xl md:text-2xl lg:text-3xl font-bold leading-tight drop-shadow-lg">{property.title}</h1>
+              <p className="text-sm text-slate-200 flex items-center gap-2 drop-shadow-md">
+                <MapPin className="h-4 w-4 text-red-500" /> {property.address ?? `${property.locality_name ?? ''}, ${property.city_name ?? ''}`}
               </p>
-              
-              <div className="flex items-end gap-4 pt-2 drop-shadow-lg">
-                <span className="font-display text-4xl lg:text-5xl font-extrabold">{formatCompactPrice(property.price)}</span>
-                {property.purpose === 'Rent' && <span className="text-slate-300 text-lg mb-1">/ month</span>}
-                <span className="rounded-lg bg-white/10 px-2.5 py-1 text-xs border border-white/20 backdrop-blur-md font-medium mb-2">Negotiable</span>
+
+              <div className="flex items-end gap-3 pt-1 drop-shadow-lg">
+                <span className="font-display text-xl lg:text-2xl font-extrabold">{formatCompactPrice(getPropertyPrice(property), property.purpose)}</span>
+                <span className="rounded-lg bg-white/10 px-2 py-0.5 text-[11px] border border-white/20 backdrop-blur-md font-medium mb-1">Negotiable</span>
               </div>
 
-              <div className="flex flex-wrap gap-x-8 gap-y-4 pt-4 text-slate-100">
-                {property.bedrooms && <div className="flex items-center gap-2.5"><Bed className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.bedrooms}</span> Bedrooms</span></div>}
-                {property.bathrooms && <div className="flex items-center gap-2.5"><Bath className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.bathrooms}</span> Bathrooms</span></div>}
-                {property.built_up_area && <div className="flex items-center gap-2.5"><Maximize className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.built_up_area}</span> Sq Ft</span></div>}
-                {property.parking && <div className="flex items-center gap-2.5"><Car className="h-5 w-5 text-slate-400"/> <span><span className="font-bold text-lg">{property.parking}</span> Parking</span></div>}
+              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-2 text-slate-100 text-sm">
+                {property.bedrooms && <div className="flex items-center gap-1.5"><Bed className="h-4 w-4 text-slate-400"/> <span><span className="font-bold">{property.bedrooms}</span> Bedrooms</span></div>}
+                {property.bathrooms && <div className="flex items-center gap-1.5"><Bath className="h-4 w-4 text-slate-400"/> <span><span className="font-bold">{property.bathrooms}</span> Bathrooms</span></div>}
+                {property.built_up_area && <div className="flex items-center gap-1.5"><Maximize className="h-4 w-4 text-slate-400"/> <span><span className="font-bold">{property.built_up_area}</span> Sq Ft</span></div>}
+                {property.parking && <div className="flex items-center gap-1.5"><Car className="h-4 w-4 text-slate-400"/> <span><span className="font-bold">{property.parking}</span> Parking</span></div>}
               </div>
             </div>
 
-            {/* CTA & Carousel Preview */}
-            <div className="shrink-0 flex flex-col gap-4">
-              <div className="flex gap-3">
-                <Button size="lg" className="bg-red-600 hover:bg-red-700 text-white border-0 shadow-xl shadow-red-900/30 text-base px-6" onClick={() => setContactOpen(true)}>
-                  Contact Agent
-                </Button>
-                <Button size="lg" className="bg-white hover:bg-slate-100 text-navy-900 border-0 shadow-xl text-base px-6" onClick={() => (user ? setApptOpen(true) : navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`))}>
-                  <Calendar className="h-5 w-5 mr-2"/> Schedule Visit
-                </Button>
-              </div>
-              
-              <div className="mt-2 flex gap-3 items-end justify-end">
-                {images.slice(0, 3).map((img, i) => (
-                  <button key={i} onClick={() => {setActiveImg(i); setLightbox(true);}} className="h-20 w-32 overflow-hidden rounded-xl border-2 border-white/20 hover:border-white transition-all shadow-xl group hidden md:block">
-                    <img src={img} className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                  </button>
-                ))}
-                <button onClick={() => {setActiveImg(0); setLightbox(true);}} className="h-20 px-5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-xl border-2 border-white/20 hover:border-white text-white flex flex-col items-center justify-center gap-1.5 transition-all shadow-xl group">
-                  <span className="text-sm font-bold">1 / {images.length}</span>
-                  <span className="text-xs flex items-center gap-1 font-medium"><Images className="h-3.5 w-3.5"/> View All Photos</span>
-                </button>
-              </div>
+            {/* View all photos — Contact Agent / Schedule Visit live in the sidebar card and mobile action bar; no need to repeat them here too */}
+            <div className="shrink-0">
+              <button onClick={() => {setActiveImg(heroSlide); setLightbox(true);}} className="h-11 px-4 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-xl border border-white/20 hover:border-white text-white flex items-center gap-2 transition-all shadow-xl group">
+                <Images className="h-4 w-4"/>
+                <span className="text-xs font-bold">{heroSlide + 1} / {images.length} · View All Photos</span>
+              </button>
             </div>
           </div>
         </div>
@@ -865,16 +947,14 @@ export function PropertyDetailPage() {
                   {property.purpose === 'Rent' ? (
                     <>
                       <div className="flex justify-between items-center pb-6 border-b border-navy-50">
-                        <span className="text-navy-600 font-medium">Rent</span>
-                        <span className="text-xl font-bold text-navy-900">{formatCompactPrice(property.price)} <span className="text-sm text-navy-500 font-normal">/ month</span></span>
+                        <span className="text-navy-600 font-medium">Monthly Rent</span>
+                        <span className="text-xl font-bold text-navy-900">{formatCompactPrice(getPropertyPrice(property), property.purpose)}</span>
                       </div>
-                      {property.security_deposit && (
-                        <div className="flex justify-between items-center pb-6 border-b border-navy-50">
-                          <span className="text-navy-600 font-medium">Security Deposit</span>
-                          <span className="text-lg font-bold text-navy-900">{formatCompactPrice(property.security_deposit)} <span className="text-xs text-navy-500 font-normal">(Refundable)</span></span>
-                        </div>
-                      )}
-                      {(property as any).maintenance_charges && (
+                      <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                        <span className="text-navy-600 font-medium">Security Deposit</span>
+                        <span className="text-lg font-bold text-navy-900">{formatCompactPrice((property as any).security_deposit)}</span>
+                      </div>
+                      {(property as any).maintenance_charges > 0 && (
                         <div className="flex justify-between items-center pb-6 border-b border-navy-50">
                           <span className="text-navy-600 font-medium">Maintenance</span>
                           <span className="text-lg font-bold text-navy-900">{formatCompactPrice((property as any).maintenance_charges)} <span className="text-sm text-navy-500 font-normal">/ month</span></span>
@@ -885,12 +965,12 @@ export function PropertyDetailPage() {
                     <>
                       <div className="flex justify-between items-center pb-6 border-b border-navy-50">
                         <span className="text-navy-600 font-medium">Sale Price</span>
-                        <span className="text-xl font-bold text-navy-900">{formatCompactPrice(property.price)}</span>
+                        <span className="text-xl font-bold text-navy-900">{formatCompactPrice(getPropertyPrice(property), property.purpose)}</span>
                       </div>
                       {property.built_up_area && (
                         <div className="flex justify-between items-center pb-6 border-b border-navy-50">
                           <span className="text-navy-600 font-medium">Price per Sq Ft</span>
-                          <span className="text-lg font-bold text-navy-900">₹{formatNumber(Math.round(property.price / property.built_up_area))}</span>
+                          <span className="text-lg font-bold text-navy-900">₹{formatNumber(Math.round(getPropertyPrice(property) / property.built_up_area))}</span>
                         </div>
                       )}
                     </>
@@ -967,37 +1047,69 @@ export function PropertyDetailPage() {
             </section>
             
             {/* Reviews */}
-            {settings.show_reviews && reviews && reviews.length > 0 && (
+            {settings.show_reviews && (
               <section className="scroll-mt-32" id="reviews">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="font-display text-2xl font-bold text-navy-900">Reviews</h2>
-                  <Button size="sm" variant="secondary" onClick={() => (user ? setReviewOpen(true) : navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`))} icon={<Star className="h-4 w-4" />}>
-                    Write a review
+                  <Button size="sm" variant="secondary" onClick={openReviewModal} icon={<Star className="h-4 w-4" />}>
+                    {myReview ? 'Edit your review' : 'Write a review'}
                   </Button>
                 </div>
-                <div className="space-y-6">
-                  {reviews.map((r: Record<string, unknown>) => {
-                    const p = r.profiles as Record<string, unknown> | Record<string, unknown>[] | null;
-                    const rp = Array.isArray(p) ? p[0] : p;
-                    return (
-                      <div key={r.id as string} className="border-b border-navy-100 pb-6 last:border-0 last:pb-0">
-                        <div className="flex justify-between items-start">
-                          <div className="flex gap-4">
-                            <Avatar name={`${rp?.first_name ?? ''} ${rp?.last_name ?? ''}`.trim() || 'User'} src={(rp?.avatar_url as string) ?? null} size={48} />
-                            <div>
-                              <p className="text-base font-bold text-navy-900">{String(rp?.first_name ?? 'Anonymous')}</p>
-                              <div className="mt-1">
-                                <RatingStars rating={r.rating as number} size={14} />
+                {reviews && reviews.length > 0 ? (
+                  <div className="space-y-6">
+                    {reviews.map((r: Record<string, unknown>) => {
+                      const p = r.profiles as Record<string, unknown> | Record<string, unknown>[] | null;
+                      const rp = Array.isArray(p) ? p[0] : p;
+                      const isMine = !!user && r.user_id === user.id;
+                      return (
+                        <div key={r.id as string} className="border-b border-navy-100 pb-6 last:border-0 last:pb-0">
+                          <div className="flex justify-between items-start">
+                            <div className="flex gap-4">
+                              <Avatar name={`${rp?.first_name ?? ''} ${rp?.last_name ?? ''}`.trim() || 'User'} src={(rp?.avatar_url as string) ?? null} size={48} />
+                              <div>
+                                <p className="text-base font-bold text-navy-900">{String(rp?.first_name ?? 'Anonymous')}</p>
+                                <div className="mt-1">
+                                  <RatingStars rating={r.rating as number} size={14} />
+                                </div>
                               </div>
                             </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm text-navy-400">{new Date(r.created_at as string).toLocaleDateString()}</span>
+                              {isMine && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={openReviewModal}
+                                    title="Edit your review"
+                                    className="rounded-lg p-1.5 text-navy-400 hover:bg-navy-50 hover:text-navy-700 transition"
+                                  >
+                                    <Edit3 className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setReviewForm({ id: r.id as string, rating: r.rating as number, title: (r.title as string) ?? '', comment: (r.comment as string) ?? '' });
+                                      setReviewDeleteConfirm(true);
+                                    }}
+                                    title="Delete your review"
+                                    className="rounded-lg p-1.5 text-navy-400 hover:bg-red-50 hover:text-red-600 transition"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-sm text-navy-400">{new Date(r.created_at as string).toLocaleDateString()}</span>
+                          {r.comment ? <p className="mt-4 text-[15px] text-navy-700 leading-relaxed">{r.comment as string}</p> : null}
                         </div>
-                        {r.comment ? <p className="mt-4 text-[15px] text-navy-700 leading-relaxed">{r.comment as string}</p> : null}
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-navy-150 py-10 text-center">
+                    <Star className="mx-auto h-8 w-8 text-navy-200" />
+                    <p className="mt-2 text-sm font-medium text-navy-500">No reviews yet</p>
+                    <p className="text-xs text-navy-400">Be the first to share your experience with this property.</p>
+                  </div>
+                )}
               </section>
             )}
 
@@ -1205,10 +1317,10 @@ export function PropertyDetailPage() {
       <Modal
         open={reviewOpen}
         onClose={() => setReviewOpen(false)}
-        title={t('property.writeReview', 'Write a review')}
+        title={reviewForm.id ? 'Edit your review' : t('property.writeReview', 'Write a review')}
         footer={
           <Button loading={reviewMutation.isPending} onClick={() => reviewMutation.mutate()} icon={<Star className="h-4 w-4" />} className="w-full">
-            {t('forms.submitReview', 'Submit review')}
+            {reviewForm.id ? 'Update review' : t('forms.submitReview', 'Submit review')}
           </Button>
         }
       >
@@ -1227,10 +1339,29 @@ export function PropertyDetailPage() {
           <Textarea label={t('forms.comment', 'Comment')} value={reviewForm.comment} onChange={(e) => setReviewForm((f) => ({ ...f, comment: e.target.value }))} placeholder={t('forms.shareExperience', 'Share your experience with this property')} />
           {reviewMutation.isSuccess && (
             <p className="text-sm text-emerald-600 flex items-center gap-1 font-medium bg-emerald-50 p-3 rounded-lg">
-              <Check className="h-4 w-4" /> {t('property.reviewSubmitted', 'Review submitted!')}
+              <Check className="h-4 w-4" /> {reviewForm.id ? 'Review updated!' : t('property.reviewSubmitted', 'Review submitted!')}
             </p>
           )}
         </div>
+      </Modal>
+
+      {/* Delete review confirmation */}
+      <Modal
+        open={reviewDeleteConfirm}
+        onClose={() => setReviewDeleteConfirm(false)}
+        title="Delete your review?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setReviewDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={deleteReviewMutation.isPending} onClick={() => deleteReviewMutation.mutate()}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-navy-700">This will permanently remove your review from this listing.</p>
       </Modal>
 
       {/* Report Property modal */}

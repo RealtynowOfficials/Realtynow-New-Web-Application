@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Check, X, Eye, Send, FileText, Search, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
+import { Check, X, Eye, Send, FileText, Search, ShieldCheck, ShieldAlert, ShieldQuestion, Star } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { queryClient } from '../../lib/queryClient';
@@ -905,6 +905,52 @@ export function AdminProperties() {
   const handleVisibleRowsChange = useCallback((rows: PendingProperty[]) => setVisibleRows(rows), []);
   const [exportAllRows, setExportAllRows] = useState<PendingProperty[]>([]);
 
+  // Hero Campaign state
+  const [heroProperty, setHeroProperty] = useState<PendingProperty | null>(null);
+  const [heroForm, setHeroForm] = useState({
+    title: '',
+    subtitle: '',
+    banner_image: '',
+    cta_text: 'Explore Project',
+    priority: 1,
+    start_date: new Date().toISOString().slice(0, 16),
+    end_date: ''
+  });
+  const [savingHero, setSavingHero] = useState(false);
+  
+  const saveHeroCampaign = async () => {
+    if (!heroProperty) return;
+    setSavingHero(true);
+    try {
+      const payload = {
+        title: heroForm.title,
+        subtitle: heroForm.subtitle,
+        banner_image: heroForm.banner_image,
+        cta_text: heroForm.cta_text,
+        property_id: heroProperty.id,
+        priority: heroForm.priority,
+        start_date: heroForm.start_date ? new Date(heroForm.start_date).toISOString() : null,
+        end_date: heroForm.end_date ? new Date(heroForm.end_date).toISOString() : null,
+        campaign_type: 'Featured',
+        display_type: 'Hero Banner',
+        status: 'Active',
+        city_id: heroProperty.city_id || null,
+        is_pinned: false,
+        order_no: 0
+      };
+      
+      const { error } = await supabase.from('hero_campaigns').insert(payload);
+      if (error) throw error;
+      
+      toast.addToast('success', 'Hero campaign published successfully!');
+      setHeroProperty(null);
+    } catch (err: any) {
+      toast.addToast('error', err?.message || 'Failed to publish hero campaign');
+    } finally {
+      setSavingHero(false);
+    }
+  };
+
   // Real-time Counts
   const [counts, setCounts] = useState<Record<string, number>>({
     all: 0,
@@ -1273,6 +1319,27 @@ export function AdminProperties() {
                 icon={<X className="h-4 w-4" />}
               />
             </>
+          )}
+          {p.status === 'published' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              title="Set as Hero"
+              className="text-indigo-600"
+              onClick={() => {
+                setHeroProperty(p);
+                setHeroForm({
+                  title: p.title || '',
+                  subtitle: p.locality_name ? `${p.locality_name}, ${p.city_name}` : (p.city_name || ''),
+                  banner_image: p.images?.[0] || '',
+                  cta_text: 'Explore Project',
+                  priority: 1,
+                  start_date: new Date().toISOString().slice(0, 16),
+                  end_date: ''
+                });
+              }}
+              icon={<Star className="h-4 w-4" />}
+            />
           )}
           <Button
             size="sm"
@@ -1768,6 +1835,57 @@ export function AdminProperties() {
             />
           </div>
         )}
+      </Modal>
+
+      <Modal title="Set as Hero Campaign" isOpen={!!heroProperty} onClose={() => setHeroProperty(null)}>
+        <div className="space-y-4 py-4">
+          <Input
+            label="Campaign Heading"
+            value={heroForm.title}
+            onChange={(e) => setHeroForm(f => ({ ...f, title: e.target.value }))}
+          />
+          <Input
+            label="Subheading / Location"
+            value={heroForm.subtitle}
+            onChange={(e) => setHeroForm(f => ({ ...f, subtitle: e.target.value }))}
+          />
+          <Input
+            label="Banner Image URL"
+            value={heroForm.banner_image}
+            onChange={(e) => setHeroForm(f => ({ ...f, banner_image: e.target.value }))}
+            placeholder="Ensure high-res landscape image"
+          />
+          <Input
+            label="CTA Text"
+            value={heroForm.cta_text}
+            onChange={(e) => setHeroForm(f => ({ ...f, cta_text: e.target.value }))}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Start Date"
+              type="datetime-local"
+              value={heroForm.start_date}
+              onChange={(e) => setHeroForm((f) => ({ ...f, start_date: e.target.value }))}
+            />
+            <Input
+              label="End Date (Optional)"
+              type="datetime-local"
+              value={heroForm.end_date}
+              onChange={(e) => setHeroForm((f) => ({ ...f, end_date: e.target.value }))}
+            />
+          </div>
+          <Input
+            label="Priority (Higher number = shows first)"
+            type="number"
+            min={1}
+            value={heroForm.priority}
+            onChange={(e) => setHeroForm(f => ({ ...f, priority: parseInt(e.target.value) || 1 }))}
+          />
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setHeroProperty(null)}>Cancel</Button>
+            <Button onClick={saveHeroCampaign} loading={savingHero}>Publish Campaign</Button>
+          </div>
+        </div>
       </Modal>
     </DashboardLayout>
   );

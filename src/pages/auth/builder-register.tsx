@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
+import { uploadProfilePhoto } from '../../lib/profile-photo';
 
 const STEPS = [
   { id: 1, label: 'Company Info', icon: Building2 },
@@ -70,16 +71,16 @@ function DarkInput({
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; required?: boolean; error?: string; hint?: string }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-navy-200 mb-1.5">
+      <label className="block text-sm font-medium text-navy-600 mb-1.5">
         {label}
         {required && ' *'}
       </label>
       <input
         {...props}
-        className="w-full rounded-lg border border-white/20 bg-white/10 px-3.5 py-2.5 text-sm text-white placeholder:text-navy-400 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30"
+        className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
       />
       {hint && <p className="mt-1 text-xs text-navy-500">{hint}</p>}
-      {error && <p className="mt-1 text-xs text-error-400">{error}</p>}
+      {error && <p className="mt-1 text-xs text-error-600">{error}</p>}
     </div>
   );
 }
@@ -97,8 +98,8 @@ function DocUpload({
 }) {
   return (
     <div>
-      <p className="text-sm font-medium text-navy-200 mb-1.5">{label}</p>
-      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/20 bg-white/5 px-4 py-5 cursor-pointer hover:border-gold-400/50 hover:bg-white/10 transition-all">
+      <p className="text-sm font-medium text-navy-600 mb-1.5">{label}</p>
+      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-navy-200 bg-navy-50/50 px-4 py-5 cursor-pointer hover:border-gold-400 hover:bg-gold-500/5 transition-all">
         <input
           type="file"
           accept="image/*,.pdf"
@@ -106,7 +107,7 @@ function DocUpload({
           onChange={(e) => onChange(e.target.files?.[0] ?? null)}
         />
         {file ? (
-          <div className="flex items-center gap-2 text-gold-300">
+          <div className="flex items-center gap-2 text-gold-600">
             <CheckCircle2 className="h-5 w-5" />
             <span className="text-sm truncate max-w-[200px]">{file.name}</span>
             <button
@@ -123,11 +124,53 @@ function DocUpload({
         ) : (
           <>
             <Upload className="h-6 w-6 text-navy-400" />
-            <span className="text-sm text-navy-300">Click to upload</span>
+            <span className="text-sm text-navy-600">Click to upload</span>
             <span className="text-xs text-navy-500">{hint}</span>
           </>
         )}
       </label>
+    </div>
+  );
+}
+
+function AvatarUploadArea({
+  file,
+  onChange,
+}: {
+  file: File | null;
+  onChange: (f: File | null) => void;
+}) {
+  const previewUrl = file ? URL.createObjectURL(file) : null;
+  return (
+    <div>
+      <p className="text-sm font-medium text-navy-600 mb-1.5">Company Logo / Profile Photo (optional)</p>
+      <div className="flex items-center gap-4">
+        <label className="relative h-20 w-20 rounded-full border-2 border-dashed border-navy-200 bg-navy-50/50 grid place-items-center cursor-pointer hover:border-gold-400 hover:bg-gold-500/5 transition-all overflow-hidden shrink-0">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+          />
+          {previewUrl ? (
+            <img src={previewUrl} alt="Logo preview" className="h-full w-full object-cover" />
+          ) : (
+            <Upload className="h-6 w-6 text-navy-400" />
+          )}
+        </label>
+        <div className="flex-1">
+          <p className="text-xs text-navy-500">JPG, PNG or WEBP — max 5MB — displayed on your profile</p>
+          {file && (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="mt-1 flex items-center gap-1 text-xs text-navy-400 hover:text-error-400"
+            >
+              <X className="h-3.5 w-3.5" /> Remove
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -163,7 +206,7 @@ export function BuilderRegisterPage() {
   const prev = () => setStep((s) => s - 1);
 
   const submit = async () => {
-    if (submitting) return;
+    if (loading) return;
     setLoading(true);
     setServerError(null);
     try {
@@ -172,22 +215,25 @@ export function BuilderRegisterPage() {
       let pan_doc_url: string | null = null;
       let logo_url: string | null = null;
 
+      // Store the permanent storage PATH, not the temporary signed URL —
+      // the admin portal generates fresh signed URLs on-demand when previewing.
       const uploadDoc = async (file: File | null, prefix: string) => {
         if (!file) return null;
-        const r = await uploadFile('company-assets', file, `builder-apps/${prefix}-${Date.now()}-${file.name}`);
+        const r = await uploadFile('builder-documents', file, `applications/${prefix}-${Date.now()}-${file.name}`);
         if (r.error) throw new Error(r.error);
-        return r.url || r.path;
+        return r.path || null;
       };
 
       gst_doc_url = await uploadDoc(form.gst_doc, 'gst');
       rera_doc_url = await uploadDoc(form.rera_doc, 'rera');
       pan_doc_url = await uploadDoc(form.pan_doc, 'pan');
 
-
       if (form.logo) {
-        const r = await uploadFile('company-assets', form.logo, `builder-logos/${Date.now()}-${form.logo.name}`);
-        if (r.error) throw new Error(r.error);
-        logo_url = r.url || r.path;
+        // Best-effort: logo upload failure must never block submission of the
+        // (required) application itself.
+        const r = await uploadProfilePhoto(form.logo, 'builder');
+        if (!r.error) logo_url = r.url;
+        else console.warn('Logo upload failed:', r.error);
       }
 
       const { error } = await supabase.from('builder_applications').insert({
@@ -245,7 +291,7 @@ export function BuilderRegisterPage() {
             ))}
           </div>
           <Link to="/" className="mt-8 inline-block">
-            <Button variant="gold" size="lg">
+            <Button variant="primary" size="lg">
               Back to Home
             </Button>
           </Link>
@@ -467,12 +513,7 @@ export function BuilderRegisterPage() {
                         file={form.pan_doc}
                         onChange={(f) => set('pan_doc', f)}
                       />
-                      <DocUpload
-                        label="Company Logo (optional)"
-                        hint="PNG or JPG — displayed on your profile"
-                        file={form.logo}
-                        onChange={(f) => set('logo', f)}
-                      />
+                      <AvatarUploadArea file={form.logo} onChange={(f) => set('logo', f)} />
                     </div>
                   </div>
                 )}
@@ -538,12 +579,12 @@ export function BuilderRegisterPage() {
                 </Link>
               )}
               {step < 4 ? (
-                <Button variant="gold" size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={next}>
+                <Button variant="primary" size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={next}>
                   Continue
                 </Button>
               ) : (
                 <Button
-                  variant="gold"
+                  variant="primary"
                   size="lg"
                   loading={loading}
                   icon={<CheckCircle2 className="h-4 w-4" />}

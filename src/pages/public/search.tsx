@@ -41,13 +41,14 @@ import {
   ShieldCheck,
   Sparkles,
   Rows3,
+  AlertTriangle,
 } from 'lucide-react';
 import { type PropertyFilters, fetchPublishedProperties, sanitizeSearchQuery } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../components/toast';
-import { formatCompactPrice, formatNumber, cn , generatePropertyUrl} from '../../lib/utils';
+import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import type { Property } from '../../lib/types';
 
 import { AdvancedFilters } from '../../components/advanced-filters';
@@ -55,6 +56,18 @@ import { useSEO } from '../../hooks/use-seo';
 import { PostPropertyLink } from '../../components/post-property-link';
 
 const PAGE_SIZE = 10;
+
+// Malformed URL params (e.g. ?min_price=abc) must be ignored rather than passed
+// through as NaN — Number(NaN) is not null/undefined, so an unguarded filter would
+// still apply `.gte('price', NaN)` to the query, silently zeroing out real results
+// instead of just dropping the invalid constraint.
+function parseNumberParam(params: URLSearchParams, key: string): number | undefined {
+  const raw = params.get(key);
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 type ViewMode = 'list' | 'grid' | 'map';
 type SortOption =
   | 'newest'
@@ -265,9 +278,8 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-display text-xl sm:text-2xl font-extrabold text-slate-900">{formatCompactPrice(p.price)}</p>
+            <p className="font-display text-xl sm:text-2xl font-extrabold text-slate-900">{formatCompactPrice(getPropertyPrice(p), p.purpose)}</p>
             {pricePerSqft && <p className="text-[11px] text-slate-500 mt-0.5">₹{formatNumber(pricePerSqft)}/sq.ft</p>}
-            {p.purpose === 'Rent' && <p className="text-[11px] text-slate-500">/month</p>}
           </div>
         </div>
 
@@ -505,8 +517,7 @@ function GridCard({
       </div>
       <div className="flex flex-1 flex-col p-3.5">
         <p className="font-display text-base font-extrabold text-slate-900">
-          {formatCompactPrice(p.price)}
-          {p.purpose === 'Rent' && <span className="text-[10px] font-medium text-slate-400">/mo</span>}
+          {formatCompactPrice(getPropertyPrice(p), p.purpose)}
         </p>
         <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 truncate">{p.title}</h3>
         <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
@@ -990,12 +1001,12 @@ export function SearchPage() {
       ...(resolvedLocalityId ? { locality_id: resolvedLocalityId } : {}),
       purpose: params.get('purpose') || undefined,
       property_type_id: resolvedTypeId,
-      min_price: params.get('min_price') ? Number(params.get('min_price')) : undefined,
-      max_price: params.get('max_price') ? Number(params.get('max_price')) : undefined,
-      bedrooms: params.get('bedrooms') ? Number(params.get('bedrooms')) : undefined,
-      bathrooms: params.get('bathrooms') ? Number(params.get('bathrooms')) : undefined,
-      min_area: params.get('min_area') ? Number(params.get('min_area')) : undefined,
-      max_area: params.get('max_area') ? Number(params.get('max_area')) : undefined,
+      min_price: parseNumberParam(params, 'min_price'),
+      max_price: parseNumberParam(params, 'max_price'),
+      bedrooms: parseNumberParam(params, 'bedrooms'),
+      bathrooms: parseNumberParam(params, 'bathrooms'),
+      min_area: parseNumberParam(params, 'min_area'),
+      max_area: parseNumberParam(params, 'max_area'),
       furnishing: params.get('furnishing') || undefined,
       facing: params.get('facing') || undefined,
       is_luxury: params.get('luxury') === '1' || undefined,
@@ -1009,7 +1020,7 @@ export function SearchPage() {
   // pages) — v_properties_search's search_text covers locality/city/project/title
   // in one ilike, so a locality-only query no longer returns 0 results just
   // because the property's own title/description doesn't mention it.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['search', filters],
     queryFn: () => fetchPublishedProperties(filters),
   });
@@ -1316,6 +1327,21 @@ export function SearchPage() {
                       ),
                     )}
                   </div>
+                ) : isError ? (
+                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-red-200 bg-red-50/40 py-20 gap-4">
+                    <AlertTriangle className="h-12 w-12 text-red-400" />
+                    <p className="font-bold text-slate-700 text-lg">Something went wrong</p>
+                    <p className="text-sm text-slate-500 text-center max-w-sm">
+                      We couldn't load properties right now. Please check your connection and try again.
+                    </p>
+                    <button
+                      onClick={() => refetch()}
+                      disabled={isFetching}
+                      className="rounded-xl bg-red-600 text-white px-5 py-2 text-sm font-bold hover:bg-red-700 disabled:opacity-60 transition"
+                    >
+                      {isFetching ? 'Retrying…' : 'Try again'}
+                    </button>
+                  </div>
                 ) : data && data.data.length > 0 ? (
                   <>
                     <div
@@ -1385,11 +1411,15 @@ export function SearchPage() {
                   <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-20 gap-4">
                     <MapPin className="h-12 w-12 text-slate-300" />
                     <p className="font-bold text-slate-700 text-lg">
-                      {t('search.notFoundTitle', 'No properties found')}
+                      {filters.q || filters.city_id
+                        ? `No properties found${filters.q ? ` in ${filters.q}` : ''}`
+                        : t('search.notFoundTitle', 'No properties found')}
                     </p>
-                    <p className="text-sm text-slate-500">
-                      {t('search.notFoundDesc', 'Try adjusting your filters or searching in a different city.')}
-                    </p>
+                    <ul className="text-sm text-slate-500 text-center space-y-1">
+                      <li>{t('search.tryLocation', 'Try a different location or nearby area')}</li>
+                      <li>{t('search.tryType', 'Change the property type')}</li>
+                      <li>{t('search.tryBudget', 'Adjust your budget range')}</li>
+                    </ul>
                     <button
                       onClick={clearAll}
                       className="rounded-xl border border-red-200 bg-red-50 text-red-600 px-5 py-2 text-sm font-bold hover:bg-red-100 transition"
@@ -1498,12 +1528,12 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
       city_id: resolvedCityId,
       purpose: params.get('purpose') || defaultPurpose,
       property_type_id: resolvedTypeId || (typeFilter && typeFilter.length === 1 ? typeFilter[0] : undefined),
-      min_price: params.get('min_price') ? Number(params.get('min_price')) : undefined,
-      max_price: params.get('max_price') ? Number(params.get('max_price')) : undefined,
-      bedrooms: params.get('bedrooms') ? Number(params.get('bedrooms')) : undefined,
-      bathrooms: params.get('bathrooms') ? Number(params.get('bathrooms')) : undefined,
-      min_area: params.get('min_area') ? Number(params.get('min_area')) : undefined,
-      max_area: params.get('max_area') ? Number(params.get('max_area')) : undefined,
+      min_price: parseNumberParam(params, 'min_price'),
+      max_price: parseNumberParam(params, 'max_price'),
+      bedrooms: parseNumberParam(params, 'bedrooms'),
+      bathrooms: parseNumberParam(params, 'bathrooms'),
+      min_area: parseNumberParam(params, 'min_area'),
+      max_area: parseNumberParam(params, 'max_area'),
       furnishing: params.get('furnishing') || undefined,
       facing: params.get('facing') || undefined,
       is_luxury: params.get('luxury') === '1' || defaultIsLuxury,
@@ -1513,12 +1543,12 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
   // Same v_properties_search source/status as the main search page and every
   // other listing surface — search_text covers locality/city/project/title so
   // a locality-only q never returns 0 just because title/description omit it.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['category', category, filters, page],
     queryFn: async () => {
       let q = supabase
         .from('v_properties_search')
-        .select('*', { count: 'estimated' })
+        .select('*', { count: 'exact' })
         .or('status.eq.published,is_live.eq.true');
 
       if (filters.purpose) q = q.eq('purpose', filters.purpose);
@@ -1634,6 +1664,21 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
                 {Array.from({ length: 4 }).map((_, i) => (
                   <ListSkeleton key={i} />
                 ))}
+              </div>
+            ) : isError ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-red-200 bg-red-50/40 py-20 gap-4">
+                <AlertTriangle className="h-12 w-12 text-red-400" />
+                <p className="font-bold text-slate-700 text-lg">Something went wrong</p>
+                <p className="text-sm text-slate-500 text-center max-w-sm">
+                  We couldn't load properties right now. Please check your connection and try again.
+                </p>
+                <button
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  className="rounded-xl bg-red-600 text-white px-5 py-2 text-sm font-bold hover:bg-red-700 disabled:opacity-60 transition"
+                >
+                  {isFetching ? 'Retrying…' : 'Try again'}
+                </button>
               </div>
             ) : data && data.data.length > 0 ? (
               <div className="space-y-4">

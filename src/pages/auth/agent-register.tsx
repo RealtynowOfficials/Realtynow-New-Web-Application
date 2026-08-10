@@ -22,6 +22,7 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
+import { uploadProfilePhoto } from '../../lib/profile-photo';
 
 const SPECIALIZATIONS = [
   'Residential',
@@ -51,6 +52,7 @@ interface FormData {
   specialization: string;
   experience_years: string;
   assigned_areas: string;
+  profile_photo: File | null;
   id_doc: File | null;
   license_doc: File | null;
 }
@@ -66,6 +68,7 @@ const INITIAL: FormData = {
   specialization: '',
   experience_years: '',
   assigned_areas: '',
+  profile_photo: null,
   id_doc: null,
   license_doc: null,
 };
@@ -85,8 +88,8 @@ function FileUploadArea({
 }) {
   return (
     <div>
-      <p className="text-sm font-medium text-white mb-1.5">{label}</p>
-      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/20 bg-white/5 px-4 py-5 cursor-pointer hover:border-gold-400/60 hover:bg-white/10 transition-all">
+      <p className="text-sm font-medium text-navy-600 mb-1.5">{label}</p>
+      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-navy-200 bg-navy-50/50 px-4 py-5 cursor-pointer hover:border-gold-400 hover:bg-gold-500/5 transition-all">
         <input
           type="file"
           accept={accept}
@@ -94,7 +97,7 @@ function FileUploadArea({
           onChange={(e) => onChange(e.target.files?.[0] ?? null)}
         />
         {file ? (
-          <div className="flex items-center gap-2 text-gold-300">
+          <div className="flex items-center gap-2 text-gold-600">
             <CheckCircle2 className="h-5 w-5" />
             <span className="text-sm font-medium truncate max-w-[200px]">{file.name}</span>
             <button
@@ -111,11 +114,53 @@ function FileUploadArea({
         ) : (
           <>
             <Upload className="h-6 w-6 text-navy-400" />
-            <span className="text-sm text-navy-300">Click to upload</span>
+            <span className="text-sm text-navy-600">Click to upload</span>
             <span className="text-xs text-navy-500">{hint}</span>
           </>
         )}
       </label>
+    </div>
+  );
+}
+
+function AvatarUploadArea({
+  file,
+  onChange,
+}: {
+  file: File | null;
+  onChange: (f: File | null) => void;
+}) {
+  const previewUrl = file ? URL.createObjectURL(file) : null;
+  return (
+    <div>
+      <p className="text-sm font-medium text-navy-600 mb-1.5">Profile Photo (optional)</p>
+      <div className="flex items-center gap-4">
+        <label className="relative h-20 w-20 rounded-full border-2 border-dashed border-navy-200 bg-navy-50/50 grid place-items-center cursor-pointer hover:border-gold-400 hover:bg-gold-500/5 transition-all overflow-hidden shrink-0">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+          />
+          {previewUrl ? (
+            <img src={previewUrl} alt="Profile preview" className="h-full w-full object-cover" />
+          ) : (
+            <Upload className="h-6 w-6 text-navy-400" />
+          )}
+        </label>
+        <div className="flex-1">
+          <p className="text-xs text-navy-500">JPG, PNG or WEBP — max 5MB</p>
+          {file && (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="mt-1 flex items-center gap-1 text-xs text-navy-400 hover:text-error-400"
+            >
+              <X className="h-3.5 w-3.5" /> Remove
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -152,17 +197,28 @@ export function AgentRegisterPage() {
   const prev = () => setStep((s) => s - 1);
 
   const submit = async () => {
-    if (submitting) return;
+    if (loading) return;
     setLoading(true);
     setServerError(null);
     try {
+      let profile_image: string | null = null;
       let id_doc_url: string | null = null;
       let license_doc_url: string | null = null;
+
+      if (form.profile_photo) {
+        // Best-effort: a profile photo upload failure must never block submission
+        // of the (required) application itself.
+        const r = await uploadProfilePhoto(form.profile_photo, 'agent');
+        if (!r.error) profile_image = r.url;
+        else console.warn('Profile photo upload failed:', r.error);
+      }
 
       if (form.id_doc) {
         const r = await uploadFile('agent-documents', form.id_doc, `applications/id-${Date.now()}-${form.id_doc.name}`);
         if (r.error) throw new Error(r.error);
-        id_doc_url = r.url || r.path;
+        // Store permanent storage PATH (r.path), NOT the temporary signed URL (r.url).
+        // Admin portal generates fresh signed URLs on-demand when previewing.
+        id_doc_url = r.path || null;
       }
       if (form.license_doc) {
         const r = await uploadFile(
@@ -171,10 +227,10 @@ export function AgentRegisterPage() {
           `applications/lic-${Date.now()}-${form.license_doc.name}`,
         );
         if (r.error) throw new Error(r.error);
-        license_doc_url = r.url || r.path;
+        license_doc_url = r.path || null;
       }
 
-      const { error } = await supabase.from('agent_applications').insert({
+      const basePayload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         email: form.email.trim().toLowerCase(),
@@ -192,7 +248,17 @@ export function AgentRegisterPage() {
           : null,
         id_doc_url,
         license_doc_url,
-      });
+      };
+
+      let { error } = await supabase
+        .from('agent_applications')
+        .insert({ ...basePayload, profile_image });
+
+      // Defensive fallback: if the profile_image column hasn't been migrated
+      // onto this database yet, don't let that block the application itself.
+      if (error && /profile_image/i.test(error.message)) {
+        ({ error } = await supabase.from('agent_applications').insert(basePayload));
+      }
       if (error) throw new Error(error.message);
       setSubmitted(true);
     } catch (e: unknown) {
@@ -230,7 +296,7 @@ export function AgentRegisterPage() {
             </p>
           </div>
           <Link to="/" className="mt-8 inline-block">
-            <Button variant="gold" size="lg">
+            <Button variant="primary" size="lg">
               Back to Home
             </Button>
           </Link>
@@ -470,6 +536,7 @@ export function AgentRegisterPage() {
                     <h1 className="font-display text-2xl font-bold text-navy-900">Upload Documents</h1>
                     <p className="mt-1 text-sm text-navy-500">Help us verify your identity and credentials</p>
                     <div className="mt-6 space-y-5">
+                      <AvatarUploadArea file={form.profile_photo} onChange={(f) => set('profile_photo', f)} />
                       <FileUploadArea
                         label="Government ID (Aadhaar / PAN / Passport) *"
                         hint="JPG, PNG or PDF — max 10MB"
@@ -560,12 +627,12 @@ export function AgentRegisterPage() {
               )}
 
               {step < 4 ? (
-                <Button variant="gold" size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={next}>
+                <Button variant="primary" size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={next}>
                   Continue
                 </Button>
               ) : (
                 <Button
-                  variant="gold"
+                  variant="primary"
                   size="lg"
                   loading={loading}
                   icon={<CheckCircle2 className="h-4 w-4" />}
