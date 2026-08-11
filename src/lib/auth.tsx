@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 import { queryClient } from './queryClient';
 import type { Profile, UserRole } from './types';
 
-type OtpLoginIntent = 'customer' | 'agent';
+type OtpLoginIntent = 'customer' | 'agent' | 'builder' | 'partner';
 
 interface AuthContextValue {
   session: Session | null;
@@ -12,7 +12,7 @@ interface AuthContextValue {
   profile: Profile | null;
   loading: boolean;
   role: UserRole | null;
-  verifyOtpAndSignIn: (accessToken: string, intent: 'customer' | 'agent') => Promise<{ error: string | null; isNewUser?: boolean; code?: string; requestId?: string }>;
+  verifyOtpAndSignIn: (accessToken: string, intent: OtpLoginIntent) => Promise<{ error: string | null; isNewUser?: boolean; code?: string; requestId?: string; actualRole?: string }>;
   requestAgentAccess: (requestId: string, fullName: string, requestedRole: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -83,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let message = error.message;
       let code = undefined;
       let requestId = undefined;
+      let actualRole = undefined;
       const context = (error as { context?: unknown }).context;
       if (context instanceof Response) {
         try {
@@ -90,11 +91,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (typeof body?.error === 'string') message = body.error;
           if (typeof body?.code === 'string') code = body.code;
           if (typeof body?.requestId === 'string') requestId = body.requestId;
+          if (typeof body?.actualRole === 'string') actualRole = body.actualRole;
         } catch {
           /* response wasn't JSON, keep the generic message */
         }
       }
-      return { error: message, code, requestId };
+      return { error: message, code, requestId, actualRole };
     }
     if (!data?.access_token || !data?.refresh_token) {
       return { error: data?.error ?? 'OTP verification failed', code: data?.code };

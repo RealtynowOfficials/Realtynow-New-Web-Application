@@ -1,4 +1,4 @@
-export type UserRole = 'customer' | 'agent' | 'admin' | 'builder';
+export type UserRole = 'customer' | 'agent' | 'admin' | 'builder' | 'partner';
 
 export type PropertyStatus =
   | 'draft'
@@ -499,7 +499,21 @@ export interface PropertyImage {
   position: number;
 }
 
-export type ApplicationStatus = 'pending' | 'approved' | 'rejected';
+export type ApplicationStatus =
+  | 'submitted'
+  | 'pending_review'
+  | 'document_verification'
+  | 'identity_verification'
+  | 'company_verification'
+  | 'project_verification'
+  | 'rera_verification'
+  | 'background_verification'
+  | 'final_review'
+  | 'approved'
+  | 'rejected'
+  | 'changes_requested'
+  | 'suspended'
+  | 'cancelled';
 
 export interface AgentApplication {
   id: string;
@@ -544,6 +558,51 @@ export interface BuilderApplication {
   rejection_reason: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PartnerApplication {
+  id: string;
+  application_number: string | null;
+  full_name: string;
+  mobile_number: string;
+  email: string | null;
+  partner_type: string;
+  company_name: string | null;
+  business_registration_number: string | null;
+  gst_number: string | null;
+  pan_number: string | null;
+  years_of_experience: number | null;
+  website: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  country: string | null;
+  state: string | null;
+  city: string | null;
+  district: string | null;
+  pincode: string | null;
+  professional_experience: string | null;
+  area_of_expertise: string | null;
+  preferred_property_types: string[] | null;
+  preferred_locations: string[] | null;
+  expected_monthly_leads: number | null;
+  current_business_volume: string | null;
+  real_estate_experience: string | null;
+  description: string | null;
+  pan_doc_url: string | null;
+  id_doc_url: string | null;
+  gst_doc_url: string | null;
+  business_reg_doc_url: string | null;
+  address_proof_doc_url: string | null;
+  other_doc_url: string | null;
+  status: ApplicationStatus;
+  admin_notes: string | null;
+  rejection_reason: string | null;
+  assigned_admin: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  approved_at: string | null;
   created_at: string;
   updated_at: string;
 }

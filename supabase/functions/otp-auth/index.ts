@@ -3,20 +3,22 @@
 // after MSG91 confirms OTP verification server-side.
 // Actions (via x-action header, matching the payment-gateway convention):
 //   verify               — public. Body: { accessToken, intent? }. Verifies
-//                           the MSG91 widget access token, finds/creates the
-//                           profile by phone, and returns a Supabase session.
+//                           the MSG91 widget access token, finds the profile
+//                           by phone, and returns a Supabase session.
 //                           intent: 'customer' (default) auto-creates the
-//                           account if it doesn't exist yet. intent: 'agent'
-//                           (the "Agent / Builder" login tab) never
-//                           auto-creates — it rejects with code
-//                           AGENT_NOT_FOUND if no agent/builder profile
-//                           exists for that mobile number.
+//                           account if it doesn't exist yet. intent:
+//                           'agent' | 'builder' | 'partner' never
+//                           auto-creates and requires an exact role match —
+//                           it rejects with a specific code (NOT_FOUND,
+//                           PENDING_REVIEW, REJECTED, ROLE_MISMATCH,
+//                           ACCOUNT_SUSPENDED) rather than minting a session
+//                           for the wrong portal.
 //   request-agent-access — public. Body: { accessToken, full_name?,
 //                           requested_role? }. Re-verifies the MSG91 access
 //                           token and logs a pending row in agent_requests
 //                           for an admin to review — used after a 'verify'
-//                           call with intent 'agent' comes back
-//                           AGENT_NOT_FOUND.
+//                           call with intent 'agent'/'builder' comes back
+//                           NOT_FOUND.
 //   review-agent-request  — admin-only. Body: { requestId, decision,
 //                           notes? }. Approves or rejects a pending
 //                           agent_requests row (decision: 'approved' |
@@ -29,6 +31,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeIndianMobile } from "../_shared/phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,16 +46,19 @@ function error(message: string, status = 400) {
   return json({ error: message, success: false }, status);
 }
 
-// Accepts "+91XXXXXXXXXX" or a bare 10-digit number; returns "91XXXXXXXXXX"
-// (no leading "+") to match how Supabase Auth actually stores/expects phone
-// numbers — auth.users.phone and signInWithPassword({ phone }) both use the
-// no-"+" form, confirmed by inspecting an existing row in the database.
-function normalizeIndianMobile(raw: string): string | null {
-  const digits = raw.replace(/[^\d]/g, "");
-  if (/^91\d{10}$/.test(digits)) return digits;
-  if (/^\d{10}$/.test(digits)) return `91${digits}`;
-  return null;
-}
+type ProfessionalIntent = "agent" | "builder" | "partner";
+const PROFESSIONAL_INTENTS: ProfessionalIntent[] = ["agent", "builder", "partner"];
+const APPLICATION_TABLE: Record<ProfessionalIntent, string> = {
+  agent: "agent_applications",
+  builder: "builder_applications",
+  partner: "partner_applications",
+};
+// partner_applications uses `mobile_number`; agent/builder use `phone`.
+const APPLICATION_PHONE_COLUMN: Record<ProfessionalIntent, string> = {
+  agent: "phone",
+  builder: "phone",
+  partner: "mobile_number",
+};
 
 function randomPassword(): string {
   // Never persisted anywhere — generated fresh, consumed once by
@@ -118,7 +124,10 @@ serve(async (req) => {
   // Public — the caller has no session yet, that's the whole point.
   if (action === "verify") {
     const accessToken = body.accessToken as string | undefined;
-    const intent = body.intent === "agent" ? "agent" : "customer";
+    const rawIntent = body.intent as string | undefined;
+    const intent: "customer" | ProfessionalIntent = PROFESSIONAL_INTENTS.includes(rawIntent as ProfessionalIntent)
+      ? (rawIntent as ProfessionalIntent)
+      : "customer";
     if (!accessToken) return error("accessToken is required");
     if (!MSG91_AUTH_KEY) return error("MSG91 is not configured on the server", 500);
 
@@ -129,49 +138,99 @@ serve(async (req) => {
     // Find an existing profile by phone (service role — bypasses RLS).
     const { data: existingProfile } = await admin
       .from("profiles")
-      .select("id, role")
+      .select("id, role, status")
       .eq("phone", mobile)
       .maybeSingle();
 
     let userId = existingProfile?.id as string | undefined;
     let isNewUser = false;
 
-    if (intent === "agent") {
-      // Agent/Builder tab: never auto-create. The mobile number must
-      // already belong to an agent or builder account.
+    if (PROFESSIONAL_INTENTS.includes(intent as ProfessionalIntent)) {
+      const professionalIntent = intent as ProfessionalIntent;
+      // Agent / Builder / Partner tabs: never auto-create, and the
+      // account's actual role must exactly match the selected tab — no more
+      // sharing one "agent" bucket between agent and builder logins.
       if (!existingProfile) {
-        // Create a placeholder request using this verified mobile number.
-        const { data: existingRequest } = await admin
-          .from("agent_requests")
-          .select("id")
-          .eq("mobile", mobile)
-          .eq("status", "pending")
+        // No account yet. Distinguish "never applied" from "applied but
+        // still pending/rejected" by checking that role's own application
+        // table, so the UI can show a specific, honest message instead of
+        // one generic "not found" for every case.
+        const appTable = APPLICATION_TABLE[professionalIntent];
+        const phoneColumn = APPLICATION_PHONE_COLUMN[professionalIntent];
+        const { data: latestApp } = await admin
+          .from(appTable)
+          .select("id, status")
+          .eq(phoneColumn, mobile)
+          .order("created_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
 
-        let requestId = existingRequest?.id;
-        if (!requestId) {
-          const { data: inserted, error: insertErr } = await admin
+        if (latestApp?.status === "rejected") {
+          return json(
+            { error: "Your application was not approved. Please contact RealtyNow support for more information.", success: false, code: "REJECTED" },
+            403,
+          );
+        }
+        if (latestApp) {
+          return json(
+            { error: "Your application is still under review. Please wait for admin approval.", success: false, code: "PENDING_REVIEW" },
+            403,
+          );
+        }
+
+        // Agent/Builder keep the existing self-serve "request account
+        // access" follow-up (agent_requests). Partner has its own
+        // registration form (partner_applications), so there's nothing to
+        // request — the caller should just be pointed at registration.
+        if (professionalIntent === "agent" || professionalIntent === "builder") {
+          const { data: existingRequest } = await admin
             .from("agent_requests")
-            .insert({ mobile, requested_role: "agent", status: "pending" })
             .select("id")
-            .single();
-          if (insertErr) return error(insertErr.message, 500);
-          requestId = inserted?.id;
+            .eq("mobile", mobile)
+            .eq("status", "pending")
+            .maybeSingle();
+
+          let requestId = existingRequest?.id;
+          if (!requestId) {
+            const { data: inserted, error: insertErr } = await admin
+              .from("agent_requests")
+              .insert({ mobile, requested_role: professionalIntent, status: "pending" })
+              .select("id")
+              .single();
+            if (insertErr) return error(insertErr.message, 500);
+            requestId = inserted?.id;
+          }
+
+          return json(
+            {
+              error: "Your account has not been created yet. Please contact the administrator.",
+              success: false,
+              code: "NOT_FOUND",
+              requestId,
+            },
+            403,
+          );
         }
 
         return json(
-          { 
-            error: "Your account has not been created yet. Please contact the administrator.", 
-            success: false, 
-            code: "AGENT_NOT_FOUND",
-            requestId 
+          { error: "No partner application was found for this mobile number. Please register as a partner first.", success: false, code: "NOT_FOUND" },
+          403,
+        );
+      }
+      if (existingProfile.role !== professionalIntent) {
+        return json(
+          {
+            error: "This mobile number is registered under a different account type.",
+            success: false,
+            code: "ROLE_MISMATCH",
+            actualRole: existingProfile.role,
           },
           403,
         );
       }
-      if (!["agent", "builder"].includes(existingProfile.role as string)) {
+      if (existingProfile.status === "suspended") {
         return json(
-          { error: "This mobile number is registered under a different account type. Please use the Buyer / Owner tab.", success: false, code: "ROLE_MISMATCH" },
+          { error: "Your account has been suspended. Please contact RealtyNow support.", success: false, code: "ACCOUNT_SUSPENDED" },
           403,
         );
       }
@@ -213,12 +272,9 @@ serve(async (req) => {
       return error(signInErr?.message ?? "Could not sign in", 500);
     }
 
-    const updates: any = { is_mobile_verified: true, otp_verified_at: new Date().toISOString(), last_login: new Date().toISOString() };
-    if (mobile === '+919963509329' || mobile === '+919866909029') updates.role = 'admin';
-
     await admin
       .from("profiles")
-      .update(updates)
+      .update({ is_mobile_verified: true, otp_verified_at: new Date().toISOString(), last_login: new Date().toISOString() })
       .eq("id", userId!);
 
     return json({
@@ -230,8 +286,8 @@ serve(async (req) => {
   }
 
   // ─── ACTION: request-agent-access ──────────────────────────────
-  // Public — called after a 'verify' with intent 'agent' comes back
-  // AGENT_NOT_FOUND, using the same (already-verified) MSG91 access token.
+  // Public — called after a 'verify' with intent 'agent'/'builder' comes
+  // back NOT_FOUND, using the same (already-verified) MSG91 access token.
   if (action === "request-agent-access") {
     const requestId = body.requestId as string | undefined;
     const fullName = (body.full_name as string | undefined)?.trim() || null;

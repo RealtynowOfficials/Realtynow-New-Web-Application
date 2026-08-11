@@ -8,10 +8,10 @@ import { Card, Button, Badge, EmptyState, Skeleton } from '../../components/ui';
 import { DataTable, type Column } from '../../components/data-table';
 import { formatDate } from '../../lib/utils';
 import { useToast } from '../../components/toast';
-import type { AgentApplication, BuilderApplication } from '../../lib/types';
+import type { AgentApplication, BuilderApplication, PartnerApplication } from '../../lib/types';
 import {
   CheckCircle2, Eye, Clock, FileText,
-  Building2, User, Phone, Mail, MapPin, Award, BadgeCheck, Calendar,
+  Building2, User, Phone, Mail, MapPin, Award, BadgeCheck, Calendar, Handshake,
 } from 'lucide-react';
 import { ApplicationReviewDrawer } from '../../components/admin/ApplicationReviewDrawer';
 
@@ -211,6 +211,81 @@ function BuilderAppCard({
             <div className="flex items-center gap-2">
               <BadgeCheck className="h-3.5 w-3.5 text-navy-400 shrink-0" />
               <span className="font-mono truncate">{app.rera_number}</span>
+            </div>
+          )}
+          {app.created_at && (
+            <div className="flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-navy-400 shrink-0" />
+              <span>Applied {formatDate(app.created_at)}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-auto pt-2">
+          <Button
+            className="w-full"
+            variant="secondary"
+            size="sm"
+            icon={<Eye className="h-3.5 w-3.5" />}
+            onClick={() => onReview(app)}
+          >
+            Review Application
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Partner Application Card ─────────────────────────────────────────────────
+function PartnerAppCard({
+  app,
+  onReview,
+}: {
+  app: PartnerApplication;
+  onReview: (a: PartnerApplication) => void;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border border-navy-100 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
+      <div className="bg-gradient-to-r from-navy-700 to-navy-900 px-5 pt-5 pb-10 relative">
+        <div className="absolute top-3 right-3">
+          <AppBadge status={app.status || 'submitted'} />
+        </div>
+      </div>
+
+      <div className="flex justify-center -mt-7">
+        <div className="h-14 w-14 rounded-full bg-navy-100 border-4 border-white shadow grid place-items-center">
+          <Handshake className="h-6 w-6 text-navy-600" />
+        </div>
+      </div>
+
+      <div className="px-5 pb-5 pt-3 flex flex-col gap-3 flex-1">
+        <div className="text-center">
+          <h4 className="font-bold text-navy-900 text-base">{app.full_name}</h4>
+          {app.partner_type && <p className="text-xs text-navy-500 mt-0.5">{app.partner_type}</p>}
+        </div>
+
+        <div className="grid grid-cols-1 gap-1.5 text-xs text-navy-600">
+          <div className="flex items-center gap-2">
+            <Phone className="h-3.5 w-3.5 text-navy-400 shrink-0" />
+            <span>{app.mobile_number}</span>
+          </div>
+          {app.email && (
+            <div className="flex items-center gap-2">
+              <Mail className="h-3.5 w-3.5 text-navy-400 shrink-0" />
+              <span className="truncate">{app.email}</span>
+            </div>
+          )}
+          {app.city && (
+            <div className="flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-navy-400 shrink-0" />
+              <span>{app.city}{app.state ? `, ${app.state}` : ''}</span>
+            </div>
+          )}
+          {app.application_number && (
+            <div className="flex items-center gap-2">
+              <BadgeCheck className="h-3.5 w-3.5 text-navy-400 shrink-0" />
+              <span className="font-mono truncate">{app.application_number}</span>
             </div>
           )}
           {app.created_at && (
@@ -493,6 +568,135 @@ export function AdminBuilderApplications() {
           }}
           application={viewing}
           type="builder"
+        />
+      )}
+    </DashboardLayout>
+  );
+}
+
+// ─── Admin Partner Applications ───────────────────────────────────────────────
+export function AdminPartnerApplications() {
+  const [viewing, setViewing] = useState<PartnerApplication | null>(null);
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-partner-applications'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('partner_applications')
+        .select('*')
+        .order('created_at', { ascending: false });
+      return (data ?? []) as PartnerApplication[];
+    },
+  });
+
+  const applications = data ?? [];
+
+  const columns: Column<PartnerApplication>[] = [
+    {
+      key: 'full_name',
+      header: 'Partner',
+      sortable: true,
+      render: (p) => (
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-full bg-navy-100 grid place-items-center shrink-0">
+            <Handshake className="h-4 w-4 text-navy-500" />
+          </div>
+          <div>
+            <p className="font-medium text-navy-900">{p.full_name}</p>
+            <p className="text-xs text-navy-500">{p.email ?? p.mobile_number}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'mobile_number', header: 'Mobile', render: (p) => <span className="text-sm">{p.mobile_number}</span> },
+    { key: 'partner_type', header: 'Partner Type', render: (p) => <span className="text-sm">{p.partner_type ?? '—'}</span> },
+    { key: 'company_name', header: 'Company', render: (p) => <span className="text-sm">{p.company_name ?? '—'}</span> },
+    { key: 'status', header: 'Stage', sortable: true, render: (p) => <AppBadge status={p.status || 'submitted'} /> },
+    {
+      key: 'created_at',
+      header: 'Applied',
+      sortable: true,
+      render: (p) => <span className="text-sm text-navy-500">{formatDate(p.created_at)}</span>,
+    },
+    {
+      key: 'id',
+      header: '',
+      render: (p) => (
+        <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(p)}>
+          Review
+        </Button>
+      ),
+    },
+  ];
+
+  const { t } = useLanguageContext();
+  const adminSections = getAdminSections(t);
+
+  const pendingCount = applications.filter((a) => a.status !== 'approved' && a.status !== 'rejected').length;
+  const approvedCount = applications.filter((a) => a.status === 'approved').length;
+
+  return (
+    <DashboardLayout sections={adminSections} title={t('dashboard:partnerApps', 'Partner Applications')}>
+      <PageHeader title="Partner Applications CRM" subtitle="Manage and verify partner registration pipeline" />
+
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {[
+          { label: 'Pending Review', value: pendingCount, icon: Clock },
+          { label: 'Approved', value: approvedCount, icon: CheckCircle2 },
+          { label: 'Total Applicants', value: applications.length, icon: Handshake },
+        ].map(({ label, value, icon: Icon }) => (
+          <Card key={label} className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-navy-500">{label}</p>
+                <p className="mt-1 font-display text-2xl font-bold text-navy-900">{value}</p>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-navy-50 grid place-items-center">
+                <Icon className="h-5 w-5 text-navy-600" />
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
+        </div>
+      ) : applications.length === 0 ? (
+        <EmptyState
+          icon={<Handshake className="h-8 w-8 text-navy-400" />}
+          title="No partner applications"
+          description="Partner registration requests will appear here."
+        />
+      ) : (
+        <Card>
+          <DataTable
+            rows={applications}
+            columns={columns as any}
+            getRowId={(r: any) => r.id}
+            searchable
+            searchPlaceholder="Search by name, phone, email, company..."
+            cardRender={(row) => (
+              <PartnerAppCard
+                app={row as PartnerApplication}
+                onReview={(p) => setViewing(p)}
+              />
+            )}
+          />
+        </Card>
+      )}
+
+      {viewing && (
+        <ApplicationReviewDrawer
+          open={!!viewing}
+          onClose={() => {
+            setViewing(null);
+            queryClient.invalidateQueries({ queryKey: ['admin-partner-applications'] });
+          }}
+          application={viewing}
+          type="partner"
         />
       )}
     </DashboardLayout>

@@ -10,15 +10,16 @@ import {
   CheckSquare, Calendar, Globe, Briefcase,
 } from 'lucide-react';
 import { formatDate } from '../../lib/utils';
-import type { AgentApplication, BuilderApplication } from '../../lib/types';
+import type { AgentApplication, BuilderApplication, PartnerApplication } from '../../lib/types';
 import { parseStorageUrl, getDocumentSignedUrl } from '../../lib/storage';
+import { validatePartnerDetailsForSubmission } from '../../lib/partner-validation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface ApplicationReviewDrawerProps {
   open: boolean;
   onClose: () => void;
-  application: AgentApplication | BuilderApplication | null;
-  type: 'agent' | 'builder';
+  application: AgentApplication | BuilderApplication | PartnerApplication | null;
+  type: 'agent' | 'builder' | 'partner';
 }
 
 interface ActivityLog {
@@ -48,6 +49,14 @@ const BUILDER_STAGES = [
   'rera_verification',
   'project_verification',
   'background_verification',
+  'final_review',
+  'approved',
+] as const;
+
+const PARTNER_STAGES = [
+  'submitted',
+  'pending_review',
+  'document_verification',
   'final_review',
   'approved',
 ] as const;
@@ -86,6 +95,13 @@ const BUILDER_NEXT_BUTTON: Record<string, string> = {
   project_verification: 'Verify Projects & Next',
   background_verification: 'Complete Background Check & Next',
   final_review: 'Approve Builder',
+};
+
+const PARTNER_NEXT_BUTTON: Record<string, string> = {
+  submitted: 'Start Review',
+  pending_review: 'Mark as Reviewed & Next',
+  document_verification: 'Verify Documents & Next',
+  final_review: 'Approve Partner',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -275,7 +291,7 @@ function VerificationStepper({
             let dotClass = 'bg-white border-2 border-navy-200';
             let dotContent = null;
             let textClass = 'text-navy-400';
-            let isClickable = !isUpcoming;
+            let isClickable = true;
 
             if (isPast) {
               dotClass = 'bg-success-500 border-success-500';
@@ -291,13 +307,13 @@ function VerificationStepper({
               <button
                 key={stage}
                 type="button"
-                disabled={isUpcoming}
+                disabled={stage === 'approved' && currentStatus !== 'approved'}
                 onClick={() => isClickable && onSelectStep(stage)}
                 className={cn(
                   'flex items-center gap-2.5 w-full text-left px-1 py-1.5 rounded-lg transition-colors',
                   isSelected && 'bg-navy-50',
                   isClickable && !isSelected && 'hover:bg-navy-50',
-                  isUpcoming && 'opacity-40 cursor-not-allowed',
+                  stage === 'approved' && currentStatus !== 'approved' && 'opacity-40 cursor-not-allowed',
                 )}
               >
                 <div className={cn('z-10 h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-all', dotClass)}>
@@ -757,6 +773,139 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
   }
 }
 
+// ─── Partner step panels ───────────────────────────────────────────────────────
+function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplication }) {
+  switch (stage) {
+    case 'submitted':
+      return (
+        <div className="space-y-4">
+          <div className="p-4 bg-success-50 border border-success-200 rounded-xl flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-success-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-success-800 text-sm">Partner Application Received</p>
+              <p className="text-xs text-success-600">Submitted on {formatDate(app.created_at)}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <InfoBox icon={User} label="Full Name" value={app.full_name} />
+            <InfoBox icon={Briefcase} label="Partner Type" value={app.partner_type} />
+            <InfoBox icon={Mail} label="Email" value={app.email} />
+            <InfoBox icon={Phone} label="Mobile" value={app.mobile_number} />
+            <InfoBox icon={Calendar} label="Applied Date" value={formatDate(app.created_at)} />
+            {app.application_number && (
+              <div className="col-span-2 p-3 bg-navy-50 rounded-lg border border-navy-100">
+                <p className="text-xs text-navy-400 mb-1">Application Number</p>
+                <p className="text-xs font-mono text-navy-600 break-all">{app.application_number}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+
+    case 'pending_review':
+      return (
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><User className="h-4 w-4 text-navy-400" /> Partner Information</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <InfoBox icon={Mail} label="Email" value={app.email} />
+            <InfoBox icon={Phone} label="Mobile" value={app.mobile_number} />
+            <InfoBox icon={Building2} label="Company" value={app.company_name} />
+            <InfoBox icon={Briefcase} label="GST Number" value={app.gst_number} />
+            <InfoBox icon={BadgeCheck} label="PAN Number" value={app.pan_number} />
+            <InfoBox icon={MapPin} label="City / State" value={app.city ? `${app.city}, ${app.state ?? ''}` : null} />
+            <InfoBox icon={Award} label="Years of Experience" value={app.years_of_experience ? `${app.years_of_experience} yrs` : null} />
+            {app.preferred_property_types && app.preferred_property_types.length > 0 && (
+              <InfoBox icon={Building2} label="Preferred Property Types" value={app.preferred_property_types.join(', ')} />
+            )}
+            {app.description && (
+              <div className="col-span-2 p-3 bg-navy-50 rounded-lg border border-navy-100">
+                <p className="text-xs text-navy-400 mb-1">About</p>
+                <p className="text-sm text-navy-800">{app.description}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+
+    case 'document_verification': {
+      const docs = [
+        { url: app.pan_doc_url, label: 'PAN Card' },
+        { url: app.id_doc_url, label: 'Aadhaar / Government ID' },
+        { url: app.gst_doc_url, label: 'GST Certificate' },
+        { url: app.business_reg_doc_url, label: 'Business Registration Certificate' },
+        { url: app.address_proof_doc_url, label: 'Address Proof' },
+      ].filter((d) => d.url);
+      return (
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><FileText className="h-4 w-4 text-navy-400" /> Submitted Documents</h4>
+          {docs.length === 0 ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+              <p className="text-sm text-amber-800">No documents uploaded by the applicant.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {docs.map((doc) => (
+                <div key={doc.label} className="p-3 bg-white border border-navy-100 rounded-xl">
+                  <DocLink url={doc.url} bucket="partner-documents" label={doc.label} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    case 'final_review': {
+      const allStages = PARTNER_STAGES.slice(1, -1);
+      return (
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success-500" /> Final Review Summary</h4>
+          <div className="space-y-2">
+            {allStages.map((s) => (
+              <div key={s} className="flex items-center gap-3 p-3 bg-success-50 border border-success-200 rounded-xl">
+                <CheckCircle2 className="h-4 w-4 text-success-600 shrink-0" />
+                <span className="text-sm font-medium text-success-800">{STAGE_LABELS[s]}</span>
+                <span className="ml-auto text-xs text-success-600 font-semibold">✓ Verified</span>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-navy-100">
+            <InfoBox icon={User} label="Partner" value={app.full_name} />
+            <InfoBox icon={Mail} label="Email" value={app.email} />
+            <InfoBox icon={Phone} label="Mobile" value={app.mobile_number} />
+            <InfoBox icon={Briefcase} label="Partner Type" value={app.partner_type} />
+          </div>
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            ⚠ Approving will provision a Partner Portal account linked to the registered mobile number ({app.mobile_number}).
+          </div>
+        </div>
+      );
+    }
+
+    case 'approved':
+      return (
+        <div className="space-y-4">
+          <div className="p-5 bg-success-50 border border-success-200 rounded-xl text-center">
+            <CheckCircle2 className="h-10 w-10 text-success-600 mx-auto mb-2" />
+            <p className="font-bold text-success-800 text-lg">Partner Application Approved</p>
+            <p className="text-xs text-success-600 mt-1">{app.reviewed_at ? `Approved on ${formatDate(app.reviewed_at)}` : 'Approval complete'}</p>
+          </div>
+          <div className="p-3 bg-success-50 border border-success-200 rounded-xl flex items-center gap-3">
+            <ShieldCheck className="h-5 w-5 text-success-600 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-success-800">Partner Portal Access Enabled</p>
+              <p className="text-xs text-success-600">{app.full_name} — Login via OTP on: {app.mobile_number}</p>
+            </div>
+          </div>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+}
+
 // ─── Main Drawer ──────────────────────────────────────────────────────────────
 export function ApplicationReviewDrawer({
   open,
@@ -768,14 +917,17 @@ export function ApplicationReviewDrawer({
   const { addToast } = useToast();
 
   const isAgent = type === 'agent';
-  const stages = isAgent ? AGENT_STAGES : BUILDER_STAGES;
-  const nextButtonLabels = isAgent ? AGENT_NEXT_BUTTON : BUILDER_NEXT_BUTTON;
+  const isBuilder = type === 'builder';
+  const isPartner = type === 'partner';
+  const stages = isAgent ? AGENT_STAGES : isBuilder ? BUILDER_STAGES : PARTNER_STAGES;
+  const nextButtonLabels = isAgent ? AGENT_NEXT_BUTTON : isBuilder ? BUILDER_NEXT_BUTTON : PARTNER_NEXT_BUTTON;
 
   const currentStatus = application?.status || 'pending_review';
   const currentIdx = getStageIndex(stages, currentStatus);
   const isTerminal = currentStatus === 'approved' || currentStatus === 'rejected';
+  const isProvisioningFailed = (application as any)?.provisioning_status === 'PROVISIONING_FAILED';
 
-  const [selectedStep, setSelectedStep] = useState(currentStatus);
+  const [selectedStep, setSelectedStep] = useState<string>(currentStatus);
   const [showReject, setShowReject] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [notes, setNotes] = useState('');
@@ -789,7 +941,7 @@ export function ApplicationReviewDrawer({
       setNotes('');
       setShowHistory(false);
     }
-  }, [open, application?.status]);
+  }, [open, application?.id]);
 
   // ── Mutation ────────────────────────────────────────────────────────────────
   const actionMutation = useMutation({
@@ -804,11 +956,20 @@ export function ApplicationReviewDrawer({
       });
       if (error) {
         console.error('Edge Function error:', error);
-        const msg = error.message?.toLowerCase() || '';
-        if (msg.includes('failed to send') || msg.includes('fetch')) {
+        let errorBody = null;
+        try {
+          if ((error as any).context && typeof (error as any).context.json === 'function') {
+            errorBody = await (error as any).context.json();
+          }
+        } catch (e) {
+          console.error('Unable to parse Edge Function error:', e);
+        }
+        
+        const msg = errorBody?.error || errorBody?.message || error.message || '';
+        if (msg.toLowerCase().includes('failed to send') || msg.toLowerCase().includes('fetch')) {
           throw new Error('Unable to connect to the verification service. Please check your connection.');
         }
-        throw new Error(error.message || 'Verification failed. Please try again.');
+        throw new Error(msg || 'Verification failed. Please try again.');
       }
       if (data?.error) throw new Error(data.error);
       return data;
@@ -817,7 +978,7 @@ export function ApplicationReviewDrawer({
       queryClient.invalidateQueries({ queryKey: [`admin-${type}-applications`] });
       queryClient.invalidateQueries({ queryKey: ['app-activity-logs', application?.id] });
       if (payload.action === 'approve') {
-        addToast('success', `${isAgent ? 'Agent' : 'Builder'} application approved. Portal access provisioned.`);
+        addToast('success', `${isAgent ? 'Agent' : isBuilder ? 'Builder' : 'Partner'} application approved. Portal access provisioned.`);
         onClose();
       } else if (payload.action === 'reject') {
         addToast('success', 'Application rejected.');
@@ -839,13 +1000,42 @@ export function ApplicationReviewDrawer({
 
   const title = isAgent
     ? `${(application as AgentApplication).first_name} ${(application as AgentApplication).last_name}`
-    : (application as BuilderApplication).company_name;
+    : isBuilder
+      ? (application as BuilderApplication).company_name
+      : (application as PartnerApplication).full_name;
 
   const handleNextStage = () => {
     const nextIdx = currentIdx + 1;
     if (nextIdx >= stages.length) return;
     const nextStage = stages[nextIdx];
     if (nextStage === 'approved') {
+      // ── Partner approval guard ─────────────────────────────────────────────
+      // Before approving a partner application, re-validate the stored field
+      // values using the same rules as the registration form. This prevents
+      // approving applications that somehow bypassed frontend validation.
+      if (isPartner) {
+        const partnerApp = application as PartnerApplication;
+        const validationErrs = validatePartnerDetailsForSubmission({
+          partner_type: partnerApp.partner_type ?? '',
+          full_name: partnerApp.full_name ?? '',
+          mobile_number: partnerApp.mobile_number ?? '',
+          email: partnerApp.email ?? '',
+          company_name: partnerApp.company_name ?? '',
+          years_of_experience: partnerApp.years_of_experience != null ? String(partnerApp.years_of_experience) : '',
+          gst_number: partnerApp.gst_number ?? '',
+          pan_number: partnerApp.pan_number ?? '',
+          website: partnerApp.website ?? '',
+          state: partnerApp.state ?? '',
+        });
+        if (Object.keys(validationErrs).length > 0) {
+          const errorFields = Object.keys(validationErrs).join(', ');
+          addToast(
+            'error',
+            `Cannot approve: Partner application has invalid field values (${errorFields}). Ask the applicant to resubmit with corrected details.`
+          );
+          return;
+        }
+      }
       actionMutation.mutate({ action: 'approve', remarks: notes || 'Approved after final review.' });
     } else {
       actionMutation.mutate({ action: 'stage_change', new_stage: nextStage, remarks: notes || `Advanced to ${STAGE_LABELS[nextStage]}` });
@@ -875,11 +1065,101 @@ export function ApplicationReviewDrawer({
     if (isAgent) {
       return <AgentStepContent stage={selectedStep} app={application as AgentApplication} />;
     }
-    return <BuilderStepContent stage={selectedStep} app={application as BuilderApplication} />;
+    if (isBuilder) {
+      return <BuilderStepContent stage={selectedStep} app={application as BuilderApplication} />;
+    }
+    return <PartnerStepContent stage={selectedStep} app={application as PartnerApplication} />;
+  };
+
+  const renderFooter = () => {
+    return (
+      <div className="flex flex-col gap-3">
+        {/* Reject panel */}
+        {showReject && !isTerminal && (
+          <div className="p-4 bg-red-50 rounded-xl border border-red-200 space-y-3">
+            <p className="text-sm font-semibold text-red-800 flex items-center gap-2">
+              <XCircle className="h-4 w-4" /> Reject Application
+            </p>
+            <Textarea
+              label="Reason for Rejection *"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="E.g. Invalid documents, RERA mismatch..."
+              rows={2}
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="danger" onClick={handleReject}
+                loading={actionMutation.isPending && actionMutation.variables?.action === 'reject'}>
+                Confirm Rejection
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowReject(false)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Action bar */}
+        {!isTerminal && (
+          <div className="flex flex-wrap items-center gap-2 w-full">
+            {!showReject && (
+              <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50"
+                icon={<XCircle className="h-3.5 w-3.5" />}
+                onClick={() => setShowReject(true)}>
+                Reject
+              </Button>
+            )}
+            
+            {isProvisioningFailed && (
+              <div className="flex-1 px-3 py-1.5 ml-2 bg-red-50 text-red-700 text-xs font-medium rounded-lg border border-red-200 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                Account provisioning failed. Please retry.
+              </div>
+            )}
+            
+            <div className="ml-auto flex gap-2">
+              {selectedStep !== stages[0] && (
+                <Button size="sm" variant="secondary"
+                  onClick={() => {
+                    const prevIdx = stages.indexOf(selectedStep as any) - 1;
+                    if (prevIdx >= 0) setSelectedStep(stages[prevIdx]);
+                  }}>
+                  ← Previous
+                </Button>
+              )}
+              {stages.indexOf(selectedStep as any) < stages.length - 2 && (
+                <Button size="sm" variant="secondary"
+                  onClick={() => {
+                    const nextIdx = stages.indexOf(selectedStep as any) + 1;
+                    if (nextIdx < stages.length) setSelectedStep(stages[nextIdx]);
+                  }}>
+                  Next →
+                </Button>
+              )}
+              {canAdvance && (
+                <Button
+                  onClick={handleNextStage}
+                  loading={actionMutation.isPending}
+                  icon={<ChevronRight className="h-4 w-4" />}
+                  className={isProvisioningFailed ? "bg-red-600 text-white hover:bg-red-700" : "bg-navy-700 text-white hover:bg-navy-800"}
+                >
+                  {isProvisioningFailed ? 'Retry Provisioning' : (nextButtonLabels[currentStatus] ?? 'Mark as Verified & Next')}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {application.status === 'approved' && (
+          <div className="p-3 bg-success-50 text-success-700 text-sm rounded-xl border border-success-200 flex gap-2 items-center w-full">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>Application approved. Portal access has been provisioned.</span>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Review: ${title}`} size="xl">
+    <Modal open={open} onClose={onClose} title={`Review: ${title}`} size="xl" footer={renderFooter()}>
       <div className="flex flex-col lg:flex-row gap-6 min-h-[520px]">
 
         {/* ── LEFT: Step workspace ──────────────────────────────────────── */}
@@ -888,7 +1168,7 @@ export function ApplicationReviewDrawer({
           <div className="flex items-center justify-between mb-4">
             <div>
               <span className="text-[10px] text-navy-400 uppercase tracking-wider">
-                {isAgent ? 'Agent' : 'Builder'} Application — Current Step
+                {isAgent ? 'Agent' : isBuilder ? 'Builder' : 'Partner'} Application — Current Step
               </span>
               <h3 className="font-bold text-navy-900 text-base leading-tight">
                 {STAGE_LABELS[selectedStep] ?? selectedStep}
@@ -925,70 +1205,6 @@ export function ApplicationReviewDrawer({
                 placeholder="Add notes for this verification step..."
                 rows={2}
               />
-            </div>
-          )}
-
-          {/* Reject panel */}
-          {showReject && !isTerminal && (
-            <div className="mt-3 p-4 bg-red-50 rounded-xl border border-red-200 space-y-3">
-              <p className="text-sm font-semibold text-red-800 flex items-center gap-2">
-                <XCircle className="h-4 w-4" /> Reject Application
-              </p>
-              <Textarea
-                label="Reason for Rejection *"
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="E.g. Invalid documents, RERA mismatch..."
-                rows={2}
-              />
-              <div className="flex gap-2">
-                <Button size="sm" variant="danger" onClick={handleReject}
-                  loading={actionMutation.isPending && actionMutation.variables?.action === 'reject'}>
-                  Confirm Rejection
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowReject(false)}>Cancel</Button>
-              </div>
-            </div>
-          )}
-
-          {/* Action bar */}
-          {!isTerminal && (
-            <div className="mt-4 flex flex-wrap items-center gap-2 pt-3 border-t border-navy-100">
-              {!showReject && (
-                <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50"
-                  icon={<XCircle className="h-3.5 w-3.5" />}
-                  onClick={() => setShowReject(true)}>
-                  Reject
-                </Button>
-              )}
-              <div className="ml-auto flex gap-2">
-                {selectedStep !== stages[0] && (
-                  <Button size="sm" variant="secondary"
-                    onClick={() => {
-                      const prevIdx = stages.indexOf(selectedStep as any) - 1;
-                      if (prevIdx >= 0) setSelectedStep(stages[prevIdx]);
-                    }}>
-                    ← Previous
-                  </Button>
-                )}
-                {canAdvance && (
-                  <Button
-                    onClick={handleNextStage}
-                    loading={actionMutation.isPending}
-                    icon={<ChevronRight className="h-4 w-4" />}
-                    className="bg-navy-700 text-white hover:bg-navy-800"
-                  >
-                    {nextButtonLabels[currentStatus] ?? 'Mark as Verified & Next'}
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {application.status === 'approved' && (
-            <div className="mt-4 p-3 bg-success-50 text-success-700 text-sm rounded-xl border border-success-200 flex gap-2 items-center">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>Application approved. Portal access has been provisioned.</span>
             </div>
           )}
         </div>

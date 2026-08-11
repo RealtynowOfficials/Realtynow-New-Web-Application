@@ -259,7 +259,15 @@ export function PageLoader() {
         
         {/* Inner static logo */}
         <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-xl shadow-red-500/10 p-2">
-          <img src="/1.png" alt="RealtyNow" className="h-full w-full object-contain p-1" />
+          <svg 
+            viewBox="0 0 100 100" 
+            className="h-full w-full object-contain"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle cx="50" cy="50" r="50" fill="#BA252A" />
+            <polygon points="50,10 15.36,70 84.64,70" fill="white" />
+            <polygon points="32.68,40 67.32,40 50,70" fill="#BA252A" />
+          </svg>
         </div>
       </div>
       

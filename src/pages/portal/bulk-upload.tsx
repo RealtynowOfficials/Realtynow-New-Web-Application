@@ -68,6 +68,54 @@ export function BulkUpload() {
   const [history, setHistory] = useState<BulkImportJob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [remainingQuota, setRemainingQuota] = useState<number | null>(null);
+  const [quotaChecked, setQuotaChecked] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    async function checkQuota() {
+      // 1. check if customer
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      if (profile?.role !== 'customer') {
+        setQuotaChecked(true);
+        return;
+      }
+      
+      // 2. check if active subscription
+      const { count: pkgCount } = await supabase
+        .from('agent_packages')
+        .select('*', { count: 'exact', head: true })
+        .eq('agent_id', user.id)
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString());
+        
+      if (pkgCount && pkgCount > 0) {
+        setQuotaChecked(true);
+        return;
+      }
+      
+      // 3. check properties count
+      const { count: propCount } = await supabase
+        .from('properties')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+        
+      const limit = 2;
+      const current = propCount || 0;
+      if (current >= limit) {
+        setQuotaExceeded(true);
+        setRemainingQuota(0);
+      } else {
+        setRemainingQuota(limit - current);
+      }
+      setQuotaChecked(true);
+    }
+    
+    checkQuota();
+  }, [user]);
+
   useEffect(() => {
     getListingPurposes()
       .then(setPurposes)
@@ -122,6 +170,12 @@ export function BulkUpload() {
         const rows = await parseImportFile(selected);
         if (rows.length === 0) {
           toast.addToast('error', 'No rows found in the file');
+          setParsing(false);
+          return;
+        }
+        
+        if (remainingQuota !== null && rows.length > remainingQuota) {
+          setQuotaExceeded(true);
           setParsing(false);
           return;
         }
@@ -344,13 +398,41 @@ export function BulkUpload() {
     setRowStrategy({});
     setJob(null);
   }, []);
-
   const errorRows = resolvedRows.filter((r) => r.errors.length > 0);
   const duplicateRows = resolvedRows.filter((r) => r.errors.length === 0 && (r.duplicateOfPropertyId || r.duplicateOfRowNumber));
   const cleanRows = resolvedRows.filter((r) => r.errors.length === 0 && !r.duplicateOfPropertyId && !r.duplicateOfRowNumber);
 
+  if (!quotaChecked) {
+    return (
+      <DashboardLayout sections={sections} title={t('forms.bulkImport', 'Bulk Import')}>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (quotaExceeded) {
+    return (
+      <DashboardLayout sections={sections} title={t('forms.bulkImport', 'Bulk Import')}>
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center max-w-lg mx-auto">
+          <div className="bg-red-50 p-4 rounded-full mb-4 mx-auto flex items-center justify-center">
+            <AlertTriangle className="h-12 w-12 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-navy-900 mb-2">Listing Limit Reached</h2>
+          <p className="text-navy-600 mb-6">
+            You have reached or exceeded the maximum limit of 2 properties for free accounts. Please upgrade your plan to list more properties and unlock premium features.
+          </p>
+          <Button onClick={() => navigate('/portal/subscription')} className="w-full sm:w-auto">
+            View Subscription Plans
+          </Button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
-    <DashboardLayout sections={sections} title="Bulk Import">
+    <DashboardLayout sections={sections} title={t('forms.bulkImport', 'Bulk Import')}>
       <PageHeader
         title="Bulk Property Import"
         subtitle="Import multiple listings at once from Excel or CSV."

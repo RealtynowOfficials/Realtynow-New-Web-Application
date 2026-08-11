@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Building2, Heart, MessageSquare, Eye, Wallet, TrendingUp, Home, Plus, Clock, CheckCircle2, Star } from 'lucide-react';
+import { Building2, Heart, MessageSquare, Eye, Wallet, TrendingUp, Home, Plus, Clock, CheckCircle2, Star, Crown, Sparkles, Building } from 'lucide-react';
+import { PlanDetailsModal } from '../../components/portal/plan-details-modal';
 import { PackageRenewalWidget } from '../../components/portal/PackageRenewalWidget';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
@@ -452,6 +453,7 @@ export function PortalSubscription() {
   const { user } = useAuth();
   const sections = getPortalSections(t);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
 
   const { data: plans } = useQuery({
     queryKey: ['subscription-plans'],
@@ -502,6 +504,59 @@ export function PortalSubscription() {
         </Card>
         </motion.div>
       )}
+
+      {/* NEW PREMIUM HERO BANNER */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }} 
+        animate={{ opacity: 1, y: 0 }} 
+        transition={{ duration: 0.5 }}
+        className="mb-12 relative overflow-hidden rounded-[2rem] bg-navy-950 text-white shadow-2xl"
+      >
+        <div className="absolute inset-0 z-0">
+          <img 
+            src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=2000" 
+            alt="Luxury Real Estate" 
+            className="w-full h-full object-cover opacity-20"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-navy-950 via-navy-900/90 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-navy-950 via-transparent to-transparent" />
+        </div>
+        
+        <div className="relative z-10 px-8 py-16 sm:px-12 sm:py-20 flex flex-col md:flex-row items-center justify-between gap-10">
+          <div className="max-w-xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 mb-6">
+              <Crown className="h-4 w-4 text-yellow-400" />
+              <span className="text-xs font-bold tracking-wider text-white uppercase">Premium Plans</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-display font-bold leading-tight mb-4">
+              Scale your real estate business with <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-indigo-400">RealtyNow</span>
+            </h2>
+            <p className="text-navy-200 text-lg sm:text-xl mb-8 max-w-lg">
+              Get more leads, priority listings, and advanced AI tools to close deals faster. Choose the plan that fits your ambition.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-success-400" />
+                <span className="text-sm font-medium">Verified Leads</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-success-400" />
+                <span className="text-sm font-medium">Priority Support</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-success-400" />
+                <span className="text-sm font-medium">AI Insights</span>
+              </div>
+            </div>
+          </div>
+          <div className="hidden lg:flex relative">
+            <div className="absolute inset-0 bg-primary-500/20 blur-3xl rounded-full" />
+            <Building className="h-48 w-48 text-white/90 drop-shadow-2xl relative z-10" strokeWidth={1} />
+            <Sparkles className="absolute -top-4 -right-4 h-12 w-12 text-yellow-400 animate-pulse z-20" />
+          </div>
+        </div>
+      </motion.div>
+
       <div className="flex justify-center mb-10">
         <div className="bg-navy-50/80 p-1.5 rounded-xl inline-flex shadow-inner border border-navy-100">
           <button
@@ -564,7 +619,14 @@ export function PortalSubscription() {
               ))}
             </ul>
 
-            <div className="mt-auto pt-6 border-t border-gray-100">
+            <div className="mt-auto pt-6 border-t border-gray-100 flex flex-col gap-3">
+              <Button
+                variant="outline"
+                className="w-full bg-white text-navy-900 border-navy-200 hover:bg-navy-50 hover:text-navy-900 shadow-sm"
+                onClick={() => setSelectedPlan(plan)}
+              >
+                View Details
+              </Button>
               {plan.price_monthly === 0 || (mySub as any)?.package_id === plan.id ? (
                 <button 
                   className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all shadow-sm ${
@@ -591,6 +653,13 @@ export function PortalSubscription() {
           </motion.div>
         ))}
       </div>
+
+      <PlanDetailsModal
+        plan={selectedPlan}
+        isOpen={!!selectedPlan}
+        onClose={() => setSelectedPlan(null)}
+        billingCycle={billingCycle}
+      />
     </DashboardLayout>
   );
 }

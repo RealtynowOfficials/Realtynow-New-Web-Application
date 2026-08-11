@@ -199,18 +199,21 @@ export function initMsg91Widget(forceRemount = false): Promise<void> {
     console.log('[MSG91] calling initSendOTP with widgetId:', widgetId);
     
     const container = getPersistentCaptchaContainer();
-    // Clear any existing children just in case, though it should be empty
-    container.innerHTML = '';
-    container.setAttribute('data-msg91-initialized', 'true');
-
-    window.initSendOTP({
-      widgetId,
-      tokenAuth,
-      exposeMethods: true,
-      captchaRenderId: MSG91_CAPTCHA_CONTAINER_ID,
-      success: (data: unknown) => console.log('[MSG91] initSendOTP success callback', data),
-      failure: (err: unknown) => console.warn('[MSG91] initSendOTP failure callback', extractErrorMessage(err, 'unknown')),
-    });
+    if (!container.hasAttribute('data-msg91-initialized')) {
+      // Clear any existing children just in case, though it should be empty
+      container.innerHTML = '';
+      container.setAttribute('data-msg91-initialized', 'true');
+      
+      window.initSendOTP({
+        widgetId,
+        tokenAuth,
+        exposeMethods: true,
+        captchaRenderId: MSG91_CAPTCHA_CONTAINER_ID,
+        success: (data: unknown) => console.log('[MSG91] initSendOTP success callback', data),
+        failure: (err: unknown) => console.warn('[MSG91] initSendOTP failure callback', extractErrorMessage(err, 'unknown')),
+      });
+    }
+    
     return waitForExposedMethods(INIT_TIMEOUT_MS);
   });
 

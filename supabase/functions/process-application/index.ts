@@ -1,6 +1,13 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import { corsHeaders } from '../_shared/cors.ts';
+import { normalizeIndianMobile } from '../_shared/phone.ts';
+
+const TABLE_BY_TYPE: Record<string, string> = {
+  agent: 'agent_applications',
+  builder: 'builder_applications',
+  partner: 'partner_applications',
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -23,7 +30,7 @@ serve(async (req) => {
 
     // Validate required fields early
     if (!application_id) throw new Error('application_id is required');
-    if (!type || !['agent', 'builder'].includes(type)) throw new Error('Invalid application type');
+    if (!type || !TABLE_BY_TYPE[type]) throw new Error('Invalid application type');
     if (!action) throw new Error('action is required');
 
     // Identify the calling user from JWT (best-effort — non-blocking)
@@ -43,7 +50,7 @@ serve(async (req) => {
 
     console.log(`process-application: action=${action} type=${type} app=${application_id} admin=${adminUserId}`);
 
-    const table = type === 'agent' ? 'agent_applications' : 'builder_applications';
+    const table = TABLE_BY_TYPE[type];
 
     // Helper: log activity without crashing the main operation
     const logActivity = async (actionLabel: string, details?: string) => {
@@ -60,6 +67,23 @@ serve(async (req) => {
       }
     };
 
+    // Helper: log audit records securely
+    const recordApprovalAudit = async (auditAction: string, status: string, errorMsg?: string, metadata?: any) => {
+      try {
+        await supabaseAdmin.from('approval_audit_logs').insert({
+          application_id,
+          application_type: type,
+          action: auditAction,
+          performed_by: adminUserId || null,
+          status: status,
+          error_message: errorMsg || null,
+          metadata: metadata || null,
+        });
+      } catch (logErr) {
+        console.warn('Audit log insert failed (non-fatal):', logErr);
+      }
+    };
+
     // ─── APPROVE ─────────────────────────────────────────────────────────────
     if (action === 'approve') {
       const { data: app, error: appError } = await supabaseAdmin
@@ -69,98 +93,227 @@ serve(async (req) => {
         .single();
 
       if (appError || !app) throw new Error(`Application not found: ${appError?.message}`);
-      if (app.status === 'approved') throw new Error('Application is already approved.');
 
-      // Normalise phone to E.164
-      let phone: string = (app.phone || '').replace(/[^0-9+]/g, '');
-      if (phone.length === 10) phone = '+91' + phone;
-      if (phone && !phone.startsWith('+')) phone = '+' + phone;
+      // Idempotency: Handle existing states
+      if (app.provisioning_status === 'PROVISIONED' || app.status === 'approved') {
+        await recordApprovalAudit('APPROVAL_REUSED', 'SUCCESS', undefined, { message: 'Already approved' });
+        const rawPhoneAlready = type === 'partner' ? app.mobile_number : app.phone;
+        const mobileAlready = normalizeIndianMobile(rawPhoneAlready || '');
+        const { data: existingProfile } = mobileAlready
+          ? await supabaseAdmin.from('profiles').select('id').eq('phone', mobileAlready).maybeSingle()
+          : { data: null };
+        return new Response(
+          JSON.stringify({ success: true, user_id: existingProfile?.id ?? null, already_approved: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
 
-      // Create or find existing auth user
+      // Concurrency protection
+      if (app.provisioning_status === 'PROVISIONING') {
+        throw new Error('Application is currently being provisioned by another process. Please wait.');
+      }
+
+      const rawPhone = type === 'partner' ? app.mobile_number : app.phone;
+      const mobile = normalizeIndianMobile(rawPhone || '');
+      if (!mobile) throw new Error('Application does not have a valid mobile number.');
+
+      const normalizedEmail = app.email?.trim() ? app.email.trim().toLowerCase() : undefined;
+
+      const fullName =
+        type === 'agent' ? `${app.first_name || ''} ${app.last_name || ''}`.trim() :
+        type === 'partner' ? app.full_name :
+        app.contact_name;
+
+      if (!fullName) throw new Error('Applicant name is missing.');
+
+      // State Transition -> PROVISIONING
+      const { error: markProvErr } = await supabaseAdmin.from(table)
+        .update({ provisioning_status: 'PROVISIONING' })
+        .eq('id', application_id);
+      
+      if (markProvErr) throw new Error('Failed to lock application for provisioning: ' + markProvErr.message);
+
+      await recordApprovalAudit('APPROVAL_STARTED', 'SUCCESS');
+
       let userId: string | null = null;
-      const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const existingUser = existingUsers?.users?.find(
-        (u) => (phone && u.phone === phone) || u.email === app.email
-      );
+      let finalError: Error | null = null;
 
-      if (existingUser) {
-        userId = existingUser.id;
-      } else {
-        const createPayload: any = {
-          email: app.email,
-          email_confirm: true,
-          user_metadata: {
-            full_name: type === 'agent' ? `${app.first_name} ${app.last_name}` : app.contact_name,
-            role: type,
-          },
-        };
-        if (phone) {
-          createPayload.phone = phone;
-          createPayload.phone_confirm = true;
-        }
-        const { data: createdUser, error: createErr } = await supabaseAdmin.auth.admin.createUser(createPayload);
-        if (createErr) throw new Error('Failed to create auth user: ' + createErr.message);
-        userId = createdUser.user.id;
-      }
-
-      // Upsert profile
-      await supabaseAdmin.from('profiles').upsert({
-        id: userId,
-        role: type,
-        email: app.email,
-        first_name: type === 'agent' ? app.first_name : app.contact_name?.split(' ')[0],
-        last_name: type === 'agent' ? app.last_name : app.contact_name?.split(' ').slice(1).join(' '),
-        phone: phone || null,
-        // license_number carries the RERA number the agent entered at registration —
-        // it does NOT mean RERA-verified. That's a separate admin decision (see
-        // admin-agent-verification edge function), tracked by rera_verification_status.
-        ...(type === 'agent' ? {
-          license_number: app.license_number || null,
-          company: app.company || null,
-          bio: app.bio || null,
-          specialization: app.specialization || null,
-          assigned_areas: app.assigned_areas || null,
-          avatar_url: app.profile_image || null,
-          rera_document_url: app.license_doc_url || null,
-          rera_verification_status: app.license_number ? 'pending' : 'not_submitted',
-        } : {}),
-      }, { onConflict: 'id' });
-
-      // For builders, create the public-facing builders row (drives the homepage
-      // Verified Builders carousel + public builder profile page). Non-fatal: a
-      // failure here must not block the approval/portal-access flow itself.
-      if (type === 'builder') {
-        const { data: existingBuilder } = await supabaseAdmin
-          .from('builders')
+      try {
+        // Find an existing account by mobile first
+        const { data: existingProfile } = await supabaseAdmin
+          .from('profiles')
           .select('id')
-          .eq('user_id', userId)
+          .eq('phone', mobile)
           .maybeSingle();
-        if (!existingBuilder) {
-          const { error: builderErr } = await supabaseAdmin.from('builders').insert({
-            user_id: userId,
-            name: app.company_name,
-            logo_url: app.logo_url || null,
-            description: app.description || null,
-            established_year: app.established_year || null,
-            contact_name: app.contact_name,
-            contact_email: app.email,
-            contact_phone: phone || null,
-            status: 'approved',
-            public_visible: true,
+
+        if (existingProfile) {
+          userId = existingProfile.id;
+          await recordApprovalAudit('USER_REUSED', 'SUCCESS', undefined, { user_id: userId });
+        } else {
+          const { data: createdUser, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+            phone: mobile,
+            phone_confirm: true,
+            email: normalizedEmail,
+            email_confirm: !!normalizedEmail,
+            user_metadata: { full_name: fullName, role: type },
           });
-          if (builderErr) console.error('Failed to create builders record:', builderErr.message);
+
+          if (createdUser?.user) {
+            userId = createdUser.user.id;
+            await recordApprovalAudit('USER_CREATED', 'SUCCESS', undefined, { user_id: userId });
+          } else if (createErr?.message?.toLowerCase().includes('already')) {
+            // Pagination loop to find the exact existing user
+            let foundUser = null;
+            let page = 1;
+            const perPage = 50;
+            while (true) {
+              const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+              if (listErr || !listData?.users || listData.users.length === 0) break;
+              
+              foundUser = listData.users.find(
+                (u) => u.phone === mobile || (normalizedEmail && u.email === normalizedEmail)
+              );
+              if (foundUser || listData.users.length < perPage) break;
+              page++;
+            }
+            if (foundUser) {
+              userId = foundUser.id;
+              await recordApprovalAudit('USER_REUSED', 'SUCCESS', undefined, { user_id: userId, reason: 'Recovered via auth list' });
+            } else {
+              throw new Error('Failed to create auth user: ' + createErr.message);
+            }
+          } else {
+            throw new Error('Failed to create auth user: ' + (createErr?.message || 'Unknown error'));
+          }
         }
+
+        // Upsert profile
+        const { error: profileErr } = await supabaseAdmin.from('profiles').upsert({
+          id: userId,
+          role: type,
+          email: normalizedEmail || null,
+          first_name: type === 'agent' ? app.first_name : fullName?.split(' ')[0],
+          last_name: type === 'agent' ? app.last_name : fullName?.split(' ').slice(1).join(' '),
+          phone: mobile,
+          status: 'active',
+          ...(type === 'agent' ? {
+            license_number: app.license_number || null,
+            company: app.company || null,
+            bio: app.bio || null,
+            specialization: app.specialization || null,
+            assigned_areas: app.assigned_areas || null,
+            avatar_url: app.profile_image || null,
+            rera_document_url: app.license_doc_url || null,
+            rera_verification_status: app.license_number ? 'pending' : 'not_submitted',
+          } : {}),
+        }, { onConflict: 'id' });
+        
+        if (profileErr) throw new Error('Failed to create or update user profile: ' + profileErr.message);
+        await recordApprovalAudit('PROFILE_CREATED', 'SUCCESS', undefined, { user_id: userId });
+
+        // For builders
+        if (type === 'builder') {
+          const { data: existingBuilder } = await supabaseAdmin
+            .from('builders')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (!existingBuilder) {
+            const { error: builderErr } = await supabaseAdmin.from('builders').insert({
+              user_id: userId,
+              name: app.company_name,
+              logo_url: app.logo_url || null,
+              description: app.description || null,
+              established_year: app.established_year || null,
+              contact_name: app.contact_name,
+              contact_email: normalizedEmail,
+              contact_phone: mobile,
+              status: 'approved',
+              public_visible: true,
+            });
+            if (builderErr) throw new Error('Failed to create builders record: ' + builderErr.message);
+            await recordApprovalAudit('BUILDER_CREATED', 'SUCCESS', undefined, { user_id: userId });
+          }
+        }
+
+        // For partners
+        if (type === 'partner') {
+          const { data: existingPartner } = await supabaseAdmin
+            .from('partners')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (!existingPartner) {
+            const { error: partnerErr } = await supabaseAdmin.from('partners').insert({
+              application_id: app.id,
+              user_id: userId,
+              full_name: app.full_name,
+              mobile_number: mobile,
+              email: normalizedEmail || null,
+              partner_type: app.partner_type || null,
+              company_name: app.company_name || null,
+              status: 'active',
+              verification_status: 'verified',
+              approved_by: adminUserId,
+              approved_at: new Date().toISOString(),
+            });
+            if (partnerErr) throw new Error('Failed to create partner account: ' + partnerErr.message);
+            await recordApprovalAudit('PARTNER_CREATED', 'SUCCESS', undefined, { user_id: userId });
+          }
+        }
+
+        // For agents
+        if (type === 'agent') {
+          const { data: existingAgent } = await supabaseAdmin
+            .from('agents')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (!existingAgent) {
+            const { error: agentErr } = await supabaseAdmin.from('agents').insert({
+              user_id: userId,
+              assigned_areas: app.assigned_areas || [],
+              specialization: app.specialization || null,
+              experience_years: app.experience_years || null,
+              license_number: app.license_number || null,
+              company: app.company || null,
+              bio: app.bio || null,
+              status: 'active',
+            });
+            if (agentErr) throw new Error('Failed to create agents record: ' + agentErr.message);
+            await recordApprovalAudit('AGENT_CREATED', 'SUCCESS', undefined, { user_id: userId });
+          }
+        }
+      } catch (err: any) {
+        finalError = err;
       }
 
-      // Mark as approved
+      // If anything failed, rollback state to PROVISIONING_FAILED
+      if (finalError) {
+        await supabaseAdmin.from(table).update({
+          provisioning_status: 'PROVISIONING_FAILED'
+        }).eq('id', application_id);
+        
+        await recordApprovalAudit('APPROVAL_FAILED', 'FAILED', finalError.message);
+        throw finalError; // Rethrow to be caught by the outer catch block
+      }
+
+      // Mark as fully approved
       const { error: updateErr } = await supabaseAdmin.from(table).update({
         status: 'approved',
+        provisioning_status: 'PROVISIONED',
         reviewed_by: adminUserId,
         reviewed_at: new Date().toISOString(),
+        ...(type === 'partner' ? { approved_at: new Date().toISOString() } : {}),
       }).eq('id', application_id);
-      if (updateErr) throw new Error('Failed to update application status: ' + updateErr.message);
+      
+      if (updateErr) {
+        await recordApprovalAudit('APPROVAL_FAILED', 'FAILED', updateErr.message);
+        throw new Error('Failed to update application status: ' + updateErr.message);
+      }
 
       await logActivity('Application Approved', remarks || 'Account provisioned successfully.');
+      await recordApprovalAudit('APPROVAL_COMPLETED', 'SUCCESS');
 
       return new Response(JSON.stringify({ success: true, user_id: userId }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -211,6 +364,40 @@ serve(async (req) => {
       );
 
       return new Response(JSON.stringify({ success: true, new_stage }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+
+    // ─── SUSPEND / REACTIVATE ───────────────────────────────────────────────
+    // Account-level action, not an application pipeline stage — the
+    // application row stays as the historical onboarding record.
+    } else if (action === 'suspend' || action === 'reactivate') {
+      const { data: app, error: appError } = await supabaseAdmin
+        .from(table)
+        .select('*')
+        .eq('id', application_id)
+        .single();
+      if (appError || !app) throw new Error(`Application not found: ${appError?.message}`);
+      if (app.status !== 'approved') throw new Error('Only an approved application can be suspended or reactivated.');
+
+      const rawPhone = type === 'partner' ? app.mobile_number : app.phone;
+      const mobile = normalizeIndianMobile(rawPhone || '');
+      if (!mobile) throw new Error('Could not resolve the account phone number for this application.');
+
+      const { data: acctProfile } = await supabaseAdmin.from('profiles').select('id').eq('phone', mobile).maybeSingle();
+      if (!acctProfile) throw new Error('No activated account found for this application.');
+
+      const suspending = action === 'suspend';
+      await supabaseAdmin.from('profiles').update({ status: suspending ? 'suspended' : 'active' }).eq('id', acctProfile.id);
+
+      if (type === 'partner') {
+        await supabaseAdmin.from('partners').update({ status: suspending ? 'suspended' : 'active' }).eq('user_id', acctProfile.id);
+      } else if (type === 'builder') {
+        await supabaseAdmin.from('builders').update({ status: suspending ? 'suspended' : 'approved' }).eq('user_id', acctProfile.id);
+      }
+
+      await logActivity(suspending ? 'Account Suspended' : 'Account Reactivated', remarks || null);
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
 

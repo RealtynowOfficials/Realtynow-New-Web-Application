@@ -83,6 +83,9 @@ const AgentRegisterPage = lazy(() =>
 const BuilderRegisterPage = lazy(() =>
   import('./pages/auth/builder-register').then((m) => ({ default: m.BuilderRegisterPage })),
 );
+const PartnerRegisterPage = lazy(() =>
+  import('./pages/auth/partner-register').then((m) => ({ default: m.PartnerRegisterPage })),
+);
 
 const PortalDashboard = lazy(() => import('./pages/portal/portal').then((m) => ({ default: m.PortalDashboard })));
 const ProfileSetupPage = lazy(() =>
@@ -122,6 +125,9 @@ const AdminAgentApplications = lazy(() =>
 );
 const AdminBuilderApplications = lazy(() =>
   import('./pages/admin/applications').then((m) => ({ default: m.AdminBuilderApplications })),
+);
+const AdminPartnerApplications = lazy(() =>
+  import('./pages/admin/applications').then((m) => ({ default: m.AdminPartnerApplications })),
 );
 const AdminCustomers = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminCustomers })));
 const AdminPropertyEditor = lazy(() => import('./pages/admin/admin-property-editor').then((m) => ({ default: m.AdminPropertyEditor })));
@@ -170,6 +176,8 @@ const AgentMarketing = lazy(() => import('./pages/agent/marketing').then((m) => 
 const AgentReports = lazy(() => import('./pages/agent/reports').then((m) => ({ default: m.AgentReports })));
 const AgentProfile = lazy(() => import('./pages/agent/profile').then((m) => ({ default: m.AgentProfile })));
 const AgentAiAssistant = lazy(() => import('./pages/agent/ai-assistant').then((m) => ({ default: m.AgentAiAssistant })));
+
+const PartnerDashboard = lazy(() => import('./pages/partner/dashboard').then((m) => ({ default: m.PartnerDashboard })));
 
 const BuilderDashboard = lazy(() => import('./pages/builder/dashboard').then((m) => ({ default: m.BuilderDashboard })));
 const BuilderProjects = lazy(() => import('./pages/builder/projects').then((m) => ({ default: m.BuilderProjects })));
@@ -292,7 +300,9 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
           ? '/agent'
           : profile.role === 'builder'
             ? '/builder'
-            : '/portal';
+            : profile.role === 'partner'
+              ? '/partner'
+              : '/portal';
     return <Navigate to={home} replace />;
   }
 
@@ -403,6 +413,14 @@ function AppRoutes() {
               ),
             },
             {
+              path: '/partner/register',
+              element: (
+                <Suspense fallback={<PageLoader />}>
+                  <PartnerRegisterPage />
+                </Suspense>
+              ),
+            },
+            {
               path: '/portal/saved',
               element: (
                 <Suspense fallback={<PageLoader />}>
@@ -459,6 +477,10 @@ function AppRoutes() {
             },
             { path: '/agents', element: <Navigate to="/agent/login" replace /> },
             {
+              element: <ProtectedRoute allowRoles={['partner']} />,
+              children: [{ path: '/partner', element: <PartnerDashboard /> }],
+            },
+            {
               element: <ProtectedRoute allowRoles={['builder']} />,
               children: [
                 { path: '/builder', element: <BuilderDashboard /> },
@@ -499,6 +521,7 @@ function AppRoutes() {
                 { path: '/admin/approvals', element: <AdminApprovals /> },
                 { path: '/admin/agent-applications', element: <AdminAgentApplications /> },
                 { path: '/admin/builder-applications', element: <AdminBuilderApplications /> },
+                { path: '/admin/partner-applications', element: <AdminPartnerApplications /> },
                 { path: '/admin/customers', element: <AdminCustomers /> },
                 { path: '/admin/agents', element: <AdminAgents /> },
                 { path: '/admin/blogs', element: <AdminBlogs /> },

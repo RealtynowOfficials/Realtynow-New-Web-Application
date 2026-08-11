@@ -27,6 +27,7 @@ import {
   UserCircle,
   Activity,
   Boxes,
+  Handshake,
 } from 'lucide-react';
 import type { NavSection } from '../../components/dashboard-layout';
 
@@ -122,6 +123,7 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
       { to: '/admin/approvals', label: t('dashboard:approvals', 'Approvals'), icon: FileText },
       { to: '/admin/agent-applications', label: t('dashboard:agentApps', 'Agent Applications'), icon: Users },
       { to: '/admin/builder-applications', label: t('dashboard:builderApps', 'Builder Applications'), icon: Building2 },
+      { to: '/admin/partner-applications', label: t('dashboard:partnerApps', 'Partner Applications'), icon: Handshake },
       { to: '/admin/customers', label: t('dashboard:customers', 'Customers'), icon: Heart },
       { to: '/admin/agents', label: t('dashboard:agents', 'Agents'), icon: Users },
       { to: '/admin/invoices', label: t('dashboard:invoices', 'Invoices'), icon: FileText },
@@ -207,6 +209,14 @@ export const getBuilderSections = (t: (key: string, fallback?: string) => string
     items: [
       { to: '/builder/profile', label: t('dashboard:profile', 'Profile'), icon: UserCircle },
       { to: '/builder/settings', label: t('common:settings', 'Settings'), icon: Settings },
+    ],
+  },
+];
+
+export const getPartnerSections = (t: (key: string, fallback?: string) => string): NavSection[] => [
+  {
+    items: [
+      { to: '/partner', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
     ],
   },
 ];

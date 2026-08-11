@@ -1,5 +1,5 @@
 // Trigger HMR
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -283,6 +283,49 @@ export function ListPropertyWizard() {
   const [draftId, setDraftId] = useState<string | null>(draftIdParam);
   const [submissionId] = useState(() => crypto.randomUUID());
   const [showPreview, setShowPreview] = useState(false);
+
+  const [quotaChecked, setQuotaChecked] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    async function checkQuota() {
+      // 1. check if customer
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      if (profile?.role !== 'customer') {
+        setQuotaChecked(true);
+        return;
+      }
+      
+      // 2. check if active subscription
+      const { count: pkgCount } = await supabase
+        .from('agent_packages')
+        .select('*', { count: 'exact', head: true })
+        .eq('agent_id', user.id)
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString());
+        
+      if (pkgCount && pkgCount > 0) {
+        setQuotaChecked(true);
+        return;
+      }
+      
+      // 3. check properties count
+      const { count: propCount } = await supabase
+        .from('properties')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+        
+      if (propCount && propCount >= 2) {
+        setQuotaExceeded(true);
+      }
+      setQuotaChecked(true);
+    }
+    
+    checkQuota();
+  }, [user]);
+
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isRestoring, setIsRestoring] = useState(!!draftIdParam);
   // Key of the field that failed validation on the last Next attempt, so the
@@ -856,6 +899,35 @@ export function ListPropertyWizard() {
 
   const progressPercentage = Math.round((activeStep / (WIZARD_STEPS.length - 1)) * 100);
   const formData = watch();
+
+  if (!quotaChecked) {
+    return (
+      <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (quotaExceeded) {
+    return (
+      <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center max-w-lg mx-auto">
+          <div className="bg-red-50 p-4 rounded-full mb-4 mx-auto flex items-center justify-center">
+            <Shield className="h-12 w-12 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-navy-900 mb-2">Listing Limit Reached</h2>
+          <p className="text-navy-600 mb-6">
+            You have reached the maximum limit of 2 properties for free accounts. Please upgrade your plan to list more properties and unlock premium features.
+          </p>
+          <Button onClick={() => navigate('/portal/subscription')} className="w-full sm:w-auto">
+            View Subscription Plans
+          </Button>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>

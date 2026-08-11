@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { PropertyCard } from '../../components/property-card';
-import { Heart, Search, Trash2 } from 'lucide-react';
+import { Heart, Search, Trash2, LayoutGrid, List as ListIcon, Filter } from 'lucide-react';
 import { Button } from '../../components/ui';
 import { Link } from 'react-router-dom';
 import { useFavorites, getLocalFavoriteIds, toggleFavoriteProperty } from '../../lib/favorites';
@@ -21,6 +21,8 @@ export default function SavedProperties() {
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [viewType, setViewType] = useState<'card' | 'table'>('card');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Sync state for guest users
   const [guestFavoriteIds, setGuestFavoriteIds] = useState<string[]>([]);
@@ -48,11 +50,24 @@ export default function SavedProperties() {
 
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('v_properties_search')
-          .select('*')
-          .in('id', currentFavoriteIds);
+        let query;
+        if (user) {
+          query = supabase
+            .from('v_saved_properties')
+            .select('*')
+            .eq('favorite_user_id', user.id);
+        } else {
+          query = supabase
+            .from('v_properties_search')
+            .select('*')
+            .in('id', currentFavoriteIds);
+        }
 
+        if (searchQuery) {
+          query = query.ilike('title', `%${searchQuery}%`);
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         setProperties(data || []);
       } catch (err) {
@@ -62,10 +77,11 @@ export default function SavedProperties() {
       }
     }
 
+
     if (user ? !isLoadingFavorites : true) {
       fetchSavedProperties();
     }
-  }, [currentFavoriteIds, user, isLoadingFavorites]);
+  }, [currentFavoriteIds, user, isLoadingFavorites, searchQuery]);
 
   const handleRemove = async (propertyId: string) => {
     setRemovingId(propertyId);
@@ -88,6 +104,32 @@ export default function SavedProperties() {
           <div>
             <h1 className="font-display text-2xl font-bold text-navy-900">{t('dashboard.savedProperties', 'Saved Properties')}</h1>
             <p className="mt-1 text-sm text-navy-500">{t('dashboard.savedPropertiesDesc', 'Properties you have favorited')}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-navy-400" />
+              <input
+                type="text"
+                placeholder="Search saved..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-4 py-2 border border-navy-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 w-48 sm:w-64"
+              />
+            </div>
+            <div className="flex bg-white rounded-lg border border-navy-200 p-1">
+              <button
+                onClick={() => setViewType('card')}
+                className={`p-1.5 rounded-md transition-colors ${viewType === 'card' ? 'bg-navy-50 text-navy-900' : 'text-navy-400 hover:text-navy-700'}`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewType('table')}
+                className={`p-1.5 rounded-md transition-colors ${viewType === 'table' ? 'bg-navy-50 text-navy-900' : 'text-navy-400 hover:text-navy-700'}`}
+              >
+                <ListIcon className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -113,21 +155,76 @@ export default function SavedProperties() {
           </Link>
         </div>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {properties.map(p => (
-            <div key={p.id} className="relative">
-              <button
-                onClick={() => handleRemove(p.id)}
-                disabled={removingId === p.id}
-                title="Remove from saved properties"
-                className="absolute left-2.5 top-11 z-10 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-navy-500 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-error-50 hover:text-error-600 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-              <PropertyCard property={p} />
+        viewType === 'card' ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {properties.map(p => (
+              <div key={p.id} className="relative group">
+                <button
+                  onClick={() => handleRemove(p.id)}
+                  disabled={removingId === p.id}
+                  title="Remove from saved properties"
+                  className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white text-red-500 shadow-md backdrop-blur transition hover:scale-110 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                <PropertyCard property={p} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-navy-600">
+                <thead className="bg-navy-50/50 text-navy-900 font-semibold border-b border-navy-100">
+                  <tr>
+                    <th className="px-6 py-4">Property</th>
+                    <th className="px-6 py-4">Location</th>
+                    <th className="px-6 py-4">Price</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-navy-50">
+                  {properties.map(p => (
+                    <tr key={p.id} className="hover:bg-navy-50/30 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-4">
+                          <img 
+                            src={p.media_urls?.images?.[0] || 'https://via.placeholder.com/150'} 
+                            alt={p.title} 
+                            className="h-12 w-16 rounded-lg object-cover bg-navy-100"
+                          />
+                          <div>
+                            <p className="font-semibold text-navy-900 line-clamp-1">{p.title}</p>
+                            <p className="text-xs text-navy-500">{p.property_type_name}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {[p.locality_name, p.city_name].filter(Boolean).join(', ')}
+                      </td>
+                      <td className="px-6 py-4 font-semibold text-navy-900">
+                        ₹{(p.price || p.rent_amount || 0).toLocaleString('en-IN')}
+                        {p.purpose === 'Rent' ? '/mo' : ''}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleRemove(p.id)}
+                          disabled={removingId === p.id}
+                          className="text-red-500 hover:bg-red-50 hover:text-red-600 px-3"
+                          icon={<Trash2 className="h-4 w-4" />}
+                        >
+                          Remove
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
+          </div>
+        )
       )}
     </div>
     </DashboardLayout>
