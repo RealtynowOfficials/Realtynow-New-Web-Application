@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, CheckCheck, Archive, Trash2, X, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { useAdminAuth } from '../../contexts/admin-auth-context';
 import { useRealtimeNotifications } from '../../lib/realtime';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getPortalSections, getAgentSections, getAdminSections } from './sections';
@@ -53,11 +52,8 @@ function dateFilterRange(filter: DateFilter): { gte?: string; lt?: string } {
 }
 
 export function PortalNotifications() {
-  const { user: portalUser, profile } = useAuth();
-  const { admin } = useAdminAuth();
-
-  const user = portalUser || (admin ? { id: admin.id, email: admin.email || '' } : null);
-  const userRole = profile?.role || (admin ? 'admin' : 'customer');
+  const { user, profile } = useAuth();
+  const userRole = profile?.role || 'customer';
   const { t } = useLanguageContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

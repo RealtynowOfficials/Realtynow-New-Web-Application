@@ -1,21 +1,19 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
-import { Bed, Bath, Maximize, MapPin, Phone, Heart, Share2, Check, ChevronLeft, ChevronRight, Car, Calendar, Home, Eye, Star, Send, ShieldCheck, Bot, GitCompare, Play, Printer, X, Building, Zap, Ruler, Images, HelpCircle, TrendingUp, Layers, Flag, Download, ChevronDown, Sparkles, Box, Navigation2, Clock, Compass, User, Edit3, Trash2 } from 'lucide-react';
+import { Bed, Bath, Maximize, MapPin, Heart, Share2, Check, ChevronLeft, ChevronRight, Car, Calendar, Home, Eye, Star, Send, ShieldCheck, Bot, Play, X, Building, Images, Layers, Flag, Box, Navigation2, Clock, Compass, User, Edit3, Trash2 } from 'lucide-react';
 import { fetchProperty, trackPropertyView } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { SharePropertyModal } from '../../components/share-property-modal';
 import { Button, Card, Input, Textarea, Badge, Avatar, EmptyState, Spinner, Modal, Select } from '../../components/ui';
-import { PropertyCard, StatusBadge, RatingStars } from '../../components/property-card';
+import { RatingStars } from '../../components/property-card';
 import { formatCompactPrice, formatNumber, cn, getPropertyPrice } from '../../lib/utils';
 import { isCompared, toggleCompareProperty } from '../../lib/compare';
 import { useToast } from '../../components/toast';
-import { PostPropertyBanner } from '../../components/post-property-banner';
 import { useSEO } from '../../hooks/use-seo';
 import { VirtualTourViewer } from '../../components/virtual-tour/virtual-tour-viewer';
 import { loadGoogleMaps } from '../../lib/googleMaps';
@@ -970,7 +968,7 @@ export function PropertyDetailPage() {
                       {property.built_up_area && (
                         <div className="flex justify-between items-center pb-6 border-b border-navy-50">
                           <span className="text-navy-600 font-medium">Price per Sq Ft</span>
-                          <span className="text-lg font-bold text-navy-900">₹{formatNumber(Math.round(getPropertyPrice(property) / property.built_up_area))}</span>
+                          <span className="text-lg font-bold text-navy-900">₹{formatNumber(Math.round(getPropertyPrice(property)! / property.built_up_area))}</span>
                         </div>
                       )}
                     </>

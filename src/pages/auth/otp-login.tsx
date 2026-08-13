@@ -72,7 +72,7 @@ function formatTimer(totalSeconds: number): string {
 
 /** Role destinations mirror the existing ternary in App.tsx / public-layout.tsx. */
 function dashboardHomeForRole(role: string | null | undefined): string {
-  if (role === 'admin') return '/admin';
+  if (role === 'admin' || role === 'super_admin') return '/admin';
   if (role === 'agent') return '/agent';
   if (role === 'builder') return '/builder';
   if (role === 'partner') return '/partner';
@@ -177,6 +177,19 @@ export function OtpLoginPage() {
   const [params] = useSearchParams();
   const { addToast } = useToast();
 
+  // /admin/login sends unauthenticated visitors here via
+  // `/login?redirect=/admin/login?redirect=...` so this page can hand them
+  // back once OTP succeeds. Admin isn't a self-serve tab (no public signup),
+  // and the underlying OTP verify already resolves the real role from the
+  // DB regardless of which tab is "selected" — the 'customer' intent path
+  // used below never rejects an existing admin profile (see otp-auth's
+  // verify action: the professional-intent role check only applies to
+  // agent/builder/partner). So functionally nothing about the OTP flow
+  // needs to change for an admin — only the visual context, so the user
+  // isn't shown "Buyer/Owner" as though they chose it.
+  const redirectParam = params.get('redirect');
+  const isAdminContext = !!redirectParam && redirectParam.startsWith('/admin');
+
   const [tab, setTab] = useState<LoginTab>('customer');
   const [segment, setSegment] = useState<Segment>('buyer_owner');
   const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
@@ -279,6 +292,15 @@ export function OtpLoginPage() {
     setMobileError(null);
     setSending(true);
     try {
+      if (isAdminContext) {
+        const { checkAdminMobile } = await import('../../lib/admin-security');
+        const authorized = await checkAdminMobile(mobile);
+        if (!authorized) {
+          setMobileError('This mobile number is not registered as an administrator.');
+          setSending(false);
+          return;
+        }
+      }
       const id = await sendMsg91Otp(formatIndianMobileForDisplay(mobile));
       setReqId(id);
       setOtp(Array(OTP_LENGTH).fill(''));
@@ -293,7 +315,7 @@ export function OtpLoginPage() {
     } finally {
       setSending(false);
     }
-  }, [mobile, addToast]);
+  }, [mobile, addToast, isAdminContext, sending]);
 
   const resendOtp = useCallback(async () => {
     if (resendCooldown > 0 || resending) return;
@@ -333,6 +355,10 @@ export function OtpLoginPage() {
           return;
         }
         addToast('success', isNewUser ? 'Account created!' : 'Welcome back!');
+        // Best-effort — a no-op (silently caught) for any non-admin caller;
+        // logs this OTP sign-in into admin_login_logs when it is an admin,
+        // so admin-security's audit trail includes the first factor too.
+        void import('../../lib/admin-security').then(({ logAdminOtpLogin }) => logAdminOtpLogin());
         // Actual navigation happens in the profile-watching effect above,
         // once the profile finishes loading.
       } catch (err) {
@@ -515,7 +541,7 @@ export function OtpLoginPage() {
       <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-5 py-10 sm:px-8">
 
         {/* ── Real-estate illustration pattern layer ── */}
-        {false && (
+        {Boolean(false) && (
         <div className="pointer-events-none absolute inset-0 overflow-hidden select-none" aria-hidden="true">
 
           {/* Soft gradient orbs */}
@@ -656,7 +682,15 @@ export function OtpLoginPage() {
             <Logo to="/" size={180} src="/2.png" />
           </div>
 
-          {step === 'mobile' && (
+          {step === 'mobile' && isAdminContext && (
+            <div className="mb-7 flex justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-red-600 shadow-sm">
+                <Lock className="h-3.5 w-3.5" /> Admin Portal
+              </span>
+            </div>
+          )}
+
+          {step === 'mobile' && !isAdminContext && (
             <div className="relative mb-7 grid grid-cols-4 gap-1 rounded-2xl bg-navy-100/70 p-1.5">
               {SEGMENTS.map(({ id, label, icon: Icon }) => (
                 <button
@@ -730,11 +764,15 @@ export function OtpLoginPage() {
                     <ArrowLeft className="h-4 w-4" /> Back
                   </button>
                 )}
-                <h1 className="font-display text-2xl font-bold text-navy-900">{t('common.login', 'Sign in')}</h1>
+                <h1 className="font-display text-2xl font-bold text-navy-900">
+                  {isAdminContext ? t('auth.administratorSignIn', 'Administrator Sign In') : t('common.login', 'Sign in')}
+                </h1>
                 <p className="mt-1.5 text-sm text-navy-500">
-                  {tab === 'agent' || tab === 'builder' || tab === 'partner'
-                    ? t('auth.otpDescAgent', "Sign in with your registered mobile number.")
-                    : t('auth.otpDesc', "We'll send a one-time code to verify your mobile number.")}
+                  {isAdminContext
+                    ? t('auth.adminOtpDesc', "Sign in with your registered administrator mobile number.")
+                    : tab === 'agent' || tab === 'builder' || tab === 'partner'
+                      ? t('auth.otpDescAgent', "Sign in with your registered mobile number.")
+                      : t('auth.otpDesc', "We'll send a one-time code to verify your mobile number.")}
                 </p>
 
                 <form

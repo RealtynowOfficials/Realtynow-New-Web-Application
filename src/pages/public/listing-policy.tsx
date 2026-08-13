@@ -3,17 +3,11 @@ import { Link } from 'react-router-dom';
 import {
   Building2,
   ShieldCheck,
-  CheckCircle2,
   ChevronRight,
   Calendar,
   Ban,
   Camera,
-  AlertTriangle,
   FileCheck2,
-  Mail,
-  Phone,
-  MapPin,
-  FileText,
 } from 'lucide-react';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 

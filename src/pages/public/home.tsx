@@ -13,7 +13,6 @@ import homeLoansImg from '../../assets/services/home-loans.webp';
 import {
   Search,
   Mic,
-  Camera,
   Navigation,
   MapPin,
   Sparkles,
@@ -27,7 +26,6 @@ import {
   Star,
   Phone,
   MessageCircle,
-  Calendar,
   ShieldCheck,
   BadgeCheck,
   Zap,
@@ -39,12 +37,10 @@ import {
   Briefcase,
   Heart,
   GitCompare,
-  Quote,
   BarChart3,
   Layers,
   Award,
   Scale,
-  Hammer,
   Sun,
   Shield,
   Truck,
@@ -53,7 +49,6 @@ import {
   LandPlot,
   ChevronLeft,
   ChevronRight,
-  ChevronsRight,
   Droplets,
   PieChart,
   Bed,
@@ -62,7 +57,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
-import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
+import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useToast } from '../../components/toast';
 import { AppShowcase } from '../../components/app-showcase';

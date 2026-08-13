@@ -1,7 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
-import { AdminAuthProvider } from './contexts/admin-auth-context';
 import { AdminProtectedRoute } from './components/admin-protected-route';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -103,6 +102,9 @@ const PortalMyProperties = lazy(() =>
 );
 const ListPropertyWizard = lazy(() =>
   import('./pages/portal/list-property').then((m) => ({ default: m.ListPropertyWizard })),
+);
+const OpenPlotWizard = lazy(() =>
+  import('./pages/portal/list-property-plot').then((m) => ({ default: m.OpenPlotWizard })),
 );
 const NewListingWizard = lazy(() =>
   import('./pages/portal/dynamic-listing').then((m) => ({ default: m.NewListingWizard })),
@@ -243,7 +245,7 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   // hours never got logged out; now activity resets the timer and a periodic
   // check catches idle sessions even without navigation.
   useEffect(() => {
-    if (profile?.role !== 'admin') {
+    if (profile?.role !== 'admin' && profile?.role !== 'super_admin') {
       localStorage.removeItem('adminSessionActivity');
       return;
     }
@@ -294,7 +296,7 @@ function ProtectedRoute({ allowRoles }: { allowRoles?: UserRole[] }) {
   }
   if (allowRoles && profile && !allowRoles.includes(profile.role)) {
     const home =
-      profile.role === 'admin'
+      profile.role === 'admin' || profile.role === 'super_admin'
         ? '/admin'
         : profile.role === 'agent'
           ? '/agent'
@@ -442,6 +444,7 @@ function AppRoutes() {
                 { path: '/portal', element: <PortalDashboard /> },
                 { path: '/portal/profile-setup', element: <ProfileSetupPage /> },
                 { path: '/portal/list-property', element: <ListPropertyWizard /> },
+                { path: '/portal/list-property/plot', element: <OpenPlotWizard /> },
                 { path: '/portal/list-property/new', element: <NewListingWizard /> },
                 { path: '/portal/bulk-upload', element: <BulkUpload /> },
                 { path: '/portal/my-properties', element: <PortalMyProperties /> },
@@ -457,6 +460,9 @@ function AppRoutes() {
               children: [
                 { path: '/agent', element: <AgentDashboard /> },
                 { path: '/agent/properties', element: <AgentProperties /> },
+                { path: '/agent/list-property', element: <ListPropertyWizard /> },
+                { path: '/agent/list-property/plot', element: <OpenPlotWizard /> },
+                { path: '/agent/my-properties', element: <PortalMyProperties /> },
                 { path: '/agent/leads', element: <AgentLeads /> },
                 { path: '/agent/clients', element: <AgentClients /> },
                 { path: '/agent/crm', element: <AgentCrm /> },
@@ -570,15 +576,13 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <AuthProvider>
-          <AdminAuthProvider>
-            <LanguageProvider>
-              <LocationProvider>
-                <GlobalAppLoader>
-                  <AppRoutes />
-                </GlobalAppLoader>
-              </LocationProvider>
-            </LanguageProvider>
-          </AdminAuthProvider>
+          <LanguageProvider>
+            <LocationProvider>
+              <GlobalAppLoader>
+                <AppRoutes />
+              </GlobalAppLoader>
+            </LocationProvider>
+          </LanguageProvider>
         </AuthProvider>
       </ToastProvider>
       {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}

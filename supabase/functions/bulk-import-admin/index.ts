@@ -1,11 +1,11 @@
 // supabase/functions/bulk-import-admin/index.ts
-// Admin-only bulk property import. Admin-portal sessions (public.admins /
-// public.admin_sessions, from /admin/login) are NOT Supabase Auth sessions —
-// confirmed no signInWithPassword/setSession anywhere in that flow — so
-// auth.uid() is NULL for an admin browser and the bulk_import_* RLS policies
-// (scoped to auth.uid() = created_by OR is_staff()) never evaluate for them.
-// This function validates the caller's admin_sessions token itself, then
-// does the actual writes with the service-role key, bypassing RLS.
+// Admin-only bulk property import. Validates the caller's real Supabase Auth
+// session (Authorization: Bearer <access_token>) and requires
+// profiles.role IN ('admin','super_admin') — mirrors admin-security's
+// resolveAdminCaller. Then does the actual writes with the service-role key,
+// bypassing RLS (the bulk_import_* policies are scoped to auth.uid() =
+// created_by OR is_staff(), which would otherwise require per-row ownership
+// bookkeeping this endpoint doesn't need).
 //
 // Actions (via x-action header, matching the otp-auth/admin-security convention):
 //   import  — body: { purpose, purposeValue, fileName, totalRows, duplicateStrategy,
@@ -44,26 +44,18 @@ async function resolveAdminCaller(
 ): Promise<{ adminId: string } | { error: string; status: number }> {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return { error: 'Authentication required', status: 401 };
-  const token = authHeader.slice('Bearer '.length).trim();
-  if (!token) return { error: 'Authentication required', status: 401 };
+  const callerClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData } = await callerClient.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return { error: 'Authentication required', status: 401 };
 
-  const { data: session } = await supabase
-    .from('admin_sessions')
-    .select('admin_id, expires_at')
-    .eq('session_token', token)
-    .maybeSingle();
-  if (!session || new Date(session.expires_at as string).getTime() < Date.now()) {
-    return { error: 'Admin session expired. Please log in again.', status: 401 };
+  const { data: profile } = await supabase.from('profiles').select('role, status').eq('id', userId).maybeSingle();
+  if (!['admin', 'super_admin'].includes(profile?.role ?? '') || profile?.status !== 'active') {
+    return { error: 'Admin access required', status: 403 };
   }
-
-  const { data: admin } = await supabase
-    .from('admins')
-    .select('id, status')
-    .eq('id', session.admin_id as string)
-    .maybeSingle();
-  if (!admin || admin.status !== 'active') return { error: 'Admin access required', status: 403 };
-
-  return { adminId: admin.id as string };
+  return { adminId: userId };
 }
 
 interface ImportRow {

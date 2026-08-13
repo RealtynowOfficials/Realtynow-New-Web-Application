@@ -621,7 +621,7 @@ export function PortalSubscription() {
 
             <div className="mt-auto pt-6 border-t border-gray-100 flex flex-col gap-3">
               <Button
-                variant="outline"
+                variant="secondary"
                 className="w-full bg-white text-navy-900 border-navy-200 hover:bg-navy-50 hover:text-navy-900 shadow-sm"
                 onClick={() => setSelectedPlan(plan)}
               >

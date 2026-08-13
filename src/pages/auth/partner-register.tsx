@@ -25,13 +25,13 @@ import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
 import { normalizeIndianMobile } from '../../lib/phone';
 import { getFriendlyErrorMessage } from '../../lib/utils';
+import { useLanguageContext } from '../../lib/i18n/language-context';
 import {
   PARTNER_TYPES,
   getPartnerTypeRules,
   validatePartnerDetailsStep,
   validatePartnerDetailsForSubmission,
   normalizeWebsiteUrl,
-  type PartnerDetailsErrors,
 } from '../../lib/partner-validation';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -48,12 +48,24 @@ const PROPERTY_TYPES = [
   'Other',
 ];
 
+const PROPERTY_TYPE_KEYS: Record<string, string> = {
+  'Residential': 'auth.ptResidential',
+  'Commercial': 'auth.ptCommercial',
+  'Open Plots': 'auth.ptOpenPlots',
+  'Villa': 'auth.ptVilla',
+  'Apartment': 'auth.ptApartment',
+  'Farm Land': 'auth.ptFarmLand',
+  'Industrial': 'auth.ptIndustrial',
+  'Rental': 'auth.ptRental',
+  'Other': 'auth.ptOther',
+};
+
 const STEPS = [
-  { id: 1, label: 'Partner Details', icon: User },
-  { id: 2, label: 'Address', icon: MapPin },
-  { id: 3, label: 'Professional', icon: Briefcase },
-  { id: 4, label: 'Documents', icon: FileText },
-  { id: 5, label: 'Review & Submit', icon: CheckCircle2 },
+  { id: 1, label: 'Partner Details', labelKey: 'auth.stepPartnerDetails', icon: User },
+  { id: 2, label: 'Address', labelKey: 'auth.stepAddress', icon: MapPin },
+  { id: 3, label: 'Professional', labelKey: 'auth.stepProfessional', icon: Briefcase },
+  { id: 4, label: 'Documents', labelKey: 'auth.stepDocuments', icon: FileText },
+  { id: 5, label: 'Review & Submit', labelKey: 'auth.stepReviewSubmit', icon: CheckCircle2 },
 ];
 
 // ─── Form shape ───────────────────────────────────────────────────────────────
@@ -170,6 +182,7 @@ function FileUploadArea({
   required?: boolean;
   error?: string;
 }) {
+  const { t } = useLanguageContext();
   return (
     <div>
       <p className="text-sm font-medium text-navy-600 mb-1.5">
@@ -204,7 +217,7 @@ function FileUploadArea({
         ) : (
           <>
             <Upload className="h-6 w-6 text-navy-400" />
-            <span className="text-sm text-navy-600">Click to upload</span>
+            <span className="text-sm text-navy-600">{t('auth.clickToUpload', 'Click to upload')}</span>
             <span className="text-xs text-navy-500">{hint}</span>
           </>
         )}
@@ -217,6 +230,7 @@ function FileUploadArea({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function PartnerRegisterPage() {
+  const { t } = useLanguageContext();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormData>(INITIAL);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -264,7 +278,7 @@ export function PartnerRegisterPage() {
         .limit(1);
       if (data && data.length > 0) {
         setMobileDuplicateWarning(
-          'A partner application already exists for this mobile number. Contact support if this is an error.'
+          t('auth.mobileDuplicateWarning', 'A partner application already exists for this mobile number. Contact support if this is an error.')
         );
       } else {
         setMobileDuplicateWarning(null);
@@ -314,15 +328,15 @@ export function PartnerRegisterPage() {
     }
 
     if (step === 2) {
-      if (!form.address_line_1.trim()) errs.address_line_1 = 'Address is required.';
-      if (!form.state.trim()) errs.state = 'State is required.';
-      if (!form.city.trim()) errs.city = 'City is required.';
-      if (!/^\d{6}$/.test(form.pincode.trim())) errs.pincode = 'Enter a valid 6-digit PIN code.';
+      if (!form.address_line_1.trim()) errs.address_line_1 = t('auth.addressRequired', 'Address is required.');
+      if (!form.state.trim()) errs.state = t('auth.stateRequired', 'State is required.');
+      if (!form.city.trim()) errs.city = t('auth.cityRequired', 'City is required.');
+      if (!/^\d{6}$/.test(form.pincode.trim())) errs.pincode = t('auth.validPincode', 'Enter a valid 6-digit PIN code.');
     }
 
     if (step === 3) {
       if (form.preferred_property_types.length === 0) {
-        errs.preferred_property_types = 'Select at least one property type.';
+        errs.preferred_property_types = t('auth.selectPropertyType', 'Select at least one property type.');
       }
     }
 
@@ -360,7 +374,7 @@ export function PartnerRegisterPage() {
   const submit = async () => {
     if (submittingRef.current) return;
     if (!form.agree_privacy || !form.agree_terms || !form.agree_verification) {
-      setServerError('Please accept all three consent checkboxes before submitting.');
+      setServerError(t('auth.acceptAllConsent', 'Please accept all three consent checkboxes before submitting.'));
       return;
     }
 
@@ -379,14 +393,14 @@ export function PartnerRegisterPage() {
     });
     if (Object.keys(finalErrs).length > 0) {
       setServerError(
-        'Some fields in your Partner Details are invalid. Please go back to Step 1 and correct them before submitting.'
+        t('auth.invalidPartnerDetailsFields', 'Some fields in your Partner Details are invalid. Please go back to Step 1 and correct them before submitting.')
       );
       return;
     }
 
     const mobile = normalizeIndianMobile(form.mobile_number);
     if (!mobile) {
-      setServerError('Enter a valid 10-digit mobile number.');
+      setServerError(t('auth.validMobile10', 'Enter a valid 10-digit mobile number.'));
       return;
     }
 
@@ -403,7 +417,7 @@ export function PartnerRegisterPage() {
         .limit(1);
       if (dupCheck && dupCheck.length > 0) {
         throw new Error(
-          'A partner application already exists for this mobile number. Please contact support if this is an error.'
+          t('auth.mobileDuplicateError', 'A partner application already exists for this mobile number. Please contact support if this is an error.')
         );
       }
 
@@ -481,25 +495,25 @@ export function PartnerRegisterPage() {
           <div className="h-24 w-24 mx-auto rounded-full bg-gold-500/20 flex items-center justify-center mb-6">
             <CheckCircle2 className="h-12 w-12 text-gold-600" />
           </div>
-          <h1 className="font-display text-3xl font-bold text-navy-900">Application Submitted Successfully</h1>
-          <p className="mt-3 text-navy-600">Thank you for partnering with RealtyNow, {form.full_name}.</p>
+          <h1 className="font-display text-3xl font-bold text-navy-900">{t('auth.applicationSubmittedSuccessfully', 'Application Submitted Successfully')}</h1>
+          <p className="mt-3 text-navy-600">{t('auth.thankYouForPartnering', 'Thank you for partnering with RealtyNow, {{name}}.').replace('{{name}}', form.full_name)}</p>
           {applicationNumber && (
             <div className="mt-4 inline-block rounded-xl border border-navy-200 bg-navy-50/50 px-4 py-2">
-              <p className="text-xs text-navy-500">Application ID</p>
+              <p className="text-xs text-navy-500">{t('auth.applicationIdLabel', 'Application ID')}</p>
               <p className="font-mono font-semibold text-navy-900">{applicationNumber}</p>
             </div>
           )}
           <div className="mt-6 rounded-xl border border-navy-200 bg-navy-50/50 p-4 text-sm text-navy-500 space-y-2">
             <p className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-gold-600" /> Our team will review your application
+              <Clock className="h-4 w-4 text-gold-600" /> {t('auth.teamWillReview', 'Our team will review your application')}
             </p>
             <p className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-gold-600" /> You'll be able to sign in via OTP once approved
+              <ShieldCheck className="h-4 w-4 text-gold-600" /> {t('auth.signInViaOtpOnceApproved', "You'll be able to sign in via OTP once approved")}
             </p>
           </div>
           <Link to="/" className="mt-8 inline-block">
             <Button variant="primary" size="lg">
-              Back to Home
+              {t('auth.backToHome', 'Back to Home')}
             </Button>
           </Link>
         </motion.div>
@@ -524,28 +538,28 @@ export function PartnerRegisterPage() {
         <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 border-r border-navy-800 p-10 relative overflow-hidden z-10">
           <LogoLight to="/" size={220} />
           <div>
-            <h2 className="font-display text-3xl font-bold text-white leading-tight">Partner with RealtyNow</h2>
+            <h2 className="font-display text-3xl font-bold text-white leading-tight">{t('auth.partnerWithRealtyNow', 'Partner with RealtyNow')}</h2>
             <p className="mt-3 text-navy-200 text-sm leading-relaxed">
-              Grow your business with RealtyNow. Join our partner network and unlock new real-estate business opportunities.
+              {t('auth.partnerGrowBusiness', 'Grow your business with RealtyNow. Join our partner network and unlock new real-estate business opportunities.')}
             </p>
             <ul className="mt-8 space-y-4">
               {[
-                { icon: Handshake, text: 'Access a trusted partner network' },
-                { icon: Star, text: 'New business opportunities' },
-                { icon: ShieldCheck, text: 'Verified partner badge' },
-                { icon: Clock, text: 'Dedicated partner support' },
-              ].map(({ icon: Icon, text }) => (
+                { icon: Handshake, key: 'auth.featAccessNetwork', text: 'Access a trusted partner network' },
+                { icon: Star, key: 'auth.featNewOpportunities', text: 'New business opportunities' },
+                { icon: ShieldCheck, key: 'auth.featVerifiedBadge', text: 'Verified partner badge' },
+                { icon: Clock, key: 'auth.featDedicatedSupport', text: 'Dedicated partner support' },
+              ].map(({ icon: Icon, key, text }) => (
                 <li key={text} className="flex items-center gap-3 text-sm text-navy-200">
                   <div className="flex-shrink-0 h-8 w-8 rounded-lg bg-gold-400/20 grid place-items-center">
                     <Icon className="h-4 w-4 text-gold-400" />
                   </div>
-                  {text}
+                  {t(key, text)}
                 </li>
               ))}
             </ul>
           </div>
           <div className="space-y-2">
-            <p className="text-xs text-navy-400 uppercase tracking-wide font-semibold">Application progress</p>
+            <p className="text-xs text-navy-400 uppercase tracking-wide font-semibold">{t('auth.applicationProgress', 'Application progress')}</p>
             {STEPS.map((s) => (
               <button
                 key={s.id}
@@ -559,10 +573,10 @@ export function PartnerRegisterPage() {
                       : 'text-navy-500 cursor-not-allowed opacity-60'
                 }`}
                 aria-current={step === s.id ? 'step' : undefined}
-                title={step < s.id ? 'Complete the current step to continue' : undefined}
+                title={step < s.id ? t('auth.completeCurrentStep', 'Complete the current step to continue') : undefined}
               >
                 <s.icon className="h-4 w-4 flex-shrink-0" />
-                <span className="text-sm">{s.label}</span>
+                <span className="text-sm">{t(s.labelKey, s.label)}</span>
                 {step > s.id && <CheckCircle2 className="h-3.5 w-3.5 ml-auto" />}
               </button>
             ))}
@@ -597,14 +611,14 @@ export function PartnerRegisterPage() {
                 {/* ══ Step 1 — Partner Details ════════════════════════════════════ */}
                 {step === 1 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-navy-900">Partner Details</h1>
-                    <p className="mt-1 text-sm text-navy-500">Tell us who you are and how to reach you</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">{t('auth.partnerDetailsHeading', 'Partner Details')}</h1>
+                    <p className="mt-1 text-sm text-navy-500">{t('auth.partnerDetailsSubtitle', 'Tell us who you are and how to reach you')}</p>
                     <div className="mt-6 space-y-4">
 
                       {/* Partner Type */}
                       <div>
                         <label className={labelClass} htmlFor="partner_type">
-                          Partner Type <span className="text-red-500">*</span>
+                          {t('auth.partnerTypeLabel', 'Partner Type')} <span className="text-red-500">*</span>
                         </label>
                         <select
                           id="partner_type"
@@ -617,7 +631,7 @@ export function PartnerRegisterPage() {
                           className={inputClass(!!errors.partner_type)}
                           aria-describedby={errors.partner_type ? 'partner_type-error' : undefined}
                         >
-                          <option value="">Select partner type…</option>
+                          <option value="">{t('auth.selectPartnerType', 'Select partner type…')}</option>
                           {PARTNER_TYPES.map((p) => (
                             <option key={p} value={p}>{p}</option>
                           ))}
@@ -629,7 +643,7 @@ export function PartnerRegisterPage() {
                       <div>
                         <label className={labelClass} htmlFor="full_name">
                           <User className="inline h-3.5 w-3.5 mr-1" />
-                          Full Name <span className="text-red-500">*</span>
+                          {t('auth.fullNameLabel', 'Full Name')} <span className="text-red-500">*</span>
                         </label>
                         <input
                           id="full_name"
@@ -640,7 +654,7 @@ export function PartnerRegisterPage() {
                             clearError('full_name');
                           }}
                           className={inputClass(!!errors.full_name)}
-                          placeholder="Arjun Sharma"
+                          placeholder={t('auth.fullNamePlaceholder', 'Arjun Sharma')}
                           maxLength={100}
                           aria-required="true"
                           aria-describedby={errors.full_name ? 'full_name-error' : undefined}
@@ -652,7 +666,7 @@ export function PartnerRegisterPage() {
                       <div>
                         <label className={labelClass} htmlFor="mobile_number">
                           <Phone className="inline h-3.5 w-3.5 mr-1" />
-                          Mobile Number <span className="text-red-500">*</span>
+                          {t('auth.mobileNumberLabel', 'Mobile Number')} <span className="text-red-500">*</span>
                         </label>
                         <div className="flex gap-2">
                           <span className="flex-shrink-0 rounded-lg border border-navy-200 bg-navy-50 px-3 py-2.5 text-sm text-navy-600 select-none">
@@ -696,7 +710,7 @@ export function PartnerRegisterPage() {
                       <div>
                         <label className={labelClass} htmlFor="email">
                           <Mail className="inline h-3.5 w-3.5 mr-1" />
-                          Email Address <span className="text-red-500">*</span>
+                          {t('auth.emailAddressLabel', 'Email Address')} <span className="text-red-500">*</span>
                         </label>
                         <input
                           id="email"
@@ -708,7 +722,7 @@ export function PartnerRegisterPage() {
                             clearError('email');
                           }}
                           className={inputClass(!!errors.email)}
-                          placeholder="partner@example.com"
+                          placeholder={t('auth.emailPlaceholder', 'partner@example.com')}
                           maxLength={254}
                           aria-describedby={errors.email ? 'email-error' : undefined}
                         />
@@ -719,7 +733,7 @@ export function PartnerRegisterPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className={labelClass} htmlFor="company_name">
-                            Business / Company Name <span className="text-red-500">*</span>
+                            {t('auth.companyNameLabel', 'Business / Company Name')} <span className="text-red-500">*</span>
                           </label>
                           <input
                             id="company_name"
@@ -730,7 +744,7 @@ export function PartnerRegisterPage() {
                               clearError('company_name');
                             }}
                             className={inputClass(!!errors.company_name)}
-                            placeholder="Your business or company name"
+                            placeholder={t('auth.companyNamePlaceholder', 'Your business or company name')}
                             maxLength={150}
                             aria-required="true"
                           />
@@ -738,7 +752,7 @@ export function PartnerRegisterPage() {
                         </div>
                         <div>
                           <label className={labelClass} htmlFor="years_of_experience">
-                            Years of Experience <span className="text-red-500">*</span>
+                            {t('auth.yearsOfExperienceLabel', 'Years of Experience')} <span className="text-red-500">*</span>
                           </label>
                           <input
                             id="years_of_experience"
@@ -763,7 +777,7 @@ export function PartnerRegisterPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className={labelClass} htmlFor="gst_number">
-                            GST Number <span className="text-red-500">*</span>
+                            {t('auth.gstNumberLabel', 'GST Number')} <span className="text-red-500">*</span>
                           </label>
                           <input
                             id="gst_number"
@@ -782,7 +796,7 @@ export function PartnerRegisterPage() {
                         </div>
                         <div>
                           <label className={labelClass} htmlFor="pan_number">
-                            PAN Number <span className="text-red-500">*</span>
+                            {t('auth.panNumberLabel', 'PAN Number')} <span className="text-red-500">*</span>
                           </label>
                           <input
                             id="pan_number"
@@ -804,7 +818,7 @@ export function PartnerRegisterPage() {
                       {/* Website */}
                       <div>
                         <label className={labelClass} htmlFor="website">
-                          Website <span className="text-red-500">*</span>
+                          {t('auth.websiteLabel', 'Website')} <span className="text-red-500">*</span>
                         </label>
                         <input
                           id="website"
@@ -834,11 +848,11 @@ export function PartnerRegisterPage() {
                 {/* ══ Step 2 — Address ════════════════════════════════════════════ */}
                 {step === 2 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-navy-900">Address Details</h1>
-                    <p className="mt-1 text-sm text-navy-500">Where are you based?</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">{t('auth.addressDetailsHeading', 'Address Details')}</h1>
+                    <p className="mt-1 text-sm text-navy-500">{t('auth.whereAreYouBased', 'Where are you based?')}</p>
                     <div className="mt-6 space-y-4">
                       <div>
-                        <label className={labelClass}>Address Line 1 <span className="text-red-500">*</span></label>
+                        <label className={labelClass}>{t('auth.addressLine1Label', 'Address Line 1')} <span className="text-red-500">*</span></label>
                         <input
                           value={form.address_line_1}
                           onChange={(e) => { set('address_line_1', e.target.value); clearError('address_line_1'); }}
@@ -847,7 +861,7 @@ export function PartnerRegisterPage() {
                         <FieldError message={errors.address_line_1} />
                       </div>
                       <div>
-                        <label className={labelClass}>Address Line 2</label>
+                        <label className={labelClass}>{t('auth.addressLine2Label', 'Address Line 2')}</label>
                         <input
                           value={form.address_line_2}
                           onChange={(e) => set('address_line_2', e.target.value)}
@@ -856,7 +870,7 @@ export function PartnerRegisterPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className={labelClass}>State <span className="text-red-500">*</span></label>
+                          <label className={labelClass}>{t('auth.stateLabel', 'State')} <span className="text-red-500">*</span></label>
                           <input
                             value={form.state}
                             onChange={(e) => { set('state', e.target.value); clearError('state'); }}
@@ -865,7 +879,7 @@ export function PartnerRegisterPage() {
                           <FieldError message={errors.state} />
                         </div>
                         <div>
-                          <label className={labelClass}>City <span className="text-red-500">*</span></label>
+                          <label className={labelClass}>{t('auth.cityLabel', 'City')} <span className="text-red-500">*</span></label>
                           <input
                             value={form.city}
                             onChange={(e) => { set('city', e.target.value); clearError('city'); }}
@@ -876,7 +890,7 @@ export function PartnerRegisterPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className={labelClass}>District</label>
+                          <label className={labelClass}>{t('auth.districtLabel', 'District')}</label>
                           <input
                             value={form.district}
                             onChange={(e) => set('district', e.target.value)}
@@ -884,7 +898,7 @@ export function PartnerRegisterPage() {
                           />
                         </div>
                         <div>
-                          <label className={labelClass}>Pincode <span className="text-red-500">*</span></label>
+                          <label className={labelClass}>{t('auth.pincodeLabel', 'Pincode')} <span className="text-red-500">*</span></label>
                           <input
                             value={form.pincode}
                             onChange={(e) => {
@@ -904,12 +918,12 @@ export function PartnerRegisterPage() {
                 {/* ══ Step 3 — Professional Details ══════════════════════════════ */}
                 {step === 3 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-navy-900">Professional Details</h1>
-                    <p className="mt-1 text-sm text-navy-500">Help us understand your business</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">{t('auth.professionalDetailsHeading', 'Professional Details')}</h1>
+                    <p className="mt-1 text-sm text-navy-500">{t('auth.professionalDetailsSubtitle', 'Help us understand your business')}</p>
                     <div className="mt-6 space-y-4">
                       <div>
                         <label className={labelClass}>
-                          Preferred Property Types <span className="text-red-500">*</span>
+                          {t('auth.preferredPropertyTypesLabel', 'Preferred Property Types')} <span className="text-red-500">*</span>
                         </label>
                         <div className="flex flex-wrap gap-2">
                           {PROPERTY_TYPES.map((type) => {
@@ -924,7 +938,7 @@ export function PartnerRegisterPage() {
                                 }}
                                 className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${active ? 'border-gold-500 bg-gold-500/10 text-gold-700' : 'border-navy-200 bg-white text-navy-600 hover:border-gold-300'}`}
                               >
-                                {type}
+                                {t(PROPERTY_TYPE_KEYS[type], type)}
                               </button>
                             );
                           })}
@@ -934,7 +948,7 @@ export function PartnerRegisterPage() {
                       <div>
                         <label className={labelClass}>
                           <MapPin className="inline h-3.5 w-3.5 mr-1" />
-                          Preferred Locations (comma separated)
+                          {t('auth.preferredLocationsLabel', 'Preferred Locations (comma separated)')}
                         </label>
                         <input
                           value={form.preferred_locations}
@@ -944,17 +958,17 @@ export function PartnerRegisterPage() {
                         />
                       </div>
                       <div>
-                        <label className={labelClass}>Area of Expertise</label>
+                        <label className={labelClass}>{t('auth.areaOfExpertiseLabel', 'Area of Expertise')}</label>
                         <input
                           value={form.area_of_expertise}
                           onChange={(e) => set('area_of_expertise', e.target.value)}
                           className={inputClass(false)}
-                          placeholder="e.g. Residential resale, NRI clients"
+                          placeholder={t('auth.areaOfExpertisePlaceholder', 'e.g. Residential resale, NRI clients')}
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className={labelClass}>Expected Monthly Leads</label>
+                          <label className={labelClass}>{t('auth.expectedMonthlyLeadsLabel', 'Expected Monthly Leads')}</label>
                           <input
                             type="number"
                             min="0"
@@ -964,17 +978,17 @@ export function PartnerRegisterPage() {
                           />
                         </div>
                         <div>
-                          <label className={labelClass}>Current Business Volume</label>
+                          <label className={labelClass}>{t('auth.currentBusinessVolumeLabel', 'Current Business Volume')}</label>
                           <input
                             value={form.current_business_volume}
                             onChange={(e) => set('current_business_volume', e.target.value)}
                             className={inputClass(false)}
-                            placeholder="e.g. 10-20 deals/yr"
+                            placeholder={t('auth.currentBusinessVolumePlaceholder', 'e.g. 10-20 deals/yr')}
                           />
                         </div>
                       </div>
                       <div>
-                        <label className={labelClass}>Existing Real Estate Experience</label>
+                        <label className={labelClass}>{t('auth.existingRealEstateExperienceLabel', 'Existing Real Estate Experience')}</label>
                         <textarea
                           rows={2}
                           value={form.real_estate_experience}
@@ -983,13 +997,13 @@ export function PartnerRegisterPage() {
                         />
                       </div>
                       <div>
-                        <label className={labelClass}>Tell us about yourself / your business</label>
+                        <label className={labelClass}>{t('auth.tellUsAboutYourselfLabel', 'Tell us about yourself / your business')}</label>
                         <textarea
                           rows={3}
                           value={form.description}
                           onChange={(e) => set('description', e.target.value)}
                           className={`${inputClass(false)} resize-none`}
-                          placeholder="Tell RealtyNow about your experience, business, network, locations and how you would like to partner with us."
+                          placeholder={t('auth.tellUsAboutYourselfPlaceholder', 'Tell RealtyNow about your experience, business, network, locations and how you would like to partner with us.')}
                         />
                       </div>
                     </div>
@@ -999,18 +1013,18 @@ export function PartnerRegisterPage() {
                 {/* ══ Step 4 — Documents ══════════════════════════════════════════ */}
                 {step === 4 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-navy-900">Upload Documents</h1>
-                    <p className="mt-1 text-sm text-navy-500">Help us verify your identity and business (optional but recommended)</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">{t('auth.uploadDocumentsHeading', 'Upload Documents')}</h1>
+                    <p className="mt-1 text-sm text-navy-500">{t('auth.uploadDocumentsSubtitle', 'Help us verify your identity and business (optional but recommended)')}</p>
                     <div className="mt-6 space-y-5">
-                      <FileUploadArea label="PAN Card" hint="JPG, PNG or PDF — max 10MB" file={form.pan_doc} onChange={(f) => set('pan_doc', f)} />
-                      <FileUploadArea label="Aadhaar / Government ID" hint="JPG, PNG or PDF — max 10MB" file={form.id_doc} onChange={(f) => set('id_doc', f)} />
-                      <FileUploadArea label="GST Certificate" hint="JPG, PNG or PDF — max 10MB" file={form.gst_doc} onChange={(f) => set('gst_doc', f)} />
-                      <FileUploadArea label="Business Registration Certificate" hint="JPG, PNG or PDF — max 10MB" file={form.business_reg_doc} onChange={(f) => set('business_reg_doc', f)} />
-                      <FileUploadArea label="Address Proof" hint="JPG, PNG or PDF — max 10MB" file={form.address_proof_doc} onChange={(f) => set('address_proof_doc', f)} />
+                      <FileUploadArea label={t('auth.docPanCard', 'PAN Card')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.pan_doc} onChange={(f) => set('pan_doc', f)} />
+                      <FileUploadArea label={t('auth.docAadhaar', 'Aadhaar / Government ID')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.id_doc} onChange={(f) => set('id_doc', f)} />
+                      <FileUploadArea label={t('auth.docGstCertificate', 'GST Certificate')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.gst_doc} onChange={(f) => set('gst_doc', f)} />
+                      <FileUploadArea label={t('auth.docBusinessRegCertificate', 'Business Registration Certificate')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.business_reg_doc} onChange={(f) => set('business_reg_doc', f)} />
+                      <FileUploadArea label={t('auth.docAddressProof', 'Address Proof')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.address_proof_doc} onChange={(f) => set('address_proof_doc', f)} />
                       <div className="rounded-xl border border-gold-200 bg-gold-500/5 p-4 text-xs text-navy-500">
                         <ShieldCheck className="h-4 w-4 text-gold-600 mb-2" />
-                        <p className="font-semibold text-navy-900">Your documents are safe</p>
-                        <p className="mt-1">All documents are encrypted and only reviewed by our verified team.</p>
+                        <p className="font-semibold text-navy-900">{t('auth.documentsSafeTitle', 'Your documents are safe')}</p>
+                        <p className="mt-1">{t('auth.documentsSafeDesc', 'All documents are encrypted and only reviewed by our verified team.')}</p>
                       </div>
                     </div>
                   </div>
@@ -1019,20 +1033,20 @@ export function PartnerRegisterPage() {
                 {/* ══ Step 5 — Review & Submit ════════════════════════════════════ */}
                 {step === 5 && (
                   <div>
-                    <h1 className="font-display text-2xl font-bold text-navy-900">Review & Submit</h1>
-                    <p className="mt-1 text-sm text-navy-500">Please check your details before submitting</p>
+                    <h1 className="font-display text-2xl font-bold text-navy-900">{t('auth.reviewSubmitHeading', 'Review & Submit')}</h1>
+                    <p className="mt-1 text-sm text-navy-500">{t('auth.reviewSubmitSubtitle', 'Please check your details before submitting')}</p>
                     <div className="mt-6 space-y-3">
                       {[
-                        { label: 'Partner Type', value: form.partner_type || '—' },
-                        { label: 'Name', value: form.full_name },
-                        { label: 'Mobile', value: form.mobile_number ? `+91 ${form.mobile_number}` : '—' },
-                        { label: 'Email', value: form.email || '—' },
-                        { label: 'Company', value: form.company_name || '—' },
-                        { label: 'GST Number', value: form.gst_number || '—' },
-                        { label: 'PAN Number', value: form.pan_number || '—' },
-                        { label: 'Website', value: form.website || '—' },
-                        { label: 'City / State', value: `${form.city}, ${form.state}` },
-                        { label: 'Property Types', value: form.preferred_property_types.join(', ') || '—' },
+                        { label: t('auth.partnerTypeLabel', 'Partner Type'), value: form.partner_type || '—' },
+                        { label: t('auth.reviewNameLabel', 'Name'), value: form.full_name },
+                        { label: t('auth.reviewMobileLabel', 'Mobile'), value: form.mobile_number ? `+91 ${form.mobile_number}` : '—' },
+                        { label: t('auth.email', 'Email'), value: form.email || '—' },
+                        { label: t('auth.reviewCompanyLabel', 'Company'), value: form.company_name || '—' },
+                        { label: t('auth.gstNumberLabel', 'GST Number'), value: form.gst_number || '—' },
+                        { label: t('auth.panNumberLabel', 'PAN Number'), value: form.pan_number || '—' },
+                        { label: t('auth.websiteLabel', 'Website'), value: form.website || '—' },
+                        { label: t('auth.reviewCityStateLabel', 'City / State'), value: `${form.city}, ${form.state}` },
+                        { label: t('auth.reviewPropertyTypesLabel', 'Property Types'), value: form.preferred_property_types.join(', ') || '—' },
                       ].map(({ label, value }) => (
                         <div key={label} className="flex justify-between items-start gap-4 rounded-lg border border-navy-200 bg-navy-50/50 px-4 py-2.5">
                           <span className="text-xs text-navy-500 flex-shrink-0 w-32">{label}</span>
@@ -1044,17 +1058,17 @@ export function PartnerRegisterPage() {
                     <div className="mt-5 space-y-2.5">
                       <label className="flex items-start gap-2.5 text-xs text-navy-600 cursor-pointer">
                         <input type="checkbox" checked={form.agree_privacy} onChange={(e) => set('agree_privacy', e.target.checked)} className="mt-0.5" />
-                        I agree to the{' '}
-                        <Link to="/privacy" className="text-gold-600 hover:underline">Privacy Policy</Link>
+                        {t('auth.iAgreeToThe', 'I agree to the')}{' '}
+                        <Link to="/privacy" className="text-gold-600 hover:underline">{t('auth.privacyPolicyLink', 'Privacy Policy')}</Link>
                       </label>
                       <label className="flex items-start gap-2.5 text-xs text-navy-600 cursor-pointer">
                         <input type="checkbox" checked={form.agree_terms} onChange={(e) => set('agree_terms', e.target.checked)} className="mt-0.5" />
-                        I agree to the{' '}
-                        <Link to="/terms" className="text-gold-600 hover:underline">Partner Terms & Conditions</Link>
+                        {t('auth.iAgreeToThe', 'I agree to the')}{' '}
+                        <Link to="/terms" className="text-gold-600 hover:underline">{t('auth.partnerTermsLink', 'Partner Terms & Conditions')}</Link>
                       </label>
                       <label className="flex items-start gap-2.5 text-xs text-navy-600 cursor-pointer">
                         <input type="checkbox" checked={form.agree_verification} onChange={(e) => set('agree_verification', e.target.checked)} className="mt-0.5" />
-                        I authorize RealtyNow to verify the information provided
+                        {t('auth.authorizeVerification', 'I authorize RealtyNow to verify the information provided')}
                       </label>
                     </div>
 
@@ -1073,17 +1087,17 @@ export function PartnerRegisterPage() {
             <div className="mt-8 flex items-center justify-between gap-3">
               {step > 1 ? (
                 <button onClick={prev} className="flex items-center gap-2 text-sm text-navy-500 hover:text-navy-900 transition-colors">
-                  <ArrowLeft className="h-4 w-4" /> Back
+                  <ArrowLeft className="h-4 w-4" /> {t('auth.back', 'Back')}
                 </button>
               ) : (
                 <Link to="/login" className="text-sm text-navy-500 hover:text-navy-900 transition-colors">
-                  Already a Partner?
+                  {t('auth.alreadyAPartner', 'Already a Partner?')}
                 </Link>
               )}
 
               {step < 5 ? (
                 <Button variant="primary" size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={next}>
-                  Continue
+                  {t('auth.continueBtn', 'Continue')}
                 </Button>
               ) : (
                 <Button
@@ -1094,7 +1108,7 @@ export function PartnerRegisterPage() {
                   icon={<CheckCircle2 className="h-4 w-4" />}
                   onClick={submit}
                 >
-                  Submit Partner Application
+                  {t('auth.submitPartnerApplication', 'Submit Partner Application')}
                 </Button>
               )}
             </div>

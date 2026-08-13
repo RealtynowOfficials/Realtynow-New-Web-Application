@@ -54,7 +54,7 @@ export function useGooglePlaces() {
         return;
       }
 
-      window.initGoogleMaps = () => {
+      (window as any).initGoogleMaps = () => {
         isScriptLoaded = true;
         isScriptLoading = false;
         setIsReady(true);
@@ -158,7 +158,7 @@ export function useGooglePlaces() {
         if (!locality) locality = city;
         if (!district) district = city;
 
-        const location_name = result.name || result.address_components[0]?.long_name || result.formatted_address.split(',')[0];
+        const location_name = (result as any).name || result.address_components[0]?.long_name || result.formatted_address.split(',')[0];
 
         const details: GooglePlaceDetails = {
           location_name,

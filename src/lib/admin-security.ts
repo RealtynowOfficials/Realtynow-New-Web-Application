@@ -1,5 +1,49 @@
 import { supabase } from './supabase';
 
+export type AdminRole = 'super_admin' | 'admin' | 'moderator' | 'support';
+
+// Role-Based Permissions Matrix — pure lookup data, no auth logic. Fine-grained
+// tier comes from the `admins` table (see AdminMe.admin.role); coarse "is this
+// person allowed in the admin portal at all" is `profiles.role`, enforced by
+// AdminProtectedRoute + is_admin() at the RLS layer.
+export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
+  super_admin: [
+    'full_access',
+    'manage_admins',
+    'system_settings',
+    'approve_properties',
+    'manage_users',
+    'leads',
+    'reports',
+    'verify_properties',
+    'reviews',
+    'notifications',
+    'customer_support',
+    'tickets',
+  ],
+  admin: [
+    'full_access',
+    'manage_admins',
+    'system_settings',
+    'approve_properties',
+    'manage_users',
+    'leads',
+    'reports',
+    'verify_properties',
+    'reviews',
+    'notifications',
+    'customer_support',
+    'tickets',
+  ],
+  moderator: ['verify_properties', 'reviews', 'notifications'],
+  support: ['customer_support', 'leads', 'tickets'],
+};
+
+export function hasPermission(role: AdminRole, permission: string): boolean {
+  const perms = ROLE_PERMISSIONS[role] || [];
+  return perms.includes('full_access') || perms.includes(permission);
+}
+
 export interface AdminSecurityStatus {
   hasSecretCode: boolean;
   locked: boolean;
@@ -28,6 +72,27 @@ export interface AdminLoginLog {
   created_at: string;
 }
 
+// Pre-OTP gate for the Admin Portal login step — asks the server (not a
+// hardcoded React constant) whether a mobile number belongs to an active
+// admin/super_admin, BEFORE an OTP is requested from MSG91, so no SMS is
+// spent on a number that could never pass. This is a UX optimization only:
+// the `verify` action in otp-auth is what actually enforces role server-side
+// regardless of what this check returns, so a false positive here can't
+// grant access — it would just let OTP send proceed for a number that fails
+// verification anyway.
+export async function checkAdminMobile(mobile: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.functions.invoke('otp-auth', {
+      body: { mobile },
+      headers: { 'x-action': 'check-admin-mobile' },
+    });
+    if (error) return false;
+    return !!data?.authorized;
+  } catch {
+    return false;
+  }
+}
+
 async function call<T = Record<string, unknown>>(action: string, body: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await supabase.functions.invoke('admin-security', { body, headers: { 'x-action': action } });
   if (error) {
@@ -46,6 +111,13 @@ async function call<T = Record<string, unknown>>(action: string, body: Record<st
   if (data?.success === false && data?.error) throw new Error(data.error);
   return data as T;
 }
+
+export interface AdminMe {
+  admin: { id: string; mobile: string; role: 'admin' | 'super_admin'; status: 'active' | 'suspended' };
+  profile: { first_name: string | null; last_name: string | null; email: string | null; phone: string | null };
+}
+
+export const getAdminMe = () => call<{ success: true } & AdminMe>('get-me');
 
 export const getAdminSecurityStatus = () => call<{ success: true } & AdminSecurityStatus>('get-status');
 

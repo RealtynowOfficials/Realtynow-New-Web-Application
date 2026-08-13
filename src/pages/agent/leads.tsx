@@ -1,40 +1,22 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AgentKanbanBoard } from '../../components/agent/AgentKanbanBoard';
-import { AgentAnalyticsDashboard } from '../../components/agent/AgentAnalyticsDashboard';
-import { AiLeadAssistant } from '../../components/agent/AiLeadAssistant';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
   Building2,
-  MessageSquare,
-  Eye,
-  Calendar,
   Phone,
   Mail,
-  TrendingUp,
-  CheckCircle2,
-  XCircle,
-  ClipboardList,
-  Star,
-  DollarSign,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { DashboardLayout, StatCard, PageHeader } from '../../components/dashboard-layout';
+import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAgentSections } from '../portal/sections';
-import { Card, Skeleton, Badge, Button, EmptyState, Modal, Input, Textarea, Select, Avatar } from '../../components/ui';
-import { StatusBadge } from '../../components/property-card';
+import { Card, Badge, Select } from '../../components/ui';
 import { DataTable, type Column } from '../../components/data-table';
-import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate, formatNumber , generatePropertyUrl} from '../../lib/utils';
+import { formatDate,  generatePropertyUrl} from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
-import { RemindersWidget } from '../../components/reminders-widget';
-import type { Property } from '../../lib/types';
-import { ExportMenu } from '../../components/export-menu';
-import { SavedFiltersMenu } from '../../components/saved-filters-menu';
-import { useSavedFilters } from '../../lib/saved-filters';
 
 const AGENT_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -67,14 +49,19 @@ export function AgentLeads() {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'all');
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
   const realtimeTick = useRealtimeCount('enquiries', { column: 'agent_id', value: user?.id ?? '' });
+  // CRM-driven assignment (fn_assign_lead) writes assigned_to, while the direct
+  // per-property enquiry path writes agent_id — a lead can arrive via either, so
+  // this page (and its realtime tick above) must watch both columns or a CRM-assigned
+  // lead never appears in the agent's inbox.
+  const realtimeTickAssigned = useRealtimeCount('enquiries', { column: 'assigned_to', value: user?.id ?? '' });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-leads', user?.id, realtimeTick],
+    queryKey: ['agent-leads', user?.id, realtimeTick, realtimeTickAssigned],
     queryFn: async () => {
       const { data } = await supabase
         .from('enquiries')
         .select('*, property:properties(title, id)')
-        .eq('agent_id', user!.id)
+        .or(`agent_id.eq.${user!.id},assigned_to.eq.${user!.id}`)
         .order('created_at', { ascending: false });
       return (data ?? []).map((e) => ({ ...e, property: Array.isArray(e.property) ? e.property[0] : e.property }));
     },

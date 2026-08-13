@@ -16,7 +16,7 @@ import { formatPrice, formatDate, cn, generatePropertyUrl } from '../../lib/util
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
 import type { Property, AiVerification } from '../../lib/types';
-import { ExportMenu, ExportMenuAsync } from '../../components/export-menu';
+import { ExportMenuAsync } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
 
@@ -211,6 +211,8 @@ export function AdminApprovals() {
       }
 
       // Sorted properties
+      // Sorted properties
+      const nonPublished = ['pending_approval', 'draft', 'rejected', 'archived', 'in_review'];
       const properties = (allProps ?? [])
         .filter((p: any) => nonPublished.includes(p.status))
         .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -1494,7 +1496,7 @@ export function AdminProperties() {
                 });
               }}
             />
-            <ExportMenuAsync filename="admin-properties" columns={ADMIN_PROPERTIES_EXPORT_COLUMNS} fetchRows={fetchAllForExport} />
+            <ExportMenuAsync filename="admin-properties" columns={ADMIN_PROPERTIES_EXPORT_COLUMNS} fetchRows={async () => (await fetchAllForExport()) as unknown as Record<string, unknown>[]} />
           </div>
         }
       />
@@ -1837,7 +1839,7 @@ export function AdminProperties() {
         )}
       </Modal>
 
-      <Modal title="Set as Hero Campaign" isOpen={!!heroProperty} onClose={() => setHeroProperty(null)}>
+      <Modal title="Set as Hero Campaign" open={!!heroProperty} onClose={() => setHeroProperty(null)}>
         <div className="space-y-4 py-4">
           <Input
             label="Campaign Heading"

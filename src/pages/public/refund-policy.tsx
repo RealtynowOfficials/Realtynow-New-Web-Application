@@ -2,16 +2,10 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   RotateCcw,
-  ShieldCheck,
   CheckCircle2,
-  AlertCircle,
   Calendar,
-  CreditCard,
   ChevronRight,
   Mail,
-  Phone,
-  HelpCircle,
-  FileText,
   Clock,
 } from 'lucide-react';
 import { useLanguageContext } from '../../lib/i18n/language-context';

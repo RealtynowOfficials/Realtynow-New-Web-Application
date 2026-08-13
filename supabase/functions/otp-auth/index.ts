@@ -285,6 +285,30 @@ serve(async (req) => {
     });
   }
 
+  // ─── ACTION: check-admin-mobile ────────────────────────────────
+  // Public. Body: { mobile }. Lets the Admin Portal login step reject an
+  // unauthorized number BEFORE an OTP is ever requested from MSG91 — real
+  // enforcement still happens in `verify` above (which resolves role from
+  // profiles regardless of what the client claims), this is purely a
+  // pre-send gate so no OTP/SMS is spent on a number that could never pass.
+  // Returns only a boolean — never the admin's name, phone, or any other
+  // identifying detail, so this can't be used to enumerate who the admin is.
+  if (action === "check-admin-mobile") {
+    const rawMobile = body.mobile as string | undefined;
+    const mobile = rawMobile ? normalizeIndianMobile(rawMobile) : null;
+    if (!mobile) return json({ authorized: false });
+
+    const { data: adminProfile } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("phone", mobile)
+      .in("role", ["admin", "super_admin"])
+      .eq("status", "active")
+      .maybeSingle();
+
+    return json({ authorized: !!adminProfile });
+  }
+
   // ─── ACTION: request-agent-access ──────────────────────────────
   // Public — called after a 'verify' with intent 'agent'/'builder' comes
   // back NOT_FOUND, using the same (already-verified) MSG91 access token.
@@ -339,28 +363,48 @@ serve(async (req) => {
   }
 
   // ─── ACTION: admin-provision ───────────────────────────────────
-  // Admin-only — pre-creates an agent/builder account by phone.
+  // Admin-only — pre-creates an agent/builder/admin account by phone.
+  // Exception: an unauthenticated call is allowed ONLY to provision the
+  // very first admin/super_admin account (zero profiles rows currently
+  // have that role) — a one-time, self-closing bootstrap so the admin
+  // portal isn't a chicken-and-egg problem. The instant one admin exists,
+  // this branch permanently stops firing and every future call requires a
+  // real authenticated admin caller.
   if (action === "admin-provision") {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return error("Authentication required", 401);
-
-    const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user: caller } } = await callerClient.auth.getUser();
-    if (!caller) return error("Authentication required", 401);
-
-    const { data: callerProfile } = await admin.from("profiles").select("role").eq("id", caller.id).maybeSingle();
-    if (callerProfile?.role !== "admin") return error("Admin access required", 403);
-
     const phoneRaw = body.phone as string | undefined;
     const role = body.role as string | undefined;
     const firstName = body.first_name as string | undefined;
     const lastName = body.last_name as string | undefined;
 
-    if (!phoneRaw || !role || !["agent", "builder"].includes(role)) {
-      return error("phone and role ('agent' | 'builder') are required");
+    if (!phoneRaw || !role || !["agent", "builder", "admin", "super_admin"].includes(role)) {
+      return error("phone and role ('agent' | 'builder' | 'admin' | 'super_admin') are required");
     }
+
+    const authHeader = req.headers.get("Authorization");
+    let callerId: string | null = null;
+
+    if (authHeader) {
+      const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user: caller } } = await callerClient.auth.getUser();
+      if (!caller) return error("Authentication required", 401);
+      const { data: callerProfile } = await admin.from("profiles").select("role").eq("id", caller.id).maybeSingle();
+      if (!["admin", "super_admin"].includes(callerProfile?.role ?? "")) return error("Admin access required", 403);
+      callerId = caller.id;
+    } else {
+      if (!["admin", "super_admin"].includes(role)) return error("Authentication required", 401);
+      // Only count admin/super_admin rows that could actually sign in (a real
+      // phone attached) — a stray/placeholder profile row with no phone can
+      // never complete OTP login, so it must not permanently block bootstrap.
+      const { count } = await admin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .in("role", ["admin", "super_admin"])
+        .not("phone", "is", null);
+      if ((count ?? 0) > 0) return error("Authentication required", 401);
+    }
+
     const mobile = normalizeIndianMobile(phoneRaw);
     if (!mobile) return error("Invalid mobile number");
 
@@ -380,17 +424,23 @@ serve(async (req) => {
     // handle_new_user() already inserted a default profile row; update it
     // with the role/name the admin specified (trigger defaults role to
     // 'customer' when raw_user_meta_data doesn't carry it through cleanly).
+    // Also explicitly set phone — handle_new_user() does not copy it from
+    // auth.users, so without this the profile would be unreachable by the
+    // `verify` action's phone lookup (which is exactly how this account is
+    // meant to log in).
     await admin
       .from("profiles")
-      .update({ role, first_name: firstName, last_name: lastName, status: "active" })
+      .update({ role, first_name: firstName, last_name: lastName, status: "active", phone: mobile })
       .eq("id", created.user.id);
 
     // If this mobile number had a pending self-serve request, close it out.
-    await admin
-      .from("agent_requests")
-      .update({ status: "approved", reviewed_by: caller.id, reviewed_at: new Date().toISOString() })
-      .eq("mobile", mobile)
-      .eq("status", "pending");
+    if (callerId) {
+      await admin
+        .from("agent_requests")
+        .update({ status: "approved", reviewed_by: callerId, reviewed_at: new Date().toISOString() })
+        .eq("mobile", mobile)
+        .eq("status", "pending");
+    }
 
     return json({ success: true, user_id: created.user.id });
   }

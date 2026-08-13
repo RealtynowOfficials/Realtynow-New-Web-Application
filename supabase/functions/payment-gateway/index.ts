@@ -119,8 +119,36 @@ serve(async (req) => {
     const { payment_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = body;
     if (!payment_id || !razorpay_payment_id) return error("payment_id and razorpay_payment_id required");
 
-    // Verify Razorpay signature
-    if (RAZORPAY_KEY_SECRET && razorpay_order_id && razorpay_signature) {
+    // Ownership + replay guard: the payment must belong to the caller, still
+    // be pending (fn_confirm_payment is not otherwise idempotent-safe against
+    // re-confirming an already-paid/refunded row), and — critically — the
+    // order id supplied here must match the one this edge function itself
+    // generated for THIS payment in create-order. Without this check, a
+    // validly-signed Razorpay response for a caller's OWN small/legitimate
+    // order could be replayed against a different (e.g. someone else's,
+    // larger) payment_id, since the HMAC signature only binds
+    // razorpay_order_id|razorpay_payment_id, not our internal payment_id.
+    const { data: paymentRow, error: fetchErr } = await supabase
+      .from("payments")
+      .select("id, user_id, status, gateway_order_id, amount")
+      .eq("id", payment_id)
+      .maybeSingle();
+    if (fetchErr || !paymentRow) return error("Payment not found", 404);
+    if (paymentRow.user_id !== userId) return error("Payment does not belong to this account", 403);
+    if (paymentRow.status !== "pending") return error("Payment is not in a confirmable state", 409);
+    if (razorpay_order_id && paymentRow.gateway_order_id && paymentRow.gateway_order_id !== razorpay_order_id) {
+      return error("Order mismatch — this signature does not correspond to this payment", 400);
+    }
+
+    // Verify Razorpay signature — mandatory whenever the gateway secret is
+    // configured (i.e. always in production). Previously this was skipped
+    // entirely whenever the caller simply omitted razorpay_order_id/
+    // razorpay_signature, letting anyone confirm any pending payment for
+    // free without ever touching Razorpay.
+    if (RAZORPAY_KEY_SECRET) {
+      if (!razorpay_order_id || !razorpay_signature) {
+        return error("razorpay_order_id and razorpay_signature are required", 400);
+      }
       const expectedSig = createHmac("sha256", RAZORPAY_KEY_SECRET)
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
         .digest("hex");

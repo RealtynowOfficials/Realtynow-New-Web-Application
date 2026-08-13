@@ -19,6 +19,8 @@ import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
 import { uploadProfilePhoto } from '../../lib/profile-photo';
 import { getFriendlyErrorMessage } from '../../lib/utils';
+import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
+import { ServiceUnavailable } from '../../components/service-unavailable';
 
 const STEPS = [
   { id: 1, label: 'Company Info', icon: Building2 },
@@ -177,6 +179,7 @@ function AvatarUploadArea({
 }
 
 export function BuilderRegisterPage() {
+  const { isActive: builderServiceActive, loading: builderServiceLoading } = useServiceStatus(SERVICE_KEYS.BUILDER);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormData>(INITIAL);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -274,6 +277,10 @@ export function BuilderRegisterPage() {
       setLoading(false);
     }
   };
+
+  if (!builderServiceLoading && !builderServiceActive) {
+    return <ServiceUnavailable serviceName="Builder Service" />;
+  }
 
   if (submitted) {
     return (

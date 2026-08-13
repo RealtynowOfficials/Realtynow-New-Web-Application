@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, Trash2, Ban, CheckCircle2, Edit3, Plus, FileText, Upload, ExternalLink, XCircle, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { useAdminAuth } from '../../contexts/admin-auth-context';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
@@ -25,8 +24,8 @@ import { Users, UserCheck, UserX, TrendingUp, AlertCircle, RefreshCw } from 'luc
 // function validates the admin's session token itself, then reads/writes with the service role.
 async function callAdminCustomers<T = any>(action: string, token: string, payload: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await supabase.functions.invoke('admin-customers', {
-    headers: { 'x-action': action },
-    body: { token, ...payload },
+    headers: { 'x-action': action, Authorization: `Bearer ${token}` },
+    body: payload,
   });
   if (error) throw new Error(error.message || 'Request failed');
   if (data?.error) throw new Error(data.error);
@@ -59,9 +58,9 @@ function dateRangeToFrom(range: string): string | undefined {
 
 export function AdminCustomers() {
   const queryClient = useQueryClient();
-  const { session } = useAdminAuth();
+  const { session } = useAuth();
   const toast = useToast();
-  const token = session?.token ?? '';
+  const token = session?.access_token ?? '';
 
   const [toDelete, setToDelete] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -374,8 +373,8 @@ export function AdminCustomers() {
 
 async function callAdminAgentVerification<T = any>(action: string, token: string, payload: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await supabase.functions.invoke('admin-agent-verification', {
-    headers: { 'x-action': action },
-    body: { token, ...payload },
+    headers: { 'x-action': action, Authorization: `Bearer ${token}` },
+    body: payload,
   });
   if (error) throw new Error(error.message || 'Request failed');
   if (data?.error) throw new Error(data.error);
@@ -391,10 +390,10 @@ const RERA_STATUS_LABEL: Record<string, string> = {
 };
 
 function RERAVerificationPanel({ agent }: { agent: Profile }) {
-  const { session } = useAdminAuth();
+  const { session } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const token = session?.token ?? '';
+  const token = session?.access_token ?? '';
   const [showReject, setShowReject] = useState(false);
   const [reason, setReason] = useState('');
   const [docUrl, setDocUrl] = useState<string | null>(null);

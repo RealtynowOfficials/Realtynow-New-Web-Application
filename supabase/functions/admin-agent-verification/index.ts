@@ -1,12 +1,11 @@
 // supabase/functions/admin-agent-verification/index.ts
 //
 // RERA verification decisions for agents. Like admin-customers, this validates
-// the admin portal's custom session token against `admin_sessions` itself (the
-// admin panel never establishes a real Supabase Auth session, so `auth.uid()`
-// is always null for its requests — RLS-gated direct client writes to
-// `profiles` would silently no-op). Also issues short-lived signed URLs for
-// the agent's private RERA document (agent-documents bucket) so it is never
-// exposed publicly — only to an authenticated admin, on demand.
+// the caller's real Supabase Auth session (Authorization: Bearer
+// <access_token>) and requires profiles.role IN ('admin','super_admin')
+// before using the service-role key to bypass RLS. Also issues short-lived
+// signed URLs for the agent's private RERA document (agent-documents bucket)
+// so it is never exposed publicly — only to an authenticated admin, on demand.
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
@@ -30,28 +29,21 @@ function serviceClient() {
   });
 }
 
-async function resolveAdmin(supabase: ReturnType<typeof createClient>, token: unknown) {
-  if (typeof token !== 'string' || !token) return { error: 'Admin session token is required', status: 401 } as const;
+async function resolveAdmin(req: Request, supabase: ReturnType<typeof createClient>) {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return { error: 'Authentication required', status: 401 } as const;
+  const callerClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData } = await callerClient.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return { error: 'Authentication required', status: 401 } as const;
 
-  const { data: session } = await supabase
-    .from('admin_sessions')
-    .select('admin_id, expires_at')
-    .eq('session_token', token)
-    .maybeSingle();
-  if (!session) return { error: 'Invalid or expired admin session', status: 401 } as const;
-  if (new Date(session.expires_at as string).getTime() < Date.now()) {
-    return { error: 'Admin session expired', status: 401 } as const;
-  }
+  const { data: profile } = await supabase.from('profiles').select('role, status').eq('id', userId).maybeSingle();
+  if (!['admin', 'super_admin'].includes(profile?.role ?? '')) return { error: 'Admin access required', status: 403 } as const;
+  if (profile?.status !== 'active') return { error: 'Admin account is not active', status: 403 } as const;
 
-  const { data: admin } = await supabase
-    .from('admins')
-    .select('id, status')
-    .eq('id', session.admin_id as string)
-    .maybeSingle();
-  if (!admin) return { error: 'Admin account not found', status: 401 } as const;
-  if (admin.status !== 'active') return { error: 'Admin account is not active', status: 403 } as const;
-
-  return { adminId: admin.id as string } as const;
+  return { adminId: userId } as const;
 }
 
 Deno.serve(async (req: Request) => {
@@ -68,7 +60,7 @@ Deno.serve(async (req: Request) => {
     return fail('Invalid JSON body');
   }
 
-  const resolved = await resolveAdmin(supabase, body.token);
+  const resolved = await resolveAdmin(req, supabase);
   if ('error' in resolved) return fail(resolved.error, resolved.status);
 
   const agentId = body.agentId;

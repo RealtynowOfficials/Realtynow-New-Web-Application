@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, Download, CheckCircle2, AlertTriangle, Loader2, History, ArrowLeft, FileSpreadsheet } from 'lucide-react';
-import { useAdminAuth } from '../../contexts/admin-auth-context';
+import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
@@ -33,7 +33,7 @@ async function callBulkImportAdmin(action: 'import' | 'history', token: string, 
 }
 
 export function AdminBulkImport() {
-  const { session } = useAdminAuth();
+  const { user, session } = useAuth();
   const { t } = useLanguageContext();
   const toast = useToast();
   const navigate = useNavigate();
@@ -62,7 +62,7 @@ export function AdminBulkImport() {
   const loadHistory = useCallback(async () => {
     if (!session) return;
     try {
-      const data = await callBulkImportAdmin('history', session.token, {});
+      const data = await callBulkImportAdmin('history', session.access_token, {});
       setHistory(data.jobs ?? []);
     } catch (err) {
       toast.addToast('error', err instanceof Error ? err.message : 'Could not load import history');
@@ -97,7 +97,7 @@ export function AdminBulkImport() {
 
   const handleFile = useCallback(
     async (selected: File) => {
-      if (!purpose || !session?.admin) return;
+      if (!purpose || !user) return;
       setFile(selected);
       setParsing(true);
       try {
@@ -133,7 +133,7 @@ export function AdminBulkImport() {
             // row, so the edge function overwrites owner_id server-side (resolved via
             // the optional `mobile` column against profiles.phone, else a system user).
             payload = buildRowPayload(fields, row.raw, {
-              ownerId: session.admin!.id,
+              ownerId: user!.id,
               purposeValue: purpose.properties_purpose_value,
               cityId,
               localityId,
@@ -151,14 +151,14 @@ export function AdminBulkImport() {
         setParsing(false);
       }
     },
-    [purpose, fields, session, toast],
+    [purpose, fields, user, toast],
   );
 
   const startImport = useCallback(async () => {
     if (!purpose || !session) return;
     setStep('importing');
     try {
-      const data = await callBulkImportAdmin('import', session.token, {
+      const data = await callBulkImportAdmin('import', session.access_token, {
         purposeValue: purpose.properties_purpose_value,
         fileName: file?.name ?? 'import',
         duplicateStrategy,

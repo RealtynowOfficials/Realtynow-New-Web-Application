@@ -3,20 +3,14 @@ import { Link } from 'react-router-dom';
 import {
   ShieldCheck,
   Lock,
-  FileText,
   Mail,
-  Phone,
-  MapPin,
   CheckCircle2,
-  AlertTriangle,
   Calendar,
-  Globe,
   Database,
   UserCheck,
   CreditCard,
   Building2,
   ChevronRight,
-  Sparkles,
 } from 'lucide-react';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 

@@ -77,7 +77,7 @@ export async function updateProfile(userId: string, updates: Partial<Profile>) {
 export async function fetchEnquiries(userId?: string) {
   return withErrorHandling(async () => {
     let q = supabase.from('enquiries').select('*, properties(id, title, images)');
-    if (userId) q = q.or(`customer_id.eq.${userId},agent_id.eq.${userId}`);
+    if (userId) q = q.or(`customer_id.eq.${userId},agent_id.eq.${userId},assigned_to.eq.${userId}`);
     const { data, error } = await q;
     if (error) throw error;
     return data as Enquiry[];

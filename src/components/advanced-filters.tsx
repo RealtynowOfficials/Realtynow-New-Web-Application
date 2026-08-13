@@ -1,7 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Filter, X, ChevronDown, Check, SlidersHorizontal, MapPin, 
-  Home, Building2, Calendar, Map, CheckCircle2 
+import React, { useState } from 'react';
+import { X, ChevronDown, Check, SlidersHorizontal, MapPin, CheckCircle2 
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { PropertyFilters } from '../lib/properties';

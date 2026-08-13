@@ -1,6 +1,6 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { DashboardLayout } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { ListPropertyWizard } from '../portal/list-property';

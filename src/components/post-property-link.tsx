@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { checkListingLimit, type ListingUsage } from '../lib/listing-limits';
 import { ListingLimitModal } from './listing-limit-modal';
-import { Loader2 } from 'lucide-react';
 
 interface Props extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
   to: string;

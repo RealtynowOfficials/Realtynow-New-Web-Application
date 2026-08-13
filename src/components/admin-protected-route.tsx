@@ -1,37 +1,42 @@
 import { Suspense } from 'react';
 import { Navigate, Outlet, useLocation, ScrollRestoration } from 'react-router-dom';
-import { useAdminAuth } from '../contexts/admin-auth-context';
-import { AdminRole, ROLE_PERMISSIONS } from '../lib/admin-auth';
+import { useAuth } from '../lib/auth';
+import { isAdmin2faVerified } from '../lib/admin-security';
 import { PageLoader } from './ui';
 import { ErrorBoundary } from './error-boundary';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
 interface AdminProtectedRouteProps {
-  requiredRoles?: AdminRole[];
-  requiredPermission?: string;
+  requiredRoles?: ('admin' | 'super_admin')[];
 }
 
-export function AdminProtectedRoute({ requiredRoles, requiredPermission }: AdminProtectedRouteProps) {
-  const { admin, loading, loginStep, hasRole, hasPermission } = useAdminAuth();
+// Gate for every /admin/* route: requires a REAL Supabase Auth session
+// (mirrors is_admin()'s own check: role IN ('admin','super_admin') AND
+// status='active') plus the server-verified secret-code second factor
+// (supabase/functions/admin-security). Fine-grained tier (admin vs
+// super_admin vs moderator vs support) still lives on the `admins` table —
+// see src/pages/admin/dashboard.tsx, which reads it via the `get-me` action
+// rather than a direct client query.
+export function AdminProtectedRoute({ requiredRoles }: AdminProtectedRouteProps) {
+  const { user, profile, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return <PageLoader />;
   }
 
-  // Not authenticated as Admin -> bounce strictly to /admin/login
-  if (!admin || loginStep !== 'authenticated') {
+  const isAdminRole = profile?.role === 'admin' || profile?.role === 'super_admin';
+
+  if (!user || !profile || !isAdminRole || profile.status !== 'active') {
     return <Navigate to={`/admin/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
-  // Role validation check
-  if (requiredRoles && requiredRoles.length > 0 && !hasRole(...requiredRoles)) {
-    return <AdminAccessDenied admin={admin} reason={`Requires role: ${requiredRoles.join(' or ')}`} />;
+  if (!isAdmin2faVerified()) {
+    return <Navigate to={`/admin/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
-  // Specific Permission check
-  if (requiredPermission && !hasPermission(requiredPermission)) {
-    return <AdminAccessDenied admin={admin} reason={`Requires permission: ${requiredPermission}`} />;
+  if (requiredRoles && requiredRoles.length > 0 && !requiredRoles.includes(profile.role as 'admin' | 'super_admin')) {
+    return <AdminAccessDenied role={profile.role} reason={`Requires role: ${requiredRoles.join(' or ')}`} />;
   }
 
   return (
@@ -44,9 +49,7 @@ export function AdminProtectedRoute({ requiredRoles, requiredPermission }: Admin
   );
 }
 
-function AdminAccessDenied({ admin, reason }: { admin: { name: string; role: string }; reason: string }) {
-  const userPerms = ROLE_PERMISSIONS[admin.role as AdminRole] || [];
-
+function AdminAccessDenied({ role, reason }: { role: string; reason: string }) {
   return (
     <div className="grid min-h-[70vh] place-items-center bg-navy-950 p-6 text-white">
       <div className="w-full max-w-lg rounded-3xl border border-red-500/20 bg-white/[0.04] p-8 text-center shadow-2xl backdrop-blur-2xl">
@@ -56,12 +59,11 @@ function AdminAccessDenied({ admin, reason }: { admin: { name: string; role: str
 
         <h1 className="mt-5 font-display text-2xl font-bold text-white">Access Restricted</h1>
         <p className="mt-2 text-sm text-navy-300">
-          Your admin role (<span className="font-semibold capitalize text-red-400">{admin.role.replace('_', ' ')}</span>) does not have sufficient permissions to view this section.
+          Your admin role (<span className="font-semibold capitalize text-red-400">{role.replace('_', ' ')}</span>) does not have sufficient permissions to view this section.
         </p>
 
         <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-navy-400">
           <p className="font-semibold text-navy-300">{reason}</p>
-          <p className="mt-1 text-[11px]">Your assigned capabilities: {userPerms.join(', ')}</p>
         </div>
 
         <div className="mt-6 flex justify-center gap-3">

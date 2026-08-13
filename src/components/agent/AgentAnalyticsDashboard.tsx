@@ -56,31 +56,27 @@ export function AgentAnalyticsDashboard() {
       {/* CRM Stats Overview */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Leads"
+          label="Total Leads"
           value={crmStats?.total || 0}
-          icon={Users}
-          description={`${crmStats?.new || 0} new, ${crmStats?.overdue || 0} overdue`}
+          icon={<Users className="h-5 w-5" />}
           trend={crmStats?.total > 0 ? "up" : "neutral"}
         />
         <StatCard
-          title="Conversion Rate"
+          label="Conversion Rate"
           value={`${crmStats?.conversion_rate || 0}%`}
-          icon={Target}
-          description={`${crmStats?.won || 0} closed won`}
+          icon={<Target className="h-5 w-5" />}
           trend={crmStats?.conversion_rate > 5 ? "up" : "neutral"}
         />
         <StatCard
-          title="Expected Revenue"
+          label="Expected Revenue"
           value={formatPrice(crmStats?.total_revenue || 0)}
-          icon={DollarSign}
-          description="From won deals"
+          icon={<DollarSign className="h-5 w-5" />}
           trend="up"
         />
         <StatCard
-          title="Active Negotiations"
+          label="Active Negotiations"
           value={crmStats?.negotiation || 0}
-          icon={TrendingUp}
-          description={`${crmStats?.site_visit || 0} recent site visits`}
+          icon={<TrendingUp className="h-5 w-5" />}
           trend="neutral"
         />
       </div>

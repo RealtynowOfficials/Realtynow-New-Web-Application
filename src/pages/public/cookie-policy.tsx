@@ -2,8 +2,6 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Cookie,
-  ShieldCheck,
-  CheckCircle2,
   ChevronRight,
   Calendar,
   Lock,
@@ -12,7 +10,6 @@ import {
   Megaphone,
   Globe,
   Settings,
-  Mail,
 } from 'lucide-react';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 

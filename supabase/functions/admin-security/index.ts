@@ -55,14 +55,15 @@ async function logEvent(
   await supabase.from('admin_login_logs').insert({ admin_id: adminId, ip, device, action, status });
 }
 
-// Resolves the caller's Supabase Auth user, requires profiles.role === 'admin', and
-// self-heals a missing `admins` row (e.g. an admin profile created before this migration,
-// or by the otp-auth admin-provision path) — defaults new rows to role 'admin', never
-// 'super_admin', so self-healing can never silently grant elevated access.
+// Resolves the caller's Supabase Auth user, requires profiles.role IN ('admin','super_admin')
+// (mirrors the is_admin() RLS helper exactly), and self-heals a missing `admins` row (e.g. an
+// admin profile created before this migration, or by the otp-auth admin-provision path) —
+// defaults new rows to role 'admin', never 'super_admin', so self-healing can never silently
+// grant elevated access.
 async function resolveAdminCaller(
   req: Request,
   supabase: ReturnType<typeof createClient>,
-): Promise<{ userId: string; admin: Record<string, unknown> } | { error: string; status: number }> {
+): Promise<{ userId: string; admin: Record<string, unknown>; profile: Record<string, unknown> } | { error: string; status: number }> {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return { error: 'Authentication required', status: 401 };
   const callerClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
@@ -72,20 +73,21 @@ async function resolveAdminCaller(
   const userId = userData.user?.id;
   if (!userId) return { error: 'Authentication required', status: 401 };
 
-  const { data: profile } = await supabase.from('profiles').select('role, phone').eq('id', userId).maybeSingle();
-  if (profile?.role !== 'admin') return { error: 'Admin access required', status: 403 };
+  const { data: profile } = await supabase.from('profiles').select('role, phone, first_name, last_name, email, status').eq('id', userId).maybeSingle();
+  if (!['admin', 'super_admin'].includes(profile?.role ?? '')) return { error: 'Admin access required', status: 403 };
+  if (profile?.status === 'suspended') return { error: 'This account has been suspended.', status: 403 };
 
   let { data: admin } = await supabase.from('admins').select('*').eq('id', userId).maybeSingle();
   if (!admin) {
     const { data: created } = await supabase
       .from('admins')
-      .insert({ id: userId, mobile: profile.phone ?? '', role: 'admin', status: 'active' })
+      .insert({ id: userId, mobile: profile?.phone ?? '', role: 'admin', status: 'active' })
       .select('*')
       .single();
     admin = created;
   }
   if (!admin) return { error: 'Could not resolve admin account', status: 500 };
-  return { userId, admin };
+  return { userId, admin, profile: profile as Record<string, unknown> };
 }
 
 function normalizeIndianMobile(raw: string): string | null {
@@ -110,8 +112,30 @@ Deno.serve(async (req: Request) => {
 
   const resolved = await resolveAdminCaller(req, supabase);
   if ('error' in resolved) return fail(resolved.error, resolved.status);
-  const { admin } = resolved;
+  const { admin, profile } = resolved;
   const adminId = admin.id as string;
+
+  // ─── get-me ──────────────────────────────────────────────────────
+  // Returns the caller's own identity (profiles name/email/phone + admins
+  // role/status/mobile) so the client never needs to query either table
+  // directly with the anon key.
+  if (action === 'get-me') {
+    return json({
+      success: true,
+      admin: {
+        id: admin.id,
+        mobile: admin.mobile,
+        role: admin.role,
+        status: admin.status,
+      },
+      profile: {
+        first_name: profile.first_name ?? null,
+        last_name: profile.last_name ?? null,
+        email: profile.email ?? null,
+        phone: profile.phone ?? null,
+      },
+    });
+  }
 
   // ─── get-status ─────────────────────────────────────────────────
   if (action === 'get-status') {
@@ -342,6 +366,6 @@ Deno.serve(async (req: Request) => {
   }
 
   return fail(
-    'Unknown action. Use x-action: get-status | setup-secret-code | verify-secret-code | reset-secret-code | super-reset-secret-code | create-admin | update-admin-status | list-admins | list-login-logs',
+    'Unknown action. Use x-action: get-me | get-status | setup-secret-code | verify-secret-code | reset-secret-code | super-reset-secret-code | create-admin | update-admin-status | list-admins | list-login-logs',
   );
 });

@@ -135,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Best-effort audit log + clear the admin 2FA session flag *before* the session is torn
     // down (the log call needs a valid bearer token) — otherwise a different admin signing
     // in on the same browser tab would inherit a stale "verified" flag from sessionStorage.
-    if (profile?.role === 'admin') {
+    if (profile?.role === 'admin' || profile?.role === 'super_admin') {
       const { logAdminLogout, clearAdmin2faVerified } = await import('./admin-security');
       await logAdminLogout();
       clearAdmin2faVerified();

@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
-import { Building2, Phone, Mail, Clock, Calendar } from 'lucide-react';
+import { Building2, Phone, Mail, Clock } from 'lucide-react';
 import { formatDate } from '../../lib/utils';
 import { Badge } from '../ui';
 
@@ -84,7 +83,7 @@ export function BuilderKanbanBoard({ leads, onUpdateStatus }: BuilderKanbanBoard
                 <span className={`w-2.5 h-2.5 rounded-full ${stage.color.split(' ')[0]}`}></span>
                 {stage.label}
               </h3>
-              <Badge variant="secondary" className="font-mono text-xs">
+              <Badge variant="default" className="font-mono text-xs">
                 {stageLeads.length}
               </Badge>
             </div>

@@ -25,7 +25,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/dashboard-layout';
-import { getPortalSections } from './sections';
+import { getPortalSections, getAgentSections } from './sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Button } from '../../components/ui';
 import { propertyWizardSchema, PropertyWizardForm, WIZARD_STEPS } from './wizard-schema';
@@ -36,6 +36,8 @@ import { supabase } from '../../lib/supabase';
 import { triggerAiVerification } from '../../lib/properties';
 import { uploadFile, deleteFile, type StorageBucket } from '../../lib/storage';
 import { cn } from '../../lib/utils';
+import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
+import { ServiceUnavailable } from '../../components/service-unavailable';
 import {
   type MediaItem,
   MAX_MEDIA_FILES,
@@ -271,10 +273,11 @@ function PreviewModal({
   );
 }
 
-export function ListPropertyWizard() {
+export function ListPropertyWizard({ isAdminMode = false, disableLayout = false }: { isAdminMode?: boolean; disableLayout?: boolean } = {}) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { t } = useLanguageContext();
+  const wizardSections = profile?.role === 'agent' ? getAgentSections(t) : getPortalSections(t);
   const toast = useToast();
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -286,13 +289,14 @@ export function ListPropertyWizard() {
 
   const [quotaChecked, setQuotaChecked] = useState(false);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const { isActive: listPropertyActive, loading: listPropertyLoading } = useServiceStatus(SERVICE_KEYS.LIST_PROPERTY);
 
   useEffect(() => {
     if (!user) return;
     
     async function checkQuota() {
       // 1. check if customer
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single();
       if (profile?.role !== 'customer') {
         setQuotaChecked(true);
         return;
@@ -302,7 +306,7 @@ export function ListPropertyWizard() {
       const { count: pkgCount } = await supabase
         .from('agent_packages')
         .select('*', { count: 'exact', head: true })
-        .eq('agent_id', user.id)
+        .eq('agent_id', user!.id)
         .eq('status', 'active')
         .gt('expires_at', new Date().toISOString());
         
@@ -315,7 +319,7 @@ export function ListPropertyWizard() {
       const { count: propCount } = await supabase
         .from('properties')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .eq('owner_id', user!.id);
         
       if (propCount && propCount >= 2) {
         setQuotaExceeded(true);
@@ -902,7 +906,7 @@ export function ListPropertyWizard() {
 
   if (!quotaChecked) {
     return (
-      <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+      <DashboardLayout sections={wizardSections} title={t('forms.postProperty', 'List Property')}>
         <div className="flex items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 animate-spin text-red-600" />
         </div>
@@ -910,9 +914,13 @@ export function ListPropertyWizard() {
     );
   }
 
+  if (!listPropertyLoading && !listPropertyActive) {
+    return <ServiceUnavailable serviceName="List Property Service" />;
+  }
+
   if (quotaExceeded) {
     return (
-      <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+      <DashboardLayout sections={wizardSections} title={t('forms.postProperty', 'List Property')}>
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center max-w-lg mx-auto">
           <div className="bg-red-50 p-4 rounded-full mb-4 mx-auto flex items-center justify-center">
             <Shield className="h-12 w-12 text-red-600" />
@@ -930,7 +938,7 @@ export function ListPropertyWizard() {
   }
 
   return (
-    <DashboardLayout sections={getPortalSections(t)} title={t('forms.postProperty', 'List Property')}>
+    <DashboardLayout sections={wizardSections} title={t('forms.postProperty', 'List Property')}>
       {/* Background */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-red-100/40 blur-[120px]"></div>
@@ -1111,6 +1119,15 @@ export function ListPropertyWizard() {
                               </motion.button>
                             );
                           })}
+                        </div>
+                        <div className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => navigate(profile?.role === 'agent' ? '/agent/list-property/plot' : '/portal/list-property/plot')}
+                            className="text-sm font-semibold text-red-600 hover:underline"
+                          >
+                            Listing a plot, land, or layout? Use the dedicated Open Plot flow →
+                          </button>
                         </div>
                       </div>
                     )}
@@ -2129,7 +2146,7 @@ export function ListPropertyWizard() {
                 <div className="flex items-center gap-3 w-full sm:w-auto">
                   <button
                     type="button"
-                    onClick={handleSaveDraft}
+                    onClick={() => handleSaveDraft()}
                     disabled={saving}
                     className="h-11 rounded-xl px-5 flex items-center justify-center gap-2 font-medium text-sm bg-white border border-navy-200 text-navy-700 hover:bg-navy-50 hover:text-navy-900 transition-all shadow-sm disabled:opacity-50"
                   >

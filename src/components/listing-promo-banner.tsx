@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import { Home, Sparkles, ShieldCheck, ArrowRight } from 'lucide-react';
 import { PostPropertyLink } from './post-property-link';
 

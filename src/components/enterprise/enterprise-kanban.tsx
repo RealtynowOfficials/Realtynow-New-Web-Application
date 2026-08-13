@@ -9,12 +9,7 @@ import {
   X,
   Mail,
   MessageSquare,
-  Calendar,
   CheckCircle2,
-  Tag,
-  FileText,
-  UserCheck,
-  ExternalLink,
 } from 'lucide-react';
 
 export interface KanbanLeadCard {

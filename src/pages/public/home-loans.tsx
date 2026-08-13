@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PieChart, Phone, Mail, Lock } from 'lucide-react';
+import { PieChart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Card, EmptyState, Button, Input, Textarea } from '../../components/ui';

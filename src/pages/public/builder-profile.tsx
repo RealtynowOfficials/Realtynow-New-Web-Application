@@ -1,12 +1,90 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
-import { PageLoader, EmptyState, Button } from '../../components/ui';
+import { PageLoader, EmptyState, Button, Input, Textarea } from '../../components/ui';
+import { useToast } from '../../components/toast';
 import {
-  Building2, BadgeCheck, Award, Mail, Phone, ChevronRight, Home as HomeIcon,
+  Building2, BadgeCheck, Award, Mail, Phone, ChevronRight, Home as HomeIcon, Send,
 } from 'lucide-react';
+
+function ContactBuilderForm({ builderUserId, builderName }: { builderUserId: string; builderName: string }) {
+  const { addToast } = useToast();
+  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
+  const [sent, setSent] = useState(false);
+
+  const submitLead = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('builder_leads').insert({
+        builder_id: builderUserId,
+        name: form.name.trim(),
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        message: form.message.trim() || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setSent(true);
+      setForm({ name: '', email: '', phone: '', message: '' });
+    },
+    onError: (err: any) => addToast('error', err.message ?? 'Could not send your enquiry. Please try again.'),
+  });
+
+  if (sent) {
+    return (
+      <div className="rounded-2xl border border-green-200 bg-green-50 p-6 text-center">
+        <p className="text-sm font-semibold text-green-800">Thanks! {builderName} will get back to you shortly.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!form.name.trim() || (!form.email.trim() && !form.phone.trim())) {
+          addToast('error', 'Please enter your name and either an email or phone number.');
+          return;
+        }
+        submitLead.mutate();
+      }}
+      className="rounded-2xl border border-slate-200 bg-slate-50/60 p-6 space-y-3"
+    >
+      <p className="text-xs font-bold tracking-[0.2em] text-red-600 uppercase mb-1">Contact {builderName}</p>
+      <Input
+        label="Your name"
+        value={form.name}
+        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+        required
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <Input
+          label="Email"
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+        />
+        <Input
+          label="Phone"
+          type="tel"
+          value={form.phone}
+          onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+        />
+      </div>
+      <Textarea
+        label="Message (optional)"
+        value={form.message}
+        onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
+        rows={3}
+      />
+      <Button type="submit" disabled={submitLead.isPending} className="w-full">
+        <Send className="h-4 w-4" /> {submitLead.isPending ? 'Sending…' : 'Send Enquiry'}
+      </Button>
+    </form>
+  );
+}
 
 export function BuilderProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -115,6 +193,7 @@ export function BuilderProfilePage() {
               {builder.description || `${builder.name} is a verified real estate developer on RealtyNow.`}
             </p>
           </div>
+          <div className="space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-6">
             <p className="text-xs font-bold tracking-[0.2em] text-red-600 uppercase mb-4">Company Information</p>
             <dl className="space-y-4">
@@ -157,6 +236,8 @@ export function BuilderProfilePage() {
                 )}
               </div>
             )}
+          </div>
+          {builder.user_id && <ContactBuilderForm builderUserId={builder.user_id} builderName={builder.name} />}
           </div>
         </div>
 

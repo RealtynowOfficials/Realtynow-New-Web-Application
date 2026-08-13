@@ -3,17 +3,14 @@
 // The Admin Customers CRM (src/pages/admin/manage.tsx) previously queried
 // `public.profiles` directly with the anon-key client. That table's RLS policy
 // only allows reads where `auth.uid() = id`, the row's own role is
-// agent/admin, or `is_staff()` (which itself checks `auth.uid()`) — but the
-// admin portal's session (contexts/admin-auth-context.tsx) is a fully custom
-// opaque token stored in localStorage, never a real Supabase Auth session, so
-// `auth.uid()` is always null for admin browser requests. RLS silently
-// filtered every customer row out, which is why the page showed "No records
-// found" despite real customer data existing.
+// agent/admin, or `is_staff()` (which itself checks `auth.uid()`) — an admin
+// browser only satisfies that once it holds a real Supabase Auth session.
 //
-// The fix routes customer reads/writes through this edge function instead:
-// it validates the admin's custom session token against `admin_sessions`
-// itself, then uses the service-role client (bypassing RLS) to do the actual
-// work. This mirrors the existing service-role pattern used by
+// This edge function routes customer reads/writes through the service-role
+// key instead (bypassing RLS), after validating the caller's real Supabase
+// Auth session (Authorization: Bearer <access_token>) and requiring
+// profiles.role IN ('admin','super_admin') — mirrors admin-security's
+// resolveAdminCaller. This mirrors the existing service-role pattern used by
 // process-application / admin-security, without loosening RLS on `profiles`
 // itself (unlike the pre-existing "_clean" policies on agent_applications /
 // builder_applications, which made those tables world-readable — that
@@ -44,28 +41,21 @@ function serviceClient() {
 const CUSTOMER_EDITABLE_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'bio', 'company'] as const;
 const VALID_STATUSES = ['active', 'inactive', 'suspended', 'blocked'];
 
-async function resolveAdmin(supabase: ReturnType<typeof createClient>, token: unknown) {
-  if (typeof token !== 'string' || !token) return { error: 'Admin session token is required', status: 401 } as const;
+async function resolveAdmin(req: Request, supabase: ReturnType<typeof createClient>) {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return { error: 'Authentication required', status: 401 } as const;
+  const callerClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData } = await callerClient.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return { error: 'Authentication required', status: 401 } as const;
 
-  const { data: session } = await supabase
-    .from('admin_sessions')
-    .select('admin_id, expires_at')
-    .eq('session_token', token)
-    .maybeSingle();
-  if (!session) return { error: 'Invalid or expired admin session', status: 401 } as const;
-  if (new Date(session.expires_at as string).getTime() < Date.now()) {
-    return { error: 'Admin session expired', status: 401 } as const;
-  }
+  const { data: profile } = await supabase.from('profiles').select('role, status').eq('id', userId).maybeSingle();
+  if (!['admin', 'super_admin'].includes(profile?.role ?? '')) return { error: 'Admin access required', status: 403 } as const;
+  if (profile?.status !== 'active') return { error: 'Admin account is not active', status: 403 } as const;
 
-  const { data: admin } = await supabase
-    .from('admins')
-    .select('id, role, status')
-    .eq('id', session.admin_id as string)
-    .maybeSingle();
-  if (!admin) return { error: 'Admin account not found', status: 401 } as const;
-  if (admin.status !== 'active') return { error: 'Admin account is not active', status: 403 } as const;
-
-  return { adminId: admin.id as string } as const;
+  return { adminId: userId } as const;
 }
 
 function monthStartIso(): string {
@@ -87,7 +77,7 @@ Deno.serve(async (req: Request) => {
     return fail('Invalid JSON body');
   }
 
-  const resolved = await resolveAdmin(supabase, body.token);
+  const resolved = await resolveAdmin(req, supabase);
   if ('error' in resolved) return fail(resolved.error, resolved.status);
 
   // ─── list ──────────────────────────────────────────────────────────────

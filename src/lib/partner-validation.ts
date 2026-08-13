@@ -172,7 +172,8 @@ export function validateMobileNumber(raw: string): string | null {
 }
 
 /** 4 — Email (always required) */
-export function validateEmail(raw: string, required = true): string | null {
+/* eslint-disable no-misleading-character-class */
+export function validateEmail(raw: string, required: boolean = true): string | null {
   const value = raw.trim();
   if (!value) {
     return required ? 'Email address is required.' : null;

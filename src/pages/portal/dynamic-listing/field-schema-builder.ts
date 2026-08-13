@@ -35,9 +35,9 @@ function buildFieldSchema(field: WorkflowField): z.ZodTypeAny {
       return field.is_required
         ? z.object({
             address: z.string().min(1, 'Address is required'),
-            google_place_id: z.string({ required_error: 'Please select a valid location from the suggestions.' }).min(1, 'Please select a valid location from the suggestions.'),
-            latitude: z.number({ required_error: 'Unable to determine exact location.' }),
-            longitude: z.number({ required_error: 'Unable to determine exact location.' }),
+            google_place_id: z.string({ message: 'Please select a valid location from the suggestions.' }).min(1, 'Please select a valid location from the suggestions.'),
+            latitude: z.number({ message: 'Unable to determine exact location.' }),
+            longitude: z.number({ message: 'Unable to determine exact location.' }),
           }).passthrough()
         : z.object({}).passthrough().optional();
     default: {

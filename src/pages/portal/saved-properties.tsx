@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { PropertyCard } from '../../components/property-card';
-import { Heart, Search, Trash2, LayoutGrid, List as ListIcon, Filter } from 'lucide-react';
+import { Heart, Search, Trash2, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { Button } from '../../components/ui';
 import { Link } from 'react-router-dom';
 import { useFavorites, getLocalFavoriteIds, toggleFavoriteProperty } from '../../lib/favorites';

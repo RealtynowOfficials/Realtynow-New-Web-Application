@@ -4,7 +4,6 @@ import {
   Layout,
   Sparkles,
   Save,
-  CheckCircle,
   Eye,
   Globe,
   Sliders,
@@ -15,9 +14,6 @@ import {
   Edit3,
   Building2,
   MapPin,
-  Tag,
-  Shield,
-  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';

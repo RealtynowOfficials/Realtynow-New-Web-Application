@@ -5,14 +5,10 @@ import {
   Lock,
   KeyRound,
   CreditCard,
-  Server,
-  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Calendar,
   Mail,
-  Smartphone,
-  Globe,
 } from 'lucide-react';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 

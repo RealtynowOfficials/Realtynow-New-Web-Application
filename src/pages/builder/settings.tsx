@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
-import { Card, Input, Button } from '../../components/ui';
+import { Card, Input, Button, Textarea } from '../../components/ui';
 import { useToast } from '../../components/toast';
 import { Save } from 'lucide-react';
 
@@ -88,11 +88,10 @@ export function BuilderSettings() {
             />
           </div>
 
-          <Input
+          <Textarea
             label="Bio / Description"
             value={form.bio}
             onChange={(e) => setForm({ ...form, bio: e.target.value })}
-            as="textarea"
             rows={4}
           />
 

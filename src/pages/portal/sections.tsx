@@ -79,6 +79,8 @@ export const getAgentSections = (t: (key: string, fallback?: string) => string):
     heading: t('dashboard:listings', 'Listings'),
     items: [
       { to: '/agent/properties', label: t('dashboard:assignedProperties', 'Assigned Properties'), icon: Building2 },
+      { to: '/agent/list-property', label: t('dashboard:listProperty', 'List Property'), icon: PlusCircle, end: true },
+      { to: '/agent/my-properties', label: t('dashboard:myListedProperties', 'My Listed Properties'), icon: Layers },
       { to: '/agent/bulk-upload', label: 'Bulk Import', icon: FileText },
     ],
   },

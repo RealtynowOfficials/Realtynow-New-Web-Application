@@ -24,6 +24,8 @@ import { Logo, LogoLight } from '../../components/logo';
 import { uploadFile } from '../../lib/storage';
 import { uploadProfilePhoto } from '../../lib/profile-photo';
 import { getFriendlyErrorMessage } from '../../lib/utils';
+import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
+import { ServiceUnavailable } from '../../components/service-unavailable';
 
 const SPECIALIZATIONS = [
   'Residential',
@@ -167,6 +169,7 @@ function AvatarUploadArea({
 }
 
 export function AgentRegisterPage() {
+  const { isActive: agentServiceActive, loading: agentServiceLoading } = useServiceStatus(SERVICE_KEYS.AGENT);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormData>(INITIAL);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -283,6 +286,10 @@ export function AgentRegisterPage() {
       setLoading(false);
     }
   };
+
+  if (!agentServiceLoading && !agentServiceActive) {
+    return <ServiceUnavailable serviceName="Agent Service" />;
+  }
 
   if (submitted) {
     return (

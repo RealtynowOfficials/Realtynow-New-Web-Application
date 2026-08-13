@@ -8,7 +8,7 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { SharePropertyModal } from '../../components/ui/share-property-modal';
 
-import { getPortalSections } from './sections';
+import { getPortalSections, getAgentSections } from './sections';
 import { Button, Card, EmptyState, Modal, Badge, Select, Input } from '../../components/ui';
 import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
@@ -42,7 +42,7 @@ interface MyPropertiesFilterState {
 
 export function PortalMyProperties() {
   const { t } = useLanguageContext();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<string>('all');
   const [toDelete, setToDelete] = useState<string | null>(null);
@@ -53,7 +53,7 @@ export function PortalMyProperties() {
   const [rich, setRich] = useState<MyPropertiesFilterState>({ city: '', type: '', minPrice: '', maxPrice: '' });
   const savedFilters = useSavedFilters<MyPropertiesFilterState>('portal-my-properties');
 
-  const sections = getPortalSections(t);
+  const sections = profile?.role === 'agent' ? getAgentSections(t) : getPortalSections(t);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['portal-my-properties', user?.id],
@@ -585,7 +585,7 @@ export function PortalMyProperties() {
             location: `${shareProperty.locality_name}, ${shareProperty.city_name}`,
             purpose: shareProperty.purpose,
             imageUrl: shareProperty.images?.[0],
-            slug: shareProperty.slug || shareProperty.id
+            slug: (shareProperty as any).slug || shareProperty.id
           }}
         />
       )}

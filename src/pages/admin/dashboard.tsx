@@ -22,8 +22,8 @@ import { Badge } from '../../components/ui';
 import { StatusBadge } from '../../components/property-card';
 import { formatPrice, formatDate } from '../../lib/utils';
 import { useRealtimeMulti } from '../../lib/realtime';
-import { useAdminAuth } from '../../contexts/admin-auth-context';
-import { ROLE_PERMISSIONS, AdminRole } from '../../lib/admin-auth';
+import { useAuth } from '../../lib/auth';
+import { getAdminMe, listAdminLoginLogs, ROLE_PERMISSIONS, AdminRole, hasPermission as checkHasPermission } from '../../lib/admin-security';
 
 // Import Syncfusion Hybrid Architecture Enterprise Components
 import { EnterpriseDataGrid, type ColumnDef } from '../../components/enterprise/enterprise-datagrid';
@@ -74,7 +74,29 @@ const MOCK_KANBAN_LEADS: KanbanLeadCard[] = [
 export function AdminDashboard() {
   const { t } = useLanguageContext();
   const sections = getAdminSections(t);
-  const { admin, logout, logoutAllDevices, hasPermission } = useAdminAuth();
+  const { signOut } = useAuth();
+  const { data: me } = useQuery({ queryKey: ['admin-me'], queryFn: () => getAdminMe() });
+  const { data: loginLogs } = useQuery({
+    queryKey: ['admin-login-logs-self', me?.admin.id],
+    queryFn: () => listAdminLoginLogs(me!.admin.id),
+    enabled: !!me?.admin.id,
+  });
+  const lastSuccessfulLogin = loginLogs?.logs.find((l) => l.status === 'success' && l.action !== 'logout');
+  const admin = me
+    ? {
+        id: me.admin.id,
+        name: `${me.profile.first_name ?? ''} ${me.profile.last_name ?? ''}`.trim() || me.admin.mobile,
+        email: me.profile.email,
+        mobile: me.admin.mobile,
+        role: me.admin.role,
+      }
+    : null;
+  const hasPermission = (perm: string) => (admin ? checkHasPermission(admin.role as AdminRole, perm) : false);
+  const logout = () => signOut();
+  const logoutAllDevices = async () => {
+    const { supabase: sb } = await import('../../lib/supabase');
+    await sb.auth.signOut({ scope: 'global' });
+  };
   const realtimeTick = useRealtimeMulti(['properties', 'enquiries', 'profiles']);
   const [dateRange] = useState<DateRange>('6m');
   const [activeTab, setActiveTab] = useState<'analytics' | 'kanban' | 'datagrid' | 'scheduler' | 'ai_report'>(
@@ -193,15 +215,15 @@ export function AdminDashboard() {
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-white/10 pt-4 text-xs text-navy-300">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-red-400" />
-            <span>Last Login: <strong className="text-white">{admin?.last_login ? formatDate(admin.last_login) : 'Just now'}</strong></span>
+            <span>Last Login: <strong className="text-white">{lastSuccessfulLogin ? formatDate(lastSuccessfulLogin.created_at) : 'Just now'}</strong></span>
           </div>
           <div className="flex items-center gap-2">
             <Laptop className="h-4 w-4 text-red-400" />
-            <span>Device: <strong className="text-white">{admin?.device || 'Active Session'}</strong></span>
+            <span>Device: <strong className="text-white">{lastSuccessfulLogin?.device || 'Active Session'}</strong></span>
           </div>
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-red-400" />
-            <span>Login IP: <strong className="text-white">{admin?.login_ip || '127.0.0.1'}</strong></span>
+            <span>Login IP: <strong className="text-white">{lastSuccessfulLogin?.ip || '127.0.0.1'}</strong></span>
           </div>
         </div>
       </div>

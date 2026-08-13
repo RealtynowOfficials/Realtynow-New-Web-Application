@@ -211,7 +211,46 @@ create policy "auth_delete_partner_documents" on storage.objects for delete
   to authenticated using (bucket_id = 'partner-documents');
 
 -- =========================================================
--- 6. SECURITY FIX — close the anyone-can-rewrite-any-profile RLS gap
+-- 6. SECURITY FIX — close the anyone-can-rewrite-any-profile/property RLS gap
 -- =========================================================
 drop policy if exists "admin_portal_update_profiles" on public.profiles;
 drop policy if exists "admin_portal_insert_profiles" on public.profiles;
+drop policy if exists "admin_portal_update_properties" on public.properties;
+
+-- =========================================================
+-- 7. SECURITY FIX — legacy admin-portal tables were fully world-readable
+--    (RLS disabled entirely; admins.password_hash, admin_sessions.session_token
+--    etc. were selectable by anon via the REST API). Admin auth has moved to
+--    the same Supabase Auth session every other role uses (profiles.role IN
+--    ('admin','super_admin'), see is_admin()) plus admin-security's
+--    server-verified bcrypt secret code — none of these tables are read or
+--    written by the client anymore, only by service-role edge functions, so
+--    they can be locked to zero client-facing policies.
+-- =========================================================
+alter table public.admins enable row level security;
+alter table public.admin_sessions enable row level security;
+alter table public.admin_login_history enable row level security;
+alter table public.admin_audit_logs enable row level security;
+alter table public.admin_trusted_devices enable row level security;
+
+-- Drop any pre-existing policies on these tables so RLS-enabled-with-zero-
+-- policies actually means deny-all to anon/authenticated (service role always
+-- bypasses RLS regardless).
+do $$
+declare
+  pol record;
+begin
+  for pol in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('admins', 'admin_sessions', 'admin_login_history', 'admin_audit_logs', 'admin_trusted_devices')
+  loop
+    execute format('drop policy if exists %I on %I.%I', pol.policyname, pol.schemaname, pol.tablename);
+  end loop;
+end $$;
+
+-- Password-based admin login is fully retired (first factor is now phone
+-- OTP via the standard Supabase Auth flow) — stop storing a password hash
+-- at all rather than leaving a dead, previously-compromised field around.
+alter table public.admins drop column if exists password_hash;

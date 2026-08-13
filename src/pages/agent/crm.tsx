@@ -30,16 +30,19 @@ export function AgentCrm() {
   const agentSections = getAgentSections(t);
 
   const enquiriesTick = useRealtimeCount('enquiries', { column: 'agent_id', value: user?.id ?? '' });
+  // CRM assignment (fn_assign_lead) writes assigned_to, not agent_id — watch both
+  // so an assigned lead's pipeline stats actually update for this agent.
+  const enquiriesAssignedTick = useRealtimeCount('enquiries', { column: 'assigned_to', value: user?.id ?? '' });
   const appointmentsTick = useRealtimeCount('appointments', { column: 'agent_id', value: user?.id ?? '' });
   const negotiationsTick = useRealtimeCount('agent_negotiations', { column: 'agent_id', value: user?.id ?? '' });
 
   const { data: enquiries, isLoading: enquiriesLoading } = useQuery({
-    queryKey: ['agent-crm-enquiries', user?.id, enquiriesTick],
+    queryKey: ['agent-crm-enquiries', user?.id, enquiriesTick, enquiriesAssignedTick],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('enquiries')
         .select('id, name, status, created_at')
-        .eq('agent_id', user!.id)
+        .or(`agent_id.eq.${user!.id},assigned_to.eq.${user!.id}`)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data ?? [];

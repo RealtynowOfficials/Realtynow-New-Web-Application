@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card, Button, Input as Textarea } from '../ui';
-import { Sparkles, MessageSquare, Mail, Send } from 'lucide-react';
+import { Sparkles, MessageSquare, Mail } from 'lucide-react';
 import { useToast } from '../toast';
 
 export function AiLeadAssistant() {
@@ -67,7 +67,7 @@ export function AiLeadAssistant() {
 
       <div className="flex gap-2">
         <Button 
-          variant="outline" 
+          variant="secondary" 
           className="flex-1 border-primary-200 text-primary-700 hover:bg-primary-50"
           onClick={() => handleGenerate('email')}
           disabled={isGenerating || !prompt}

@@ -116,5 +116,18 @@
   "statusPublished": "Published",
   "statusRejected": "Rejected",
   "statusArchived": "Archived",
-  "properties": "Properties"
+  "properties": "Properties",
+  "welcomeComma": "Welcome,",
+  "partnerFallback": "Partner",
+  "partnerCodeLabel": "Partner Code:",
+  "realtyNowPartner": "RealtyNow Partner",
+  "accountStatus": "Account Status",
+  "verification": "Verification",
+  "partnerTypeLabel": "Partner Type",
+  "partnerSince": "Partner Since",
+  "myProfile": "My Profile",
+  "mobileNumber": "Mobile Number",
+  "email": "Email",
+  "company": "Company",
+  "partnerProfileLoadFailed": "Your partner profile could not be loaded."
 }

@@ -77,7 +77,7 @@ export function BulkUpload() {
     
     async function checkQuota() {
       // 1. check if customer
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single();
       if (profile?.role !== 'customer') {
         setQuotaChecked(true);
         return;
@@ -87,7 +87,7 @@ export function BulkUpload() {
       const { count: pkgCount } = await supabase
         .from('agent_packages')
         .select('*', { count: 'exact', head: true })
-        .eq('agent_id', user.id)
+        .eq('agent_id', user!.id)
         .eq('status', 'active')
         .gt('expires_at', new Date().toISOString());
         
@@ -100,7 +100,7 @@ export function BulkUpload() {
       const { count: propCount } = await supabase
         .from('properties')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .eq('user_id', user!.id);
         
       const limit = 2;
       const current = propCount || 0;
@@ -736,7 +736,7 @@ export function BulkUpload() {
               )}
 
               <div className="mt-8 flex justify-center gap-4">
-                <Button variant="outline" onClick={resetWizard}>
+                <Button variant="secondary" onClick={resetWizard}>
                   Import More
                 </Button>
                 <Button variant="primary" onClick={() => navigate('/portal/my-properties')}>

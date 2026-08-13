@@ -1,0 +1,670 @@
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, ChevronLeft, ChevronRight, Loader2, MapPin, ShieldCheck, Upload, X } from 'lucide-react';
+import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { getPortalSections, getAgentSections } from './sections';
+import { useLanguageContext } from '../../lib/i18n/language-context';
+import { useAuth } from '../../lib/auth';
+import { supabase } from '../../lib/supabase';
+import { Button } from '../../components/ui';
+import { useToast } from '../../hooks/useToast';
+import { LocationAutocomplete, type SelectedPlace } from '../../components/location-autocomplete';
+import { FieldLabel, InputField, TextAreaField, SectionTitle, compressImage } from './property-form-shared';
+import { uploadFile, type StorageBucket } from '../../lib/storage';
+import { savePropertyDraft } from '../../lib/properties';
+import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
+import { ServiceUnavailable } from '../../components/service-unavailable';
+import { cn } from '../../lib/utils';
+
+// ─── Plot-specific vocab ──────────────────────────────────────────────────
+const PLOT_TYPES = [
+  'Open Plot', 'Residential Plot', 'Commercial Plot', 'Agricultural Land',
+  'Farm Land', 'Gated Community Plot', 'HMDA Layout Plot', 'DTCP Layout Plot',
+];
+const FACINGS = ['East', 'West', 'North', 'South', 'North-East', 'North-West', 'South-East', 'South-West'];
+const AREA_UNITS = ['Sq. Yards', 'Sq. Ft.', 'Acres', 'Guntas'];
+const ROAD_FACING = ['Single Road', 'Two Roads', 'Three Roads', 'Four Roads'];
+const LAYOUT_TYPES = ['HMDA Approved', 'DTCP Approved', 'GHMC Approved', 'RERA Registered Layout', 'Panchayat Layout', 'Gram Panchayat', 'Venture', 'Unapproved', 'Other'];
+const PLOT_FEATURES = [
+  'Gated Community', 'Black Top Roads', 'CC Roads', 'Street Lights', 'Electricity Available',
+  'Water Connection', 'Drainage', 'Underground Drainage', 'Avenue Plantation', 'Compound Wall',
+  'Security', 'Entrance Arch', 'Park', "Children's Play Area", 'Clubhouse', 'CCTV', 'Solar Street Lights',
+];
+const DEV_STATUS = ['Fully Developed', 'Partially Developed', 'Under Development', 'Undeveloped'];
+const INFRA_ITEMS = ['Road', 'Electricity', 'Water', 'Drainage', 'Street Lights'] as const;
+const INFRA_STATES = ['Available', 'Not Available', 'Coming Soon'];
+const OWNERSHIP_TYPES = ['Single Owner', 'Joint Owners', 'Company Owned', 'Developer Owned'];
+const OWNERSHIP_DOCS = ['Sale Deed', 'Link Documents', 'EC', 'Pattadar Passbook', 'Title Documents', 'Layout Approval', 'RERA Documents', 'Tax Receipts', 'Survey Documents'];
+const LAND_TYPES = ['Residential', 'Commercial', 'Agricultural', 'Converted Land', 'NA Conversion', 'Other'];
+const NEGOTIABILITY = ['Fixed Price', 'Negotiable', 'Slightly Negotiable'];
+const PHOTO_CATEGORIES = ['Front View', 'Road View', 'Plot View', 'Surrounding Area', 'Entrance / Layout'];
+const SELLER_TYPES = ['Owner', 'Builder', 'Developer', 'Agent', 'Land Developer'];
+const CONTACT_PREFS = ['Phone', 'WhatsApp', 'Both'];
+
+const STEPS = ['Location', 'Plot', 'Approval', 'Features', 'Legal', 'Survey', 'Price', 'Media', 'Seller', 'Submit'];
+
+interface PlotPhoto {
+  id: string;
+  url: string;
+  path: string;
+  bucket: StorageBucket;
+  category: string;
+}
+interface PlotDoc {
+  id: string;
+  label: string;
+  url: string;
+  path: string;
+  bucket: StorageBucket;
+}
+
+interface PlotFormState {
+  // Location
+  address: string; city: string; locality: string; state: string; country: string; pincode: string;
+  latitude: number | null; longitude: number | null; placeId: string;
+  // Plot details
+  propertyTypeName: string;
+  purposeIntent: 'Sale' | 'Investment';
+  length: string; width: string; totalArea: string; areaUnit: string;
+  facing: string; cornerPlot: 'Yes' | 'No' | ''; roadFacing: string; roadWidth: string;
+  plotNumber: string; blockSector: string;
+  // Approval
+  layoutType: string; approvalAuthority: string; approvalNumber: string; approvalDate: string;
+  reraNumber: string; layoutNumber: string; lpNumber: string;
+  approvalDocs: PlotDoc[];
+  // Features / development
+  features: string[];
+  devStatus: string;
+  infra: Record<string, string>;
+  // Legal
+  ownershipType: string; ownershipDocs: string[];
+  legallyClear: 'Yes' | 'No' | 'Not Sure' | '';
+  existingLoan: 'Yes' | 'No' | ''; litigation: 'Yes' | 'No' | ''; litigationDetails: string;
+  // Survey
+  surveyNumber: string; subDivisionNumber: string; surveyVillage: string; surveyMandal: string;
+  surveyDistrict: string; extent: string; landClassification: string; landType: string;
+  // Pricing
+  expectedPrice: string; pricePerUnit: string; negotiability: string;
+  developmentCharges: string; maintenanceCharges: string; registrationCharges: string; otherCharges: string;
+  // Media
+  photos: PlotPhoto[];
+  videos: PlotDoc[];
+  documents: PlotDoc[];
+  // Description
+  whySpecial: string; nearbyLandmarks: string; investmentPotential: string; otherInfo: string;
+  // Seller
+  ownerName: string; mobileNumber: string; whatsappNumber: string; email: string;
+  sellerType: string; contactPreference: string;
+}
+
+const EMPTY_STATE: PlotFormState = {
+  address: '', city: '', locality: '', state: '', country: 'India', pincode: '',
+  latitude: null, longitude: null, placeId: '',
+  propertyTypeName: '', purposeIntent: 'Sale',
+  length: '', width: '', totalArea: '', areaUnit: 'Sq. Yards',
+  facing: '', cornerPlot: '', roadFacing: '', roadWidth: '', plotNumber: '', blockSector: '',
+  layoutType: '', approvalAuthority: '', approvalNumber: '', approvalDate: '', reraNumber: '', layoutNumber: '', lpNumber: '',
+  approvalDocs: [],
+  features: [], devStatus: '', infra: {},
+  ownershipType: '', ownershipDocs: [], legallyClear: '', existingLoan: '', litigation: '', litigationDetails: '',
+  surveyNumber: '', subDivisionNumber: '', surveyVillage: '', surveyMandal: '', surveyDistrict: '', extent: '', landClassification: '', landType: '',
+  expectedPrice: '', pricePerUnit: '', negotiability: 'Negotiable',
+  developmentCharges: '', maintenanceCharges: '', registrationCharges: '', otherCharges: '',
+  photos: [], videos: [], documents: [],
+  whySpecial: '', nearbyLandmarks: '', investmentPotential: '', otherInfo: '',
+  ownerName: '', mobileNumber: '', whatsappNumber: '', email: '', sellerType: 'Owner', contactPreference: 'Both',
+};
+
+// ─── Small reusable chip selectors ─────────────────────────────────────────
+function ChipSelect({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => onChange(opt)}
+          className={cn(
+            'rounded-xl border px-3.5 py-2 text-sm font-semibold transition-all',
+            value === opt
+              ? 'border-red-500 bg-red-50 text-red-600 shadow-sm'
+              : 'border-navy-150 bg-white text-navy-600 hover:border-navy-300',
+          )}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ChipMultiSelect({ options, value, onChange }: { options: string[]; value: string[]; onChange: (v: string[]) => void }) {
+  const toggle = (opt: string) => onChange(value.includes(opt) ? value.filter((v) => v !== opt) : [...value, opt]);
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => toggle(opt)}
+          className={cn(
+            'flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-all',
+            value.includes(opt)
+              ? 'border-red-500 bg-red-50 text-red-600 shadow-sm'
+              : 'border-navy-150 bg-white text-navy-600 hover:border-navy-300',
+          )}
+        >
+          {value.includes(opt) && <Check className="h-3.5 w-3.5" />}
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function OpenPlotWizard() {
+  const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const { t } = useLanguageContext();
+  const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const draftIdParam = searchParams.get('draft_id');
+  const [draftId, setDraftId] = useState<string | null>(draftIdParam);
+  const [submissionId] = useState(() => crypto.randomUUID());
+
+  const sections = profile?.role === 'agent' ? getAgentSections(t) : getPortalSections(t);
+  const { isActive: serviceActive, loading: serviceLoading } = useServiceStatus(SERVICE_KEYS.LIST_PROPERTY);
+
+  const [activeStep, setActiveStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [restoring, setRestoring] = useState(!!draftIdParam);
+  const [form, setForm] = useState<PlotFormState>(EMPTY_STATE);
+  const set = <K extends keyof PlotFormState>(key: K, value: PlotFormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  // Prefill seller details from the authenticated profile.
+  useEffect(() => {
+    if (!profile) return;
+    setForm((f) => ({
+      ...f,
+      ownerName: f.ownerName || [profile.first_name, profile.last_name].filter(Boolean).join(' '),
+      mobileNumber: f.mobileNumber || profile.phone || '',
+      email: f.email || profile.email || '',
+    }));
+  }, [profile]);
+
+  // Resume an existing draft.
+  useEffect(() => {
+    if (!draftIdParam) return;
+    (async () => {
+      const { data } = await supabase.from('properties').select('*').eq('id', draftIdParam).maybeSingle();
+      if (data?.plot_details) {
+        setForm((f) => ({ ...f, ...(data.plot_details as Partial<PlotFormState>) }));
+      }
+      setRestoring(false);
+    })();
+  }, [draftIdParam]);
+
+  const handlePlaceSelected = (place: SelectedPlace) => {
+    setForm((f) => ({
+      ...f,
+      address: place.address, city: place.city, locality: place.locality, state: place.state,
+      country: place.country || f.country, pincode: place.postalCode || f.pincode,
+      latitude: place.latitude, longitude: place.longitude, placeId: place.placeId,
+      surveyVillage: f.surveyVillage || place.locality,
+      surveyMandal: f.surveyMandal || place.city,
+      surveyDistrict: f.surveyDistrict || place.city,
+    }));
+  };
+
+  // Auto-calculate area from length × width; auto-calculate price-per-unit both ways.
+  useEffect(() => {
+    const l = parseFloat(form.length), w = parseFloat(form.width);
+    if (l > 0 && w > 0) {
+      const area = (l * w).toFixed(2);
+      if (area !== form.totalArea) set('totalArea', area);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.length, form.width]);
+
+  const onPriceChange = (price: string) => {
+    const area = parseFloat(form.totalArea);
+    const p = parseFloat(price);
+    setForm((f) => ({
+      ...f,
+      expectedPrice: price,
+      pricePerUnit: area > 0 && p > 0 ? (p / area).toFixed(2) : f.pricePerUnit,
+    }));
+  };
+  const onPricePerUnitChange = (val: string) => {
+    const area = parseFloat(form.totalArea);
+    const pu = parseFloat(val);
+    setForm((f) => ({
+      ...f,
+      pricePerUnit: val,
+      expectedPrice: area > 0 && pu > 0 ? (pu * area).toFixed(2) : f.expectedPrice,
+    }));
+  };
+
+  const buildDescription = () =>
+    [form.whySpecial, form.nearbyLandmarks, form.investmentPotential, form.otherInfo].filter(Boolean).join('\n\n');
+
+  const buildPayload = () => ({
+    owner_id: user?.id,
+    status: 'draft' as const,
+    is_draft: true,
+    purpose: 'Sale' as const,
+    listing_category: 'Plot',
+    property_sub_type: form.propertyTypeName || null,
+    title: form.propertyTypeName ? `${form.propertyTypeName} in ${form.city || 'prime location'}` : 'Open Plot Listing',
+    description: buildDescription() || null,
+    address: form.address || [form.locality, form.city].filter(Boolean).join(', ') || null,
+    city: form.city || null,
+    locality: form.locality || null,
+    state: form.state || null,
+    country: form.country || null,
+    pincode: form.pincode || null,
+    place_id: form.placeId || null,
+    latitude: form.latitude,
+    longitude: form.longitude,
+    plot_area: form.totalArea ? parseFloat(form.totalArea) : null,
+    facing: form.facing || null,
+    ownership_type: form.ownershipType || null,
+    price: form.expectedPrice ? parseFloat(form.expectedPrice) : 0,
+    amenities: form.features,
+    images: form.photos.map((p) => p.url),
+    cover_image_url: form.photos[0]?.url || null,
+    plot_details: form,
+  });
+
+  const handleSaveDraft = async () => {
+    setSaving(true);
+    try {
+      const data = await savePropertyDraft(draftId, buildPayload(), submissionId);
+      if (!draftId && data?.id) {
+        setDraftId(data.id);
+        window.history.replaceState({}, '', `?draft_id=${data.id}`);
+      }
+      toast.addToast('success', 'Draft saved.');
+    } catch (err: any) {
+      console.error('Failed to save plot draft', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code });
+      toast.addToast('error', err?.message === 'LISTING_LIMIT_REACHED'
+        ? 'You have reached your free listing limit for this month. Please upgrade to list more.'
+        : 'Unable to save your plot right now. Please check your information and try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const validateStep = (): string | null => {
+    if (activeStep === 0 && (!form.city || !form.latitude)) return 'Please select the plot location from the map search.';
+    if (activeStep === 1 && (!form.propertyTypeName || !form.totalArea)) return 'Please select a plot type and enter plot dimensions.';
+    if (activeStep === 6 && !form.expectedPrice) return 'Please enter the expected price.';
+    if (activeStep === 8 && (!form.ownerName || !form.mobileNumber)) return 'Please enter seller name and mobile number.';
+    return null;
+  };
+
+  const goNext = () => {
+    const err = validateStep();
+    if (err) {
+      toast.addToast('error', err);
+      return;
+    }
+    setActiveStep((s) => Math.min(STEPS.length - 1, s + 1));
+  };
+  const goBack = () => setActiveStep((s) => Math.max(0, s - 1));
+
+  const handleSubmit = async () => {
+    const err = validateStep();
+    if (err) {
+      toast.addToast('error', err);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = { ...buildPayload(), status: 'submitted' as const, approval_status: 'Pending' as const, is_live: false };
+      if (draftId) {
+        const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
+        if (error) throw error;
+      } else {
+        const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
+        if (error) throw error;
+        setDraftId(inserted?.id ?? null);
+      }
+      toast.addToast('success', '🎉 Plot submitted for admin review!');
+      setTimeout(() => navigate(profile?.role === 'agent' ? '/agent/my-properties' : '/portal/my-properties'), 1200);
+    } catch (err: any) {
+      console.error('Failed to submit plot listing', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code });
+      toast.addToast('error', err?.message || 'Submission failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const uploadPhoto = async (file: File, category: string) => {
+    const compressed = await compressImage(file);
+    const { url, path, error } = await uploadFile('property-images', compressed);
+    if (error) {
+      toast.addToast('error', error);
+      return;
+    }
+    setForm((f) => ({ ...f, photos: [...f.photos, { id: crypto.randomUUID(), url, path, bucket: 'property-images', category }] }));
+  };
+  const removePhoto = (id: string) => setForm((f) => ({ ...f, photos: f.photos.filter((p) => p.id !== id) }));
+
+  const uploadDoc = async (file: File, kind: 'approval' | 'video' | 'document', label: string) => {
+    const bucket: StorageBucket = kind === 'video' ? 'property-videos' : 'property-documents';
+    const { url, path, error } = await uploadFile(bucket, file);
+    if (error) {
+      toast.addToast('error', error);
+      return;
+    }
+    const item: PlotDoc = { id: crypto.randomUUID(), label, url, path, bucket };
+    if (kind === 'approval') setForm((f) => ({ ...f, approvalDocs: [...f.approvalDocs, item] }));
+    else if (kind === 'video') setForm((f) => ({ ...f, videos: [...f.videos, item] }));
+    else setForm((f) => ({ ...f, documents: [...f.documents, item] }));
+  };
+
+  if (!serviceLoading && !serviceActive) {
+    return <ServiceUnavailable serviceName="List Property Service" />;
+  }
+
+  if (restoring) {
+    return (
+      <DashboardLayout sections={sections} title="List an Open Plot">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout sections={sections} title="List an Open Plot" badge="Plot">
+      <PageHeader title="List an Open Plot" subtitle="A dedicated flow for plots, land, and layouts — not the standard property form." />
+
+      {/* Stepper */}
+      <div className="mb-8 flex items-center gap-1 overflow-x-auto pb-2">
+        {STEPS.map((label, i) => (
+          <div key={label} className="flex items-center shrink-0">
+            <div
+              className={cn(
+                'flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold transition-all',
+                i === activeStep ? 'bg-red-600 text-white shadow' : i < activeStep ? 'bg-red-50 text-red-600' : 'bg-navy-50 text-navy-400',
+              )}
+            >
+              {i < activeStep ? <Check className="h-3.5 w-3.5" /> : <span>{i + 1}</span>}
+              {label}
+            </div>
+            {i < STEPS.length - 1 && <div className={cn('h-px w-6', i < activeStep ? 'bg-red-300' : 'bg-navy-100')} />}
+          </div>
+        ))}
+      </div>
+
+      <div className="mx-auto max-w-3xl">
+        <AnimatePresence mode="wait">
+          <motion.div key={activeStep} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: 0.2 }}>
+            {/* ── Step 0: Location ── */}
+            {activeStep === 0 && (
+              <div className="space-y-5">
+                <SectionTitle title="Plot Location" sub="Search and select the exact location on the map." />
+                <LocationAutocomplete onSelect={handlePlaceSelected} initialAddress={form.address} initialLat={form.latitude ?? undefined} initialLng={form.longitude ?? undefined} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><FieldLabel>City</FieldLabel><InputField value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="Auto-filled from map search" /></div>
+                  <div><FieldLabel>Locality / Area</FieldLabel><InputField value={form.locality} onChange={(e) => set('locality', e.target.value)} placeholder="Auto-filled from map search" /></div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div><FieldLabel>State</FieldLabel><InputField value={form.state} onChange={(e) => set('state', e.target.value)} /></div>
+                  <div><FieldLabel>PIN Code</FieldLabel><InputField value={form.pincode} onChange={(e) => set('pincode', e.target.value)} /></div>
+                  <div><FieldLabel>Landmark</FieldLabel><InputField placeholder="Optional" onChange={() => {}} /></div>
+                </div>
+                {form.latitude && form.longitude && (
+                  <div className="flex items-center gap-2 rounded-xl bg-navy-50 px-4 py-3 text-xs font-semibold text-navy-600">
+                    <MapPin className="h-4 w-4 text-red-500" /> Lat: {form.latitude.toFixed(6)} · Lng: {form.longitude.toFixed(6)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 1: Plot Details ── */}
+            {activeStep === 1 && (
+              <div className="space-y-5">
+                <SectionTitle title="Plot Details" sub="What kind of plot is this, and how big?" />
+                <div><FieldLabel>Property Type</FieldLabel><ChipSelect options={PLOT_TYPES} value={form.propertyTypeName} onChange={(v) => set('propertyTypeName', v)} /></div>
+                <div><FieldLabel>Purpose</FieldLabel><ChipSelect options={['Sale', 'Investment']} value={form.purposeIntent} onChange={(v) => set('purposeIntent', v as any)} /></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div><FieldLabel>Length</FieldLabel><InputField type="number" value={form.length} onChange={(e) => set('length', e.target.value)} placeholder="ft" /></div>
+                  <div><FieldLabel>Width</FieldLabel><InputField type="number" value={form.width} onChange={(e) => set('width', e.target.value)} placeholder="ft" /></div>
+                  <div><FieldLabel>Total Area</FieldLabel><InputField type="number" value={form.totalArea} onChange={(e) => set('totalArea', e.target.value)} placeholder="Auto-calculated" /></div>
+                </div>
+                <div><FieldLabel>Area Unit</FieldLabel><ChipSelect options={AREA_UNITS} value={form.areaUnit} onChange={(v) => set('areaUnit', v)} /></div>
+                <div><FieldLabel>Facing</FieldLabel><ChipSelect options={FACINGS} value={form.facing} onChange={(v) => set('facing', v)} /></div>
+                <div><FieldLabel>Corner Plot</FieldLabel><ChipSelect options={['Yes', 'No']} value={form.cornerPlot} onChange={(v) => set('cornerPlot', v as any)} /></div>
+                <div><FieldLabel>Road Facing</FieldLabel><ChipSelect options={ROAD_FACING} value={form.roadFacing} onChange={(v) => set('roadFacing', v)} /></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div><FieldLabel>Road Width (ft)</FieldLabel><InputField type="number" value={form.roadWidth} onChange={(e) => set('roadWidth', e.target.value)} /></div>
+                  <div><FieldLabel>Plot Number</FieldLabel><InputField value={form.plotNumber} onChange={(e) => set('plotNumber', e.target.value)} /></div>
+                  <div><FieldLabel>Block / Sector</FieldLabel><InputField value={form.blockSector} onChange={(e) => set('blockSector', e.target.value)} /></div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 2: Layout & Approval ── */}
+            {activeStep === 2 && (
+              <div className="space-y-5">
+                <SectionTitle title="Layout & Approval" sub="Approval status builds buyer trust." />
+                <div><FieldLabel>Layout Type</FieldLabel><ChipSelect options={LAYOUT_TYPES} value={form.layoutType} onChange={(v) => set('layoutType', v)} /></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><FieldLabel>Approval Authority</FieldLabel><InputField value={form.approvalAuthority} onChange={(e) => set('approvalAuthority', e.target.value)} /></div>
+                  <div><FieldLabel>Approval Number</FieldLabel><InputField value={form.approvalNumber} onChange={(e) => set('approvalNumber', e.target.value)} /></div>
+                  <div><FieldLabel>Approval Date</FieldLabel><InputField type="date" value={form.approvalDate} onChange={(e) => set('approvalDate', e.target.value)} /></div>
+                  {form.layoutType === 'RERA Registered Layout' && (
+                    <div><FieldLabel>RERA Number</FieldLabel><InputField value={form.reraNumber} onChange={(e) => set('reraNumber', e.target.value)} /></div>
+                  )}
+                  <div><FieldLabel>Layout Number</FieldLabel><InputField value={form.layoutNumber} onChange={(e) => set('layoutNumber', e.target.value)} /></div>
+                  <div><FieldLabel>LP Number</FieldLabel><InputField value={form.lpNumber} onChange={(e) => set('lpNumber', e.target.value)} /></div>
+                </div>
+                <DocUploader label="Approval Certificate / Layout Plan / RERA Certificate" items={form.approvalDocs} onUpload={(f) => uploadDoc(f, 'approval', f.name)} onRemove={(id) => set('approvalDocs', form.approvalDocs.filter((d) => d.id !== id))} />
+                <p className="text-xs font-semibold text-green-600 flex items-center gap-1.5"><ShieldCheck className="h-4 w-4" /> RealtyNow Team Will Verify These Documents</p>
+              </div>
+            )}
+
+            {/* ── Step 3: Features & Development ── */}
+            {activeStep === 3 && (
+              <div className="space-y-5">
+                <SectionTitle title="Features & Development" sub="Select everything that applies." />
+                <div><FieldLabel>Plot Features</FieldLabel><ChipMultiSelect options={PLOT_FEATURES} value={form.features} onChange={(v) => set('features', v)} /></div>
+                <div><FieldLabel>Development Status</FieldLabel><ChipSelect options={DEV_STATUS} value={form.devStatus} onChange={(v) => set('devStatus', v)} /></div>
+                <div>
+                  <FieldLabel>Infrastructure</FieldLabel>
+                  <div className="space-y-3">
+                    {INFRA_ITEMS.map((item) => (
+                      <div key={item} className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border border-navy-100 p-3">
+                        <span className="w-32 text-sm font-semibold text-navy-700">{item}</span>
+                        <ChipSelect options={INFRA_STATES} value={form.infra[item] ?? ''} onChange={(v) => set('infra', { ...form.infra, [item]: v })} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 4: Legal & Ownership ── */}
+            {activeStep === 4 && (
+              <div className="space-y-5">
+                <SectionTitle title="Legal & Ownership" sub="Legal clarity is a top buyer priority for plots." />
+                <div><FieldLabel>Property Ownership</FieldLabel><ChipSelect options={OWNERSHIP_TYPES} value={form.ownershipType} onChange={(v) => set('ownershipType', v)} /></div>
+                <div><FieldLabel>Ownership Documents Available</FieldLabel><ChipMultiSelect options={OWNERSHIP_DOCS} value={form.ownershipDocs} onChange={(v) => set('ownershipDocs', v)} /></div>
+                <div><FieldLabel>Is the property legally clear?</FieldLabel><ChipSelect options={['Yes', 'No', 'Not Sure']} value={form.legallyClear} onChange={(v) => set('legallyClear', v as any)} /></div>
+                <div><FieldLabel>Existing Loan</FieldLabel><ChipSelect options={['No', 'Yes']} value={form.existingLoan} onChange={(v) => set('existingLoan', v as any)} /></div>
+                <div><FieldLabel>Litigation / Dispute</FieldLabel><ChipSelect options={['No', 'Yes']} value={form.litigation} onChange={(v) => set('litigation', v as any)} /></div>
+                {form.litigation === 'Yes' && (
+                  <div><FieldLabel>Litigation Details</FieldLabel><TextAreaField value={form.litigationDetails} onChange={(e) => set('litigationDetails', e.target.value)} placeholder="Describe the dispute so RealtyNow can review it" /></div>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 5: Survey Details ── */}
+            {activeStep === 5 && (
+              <div className="space-y-5">
+                <SectionTitle title="Survey Details" sub="Official land-record identifiers." />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><FieldLabel>Survey Number</FieldLabel><InputField value={form.surveyNumber} onChange={(e) => set('surveyNumber', e.target.value)} /></div>
+                  <div><FieldLabel>Sub-Division Number</FieldLabel><InputField value={form.subDivisionNumber} onChange={(e) => set('subDivisionNumber', e.target.value)} /></div>
+                  <div><FieldLabel>Village</FieldLabel><InputField value={form.surveyVillage} onChange={(e) => set('surveyVillage', e.target.value)} /></div>
+                  <div><FieldLabel>Mandal</FieldLabel><InputField value={form.surveyMandal} onChange={(e) => set('surveyMandal', e.target.value)} /></div>
+                  <div><FieldLabel>District</FieldLabel><InputField value={form.surveyDistrict} onChange={(e) => set('surveyDistrict', e.target.value)} /></div>
+                  <div><FieldLabel>Extent</FieldLabel><InputField value={form.extent} onChange={(e) => set('extent', e.target.value)} placeholder="e.g. 200 sq. yds" /></div>
+                  <div><FieldLabel>Land Classification</FieldLabel><InputField value={form.landClassification} onChange={(e) => set('landClassification', e.target.value)} /></div>
+                </div>
+                <div><FieldLabel>Land Type</FieldLabel><ChipSelect options={LAND_TYPES} value={form.landType} onChange={(v) => set('landType', v)} /></div>
+              </div>
+            )}
+
+            {/* ── Step 6: Pricing ── */}
+            {activeStep === 6 && (
+              <div className="space-y-5">
+                <SectionTitle title="Pricing" sub="Keep it simple — we'll do the math." />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><FieldLabel>Expected Price (₹)</FieldLabel><InputField type="number" value={form.expectedPrice} onChange={(e) => onPriceChange(e.target.value)} /></div>
+                  <div><FieldLabel>Price Per {form.areaUnit} (₹)</FieldLabel><InputField type="number" value={form.pricePerUnit} onChange={(e) => onPricePerUnitChange(e.target.value)} /></div>
+                </div>
+                <div><FieldLabel>Negotiability</FieldLabel><ChipSelect options={NEGOTIABILITY} value={form.negotiability} onChange={(v) => set('negotiability', v)} /></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div><FieldLabel>Development Charges (optional)</FieldLabel><InputField type="number" value={form.developmentCharges} onChange={(e) => set('developmentCharges', e.target.value)} /></div>
+                  <div><FieldLabel>Maintenance Charges (optional)</FieldLabel><InputField type="number" value={form.maintenanceCharges} onChange={(e) => set('maintenanceCharges', e.target.value)} /></div>
+                  <div><FieldLabel>Registration Charges (optional)</FieldLabel><InputField type="number" value={form.registrationCharges} onChange={(e) => set('registrationCharges', e.target.value)} /></div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 7: Media & Documents ── */}
+            {activeStep === 7 && (
+              <div className="space-y-6">
+                <SectionTitle title="Photos, Videos & Documents" sub="At least 5 photos recommended." />
+                {PHOTO_CATEGORIES.map((cat) => (
+                  <div key={cat}>
+                    <FieldLabel>{cat}</FieldLabel>
+                    <div className="flex flex-wrap gap-3">
+                      {form.photos.filter((p) => p.category === cat).map((p) => (
+                        <div key={p.id} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-navy-100">
+                          <img src={p.url} alt="" className="h-full w-full object-cover" />
+                          <button type="button" onClick={() => removePhoto(p.id)} className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white"><X className="h-3 w-3" /></button>
+                        </div>
+                      ))}
+                      <label className="grid h-20 w-20 shrink-0 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-navy-200 text-navy-400 hover:border-red-400 hover:text-red-500">
+                        <Upload className="h-5 w-5" />
+                        <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { Array.from(e.target.files ?? []).forEach((f) => uploadPhoto(f, cat)); e.target.value = ''; }} />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+                <DocUploader label="Videos (walkthrough, road access, surrounding area)" items={form.videos} onUpload={(f) => uploadDoc(f, 'video', f.name)} onRemove={(id) => set('videos', form.videos.filter((d) => d.id !== id))} accept="video/*" />
+                <DocUploader label="Documents (EC, title, additional permissions)" items={form.documents} onUpload={(f) => uploadDoc(f, 'document', f.name)} onRemove={(id) => set('documents', form.documents.filter((d) => d.id !== id))} />
+                <div className="space-y-3 rounded-2xl border border-navy-100 p-4">
+                  <p className="text-sm font-bold text-navy-800">Plot Description (structured — no essay required)</p>
+                  <div><FieldLabel>Why is this plot special?</FieldLabel><TextAreaField value={form.whySpecial} onChange={(e) => set('whySpecial', e.target.value)} rows={2} /></div>
+                  <div><FieldLabel>Nearby landmarks</FieldLabel><TextAreaField value={form.nearbyLandmarks} onChange={(e) => set('nearbyLandmarks', e.target.value)} rows={2} /></div>
+                  <div><FieldLabel>Investment potential</FieldLabel><TextAreaField value={form.investmentPotential} onChange={(e) => set('investmentPotential', e.target.value)} rows={2} /></div>
+                  <div><FieldLabel>Other information</FieldLabel><TextAreaField value={form.otherInfo} onChange={(e) => set('otherInfo', e.target.value)} rows={2} /></div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 8: Seller Details ── */}
+            {activeStep === 8 && (
+              <div className="space-y-5">
+                <SectionTitle title="Seller Details" sub="Who should buyers reach out to?" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><FieldLabel>Owner Name</FieldLabel><InputField value={form.ownerName} onChange={(e) => set('ownerName', e.target.value)} /></div>
+                  <div><FieldLabel>Mobile Number</FieldLabel><InputField value={form.mobileNumber} onChange={(e) => set('mobileNumber', e.target.value)} /></div>
+                  <div><FieldLabel>WhatsApp Number</FieldLabel><InputField value={form.whatsappNumber} onChange={(e) => set('whatsappNumber', e.target.value)} placeholder="Same as mobile if blank" /></div>
+                  <div><FieldLabel>Email</FieldLabel><InputField type="email" value={form.email} onChange={(e) => set('email', e.target.value)} /></div>
+                </div>
+                <div><FieldLabel>Seller Type</FieldLabel><ChipSelect options={SELLER_TYPES} value={form.sellerType} onChange={(v) => set('sellerType', v)} /></div>
+                <div><FieldLabel>Contact Preference</FieldLabel><ChipSelect options={CONTACT_PREFS} value={form.contactPreference} onChange={(v) => set('contactPreference', v)} /></div>
+              </div>
+            )}
+
+            {/* ── Step 9: Review & Submit ── */}
+            {activeStep === 9 && (
+              <div className="space-y-5">
+                <SectionTitle title="Review & Submit" sub="Confirm the details before sending for RealtyNow verification." />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <ReviewRow label="Type" value={form.propertyTypeName} onEdit={() => setActiveStep(1)} />
+                  <ReviewRow label="Location" value={[form.locality, form.city].filter(Boolean).join(', ')} onEdit={() => setActiveStep(0)} />
+                  <ReviewRow label="Area" value={form.totalArea ? `${form.totalArea} ${form.areaUnit}` : ''} onEdit={() => setActiveStep(1)} />
+                  <ReviewRow label="Facing" value={form.facing} onEdit={() => setActiveStep(1)} />
+                  <ReviewRow label="Layout Approval" value={form.layoutType} onEdit={() => setActiveStep(2)} />
+                  <ReviewRow label="Legal Status" value={form.legallyClear} onEdit={() => setActiveStep(4)} />
+                  <ReviewRow label="Expected Price" value={form.expectedPrice ? `₹${form.expectedPrice}` : ''} onEdit={() => setActiveStep(6)} />
+                  <ReviewRow label="Photos" value={`${form.photos.length} uploaded`} onEdit={() => setActiveStep(7)} />
+                  <ReviewRow label="Seller" value={form.ownerName} onEdit={() => setActiveStep(8)} />
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm font-bold text-amber-800 flex items-center gap-1.5"><ShieldCheck className="h-4 w-4" /> RealtyNow Verification — Pending</p>
+                  <p className="mt-1 text-xs text-amber-700">Once submitted, our team reviews ownership, documents, approval, and site details before this plot goes live and earns the RealtyNow Verified badge.</p>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Sticky nav */}
+        <div className="sticky bottom-0 mt-8 flex items-center justify-between gap-3 border-t border-navy-100 bg-white/95 py-4 backdrop-blur">
+          <Button variant="ghost" onClick={goBack} disabled={activeStep === 0} icon={<ChevronLeft className="h-4 w-4" />}>Previous</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</Button>
+            {activeStep < STEPS.length - 1 ? (
+              <Button onClick={goNext} icon={<ChevronRight className="h-4 w-4" />}>Continue</Button>
+            ) : (
+              <Button onClick={handleSubmit} disabled={submitting}>{submitting ? 'Submitting…' : 'Submit for Verification'}</Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function ReviewRow({ label, value, onEdit }: { label: string; value: string; onEdit: () => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-navy-100 p-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-navy-400">{label}</p>
+        <p className="font-semibold text-navy-800">{value || '—'}</p>
+      </div>
+      <button type="button" onClick={onEdit} className="text-xs font-bold text-red-600 hover:underline">Edit</button>
+    </div>
+  );
+}
+
+function DocUploader({
+  label, items, onUpload, onRemove, accept = 'application/pdf,image/*',
+}: {
+  label: string; items: PlotDoc[]; onUpload: (f: File) => void; onRemove: (id: string) => void; accept?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="space-y-2">
+        {items.map((d) => (
+          <div key={d.id} className="flex items-center justify-between rounded-xl border border-navy-100 px-3 py-2 text-sm">
+            <a href={d.url} target="_blank" rel="noreferrer" className="truncate text-navy-700 hover:text-red-600">{d.label}</a>
+            <button type="button" onClick={() => onRemove(d.id)}><X className="h-4 w-4 text-navy-400 hover:text-red-500" /></button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-navy-200 py-3 text-sm font-semibold text-navy-500 hover:border-red-400 hover:text-red-500"
+        >
+          <Upload className="h-4 w-4" /> Upload
+        </button>
+        <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={(e) => { Array.from(e.target.files ?? []).forEach(onUpload); e.target.value = ''; }} />
+      </div>
+    </div>
+  );
+}

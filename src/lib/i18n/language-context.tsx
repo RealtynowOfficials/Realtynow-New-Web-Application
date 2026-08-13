@@ -71,8 +71,35 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, []);
 
-  // Sync user language preference from Supabase user_preferences table on login is temporarily disabled 
-  // to prevent overriding local preference with outdated DB defaults (e.g. 'te' for admin).
+  // Sync the user's saved language preference from Supabase on login, so a preference set on
+  // one device carries over to another. This was previously disabled entirely because a bad
+  // system default ('te') had been written into user_preferences for accounts that never chose
+  // it — migration 0028 (20260725000000_0028_reset_default_language_to_english.sql) fixed that
+  // at the source (reset corrupted rows to 'en' and corrected `languages.is_default`), so it's
+  // now safe to read the preference back; only apply it if it's a currently supported code and
+  // differs from what's already active, so it can't fight an in-session language change.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    supabase
+      .from('user_preferences')
+      .select('language_code')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const saved = data?.language_code;
+        if (saved && SUPPORTED_CODES.has(saved) && saved !== i18n.language) {
+          i18n.changeLanguage(saved);
+          setLangCode(saved);
+          localStorage.setItem('realtynow_language', saved);
+          document.documentElement.lang = saved;
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const currentLanguage = useMemo(() => {
     return SUPPORTED_LANGUAGES.find((l) => l.code === langCode) || SUPPORTED_LANGUAGES[0];

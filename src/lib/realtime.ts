@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
@@ -86,25 +86,41 @@ export function useRealtimeNotifications(userId: string | undefined) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [refetchFlag, setRefetchFlag] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  // Monotonic request counter: only the response to the MOST RECENTLY fired
+  // count query is allowed to update state. Without this, a burst of
+  // realtime events (e.g. "mark all read" updating N rows fires N separate
+  // postgres_changes events) can resolve out of order and let a stale
+  // intermediate count overwrite the correct final one.
+  const requestSeq = useRef(0);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!userId) return;
+    const seq = ++requestSeq.current;
+    const { count } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .is('read_at', null);
+    if (seq === requestSeq.current) setUnreadCount(count ?? 0);
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
+
+    // Previously this hook only ever updated unreadCount from a realtime
+    // event, so it showed 0 on every fresh mount (dashboard load, tab
+    // switch, page refresh) until something happened to change afterward —
+    // fetch the real starting count immediately instead.
+    fetchUnreadCount();
 
     const channel = supabase
       .channel(`notifications-${userId}-${Math.random().toString(36).substring(7)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-        (payload) => {
+        () => {
           setRefetchFlag((f) => f + 1);
-          (async () => {
-            const { count } = await supabase
-              .from('notifications')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', userId)
-              .is('read_at', null);
-            setUnreadCount(count ?? 0);
-          })();
+          fetchUnreadCount();
         },
       )
       .subscribe();
@@ -115,7 +131,7 @@ export function useRealtimeNotifications(userId: string | undefined) {
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [userId]);
+  }, [userId, fetchUnreadCount]);
 
   return { unreadCount, refetchFlag, setUnreadCount };
 }

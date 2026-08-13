@@ -1,8 +1,6 @@
-import { Link } from 'react-router-dom';
-import { Home, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Zap } from 'lucide-react';
 import { Button } from './ui';
 import { useLanguageContext } from '../lib/i18n/language-context';
-import { cn } from '../lib/utils';
 import { PostPropertyLink } from './post-property-link';
 
 export function PostPropertyBanner({ compact = false }: { compact?: boolean }) {

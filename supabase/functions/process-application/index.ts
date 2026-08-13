@@ -261,29 +261,6 @@ serve(async (req) => {
             await recordApprovalAudit('PARTNER_CREATED', 'SUCCESS', undefined, { user_id: userId });
           }
         }
-
-        // For agents
-        if (type === 'agent') {
-          const { data: existingAgent } = await supabaseAdmin
-            .from('agents')
-            .select('id')
-            .eq('user_id', userId)
-            .maybeSingle();
-          if (!existingAgent) {
-            const { error: agentErr } = await supabaseAdmin.from('agents').insert({
-              user_id: userId,
-              assigned_areas: app.assigned_areas || [],
-              specialization: app.specialization || null,
-              experience_years: app.experience_years || null,
-              license_number: app.license_number || null,
-              company: app.company || null,
-              bio: app.bio || null,
-              status: 'active',
-            });
-            if (agentErr) throw new Error('Failed to create agents record: ' + agentErr.message);
-            await recordApprovalAudit('AGENT_CREATED', 'SUCCESS', undefined, { user_id: userId });
-          }
-        }
       } catch (err: any) {
         finalError = err;
       }

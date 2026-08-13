@@ -142,6 +142,14 @@ export const propertyWizardSchema = z.object({
   cleaning_fee: z.string().optional(),
   extra_guest_fee: z.string().optional(),
   cancellation_policy: z.string().optional(),
+  
+  // SEO Metadata
+  seo_metadata: z.object({
+    meta_title: z.string().optional(),
+    meta_description: z.string().optional(),
+    slug: z.string().optional(),
+    keywords: z.string().optional()
+  }).optional(),
 });
 
 export type PropertyWizardForm = z.infer<typeof propertyWizardSchema>;

@@ -4,6 +4,7 @@ import { Download } from 'lucide-react';
 import { Spinner } from '../ui';
 import { Logo } from '../logo';
 import { supabase } from '../../lib/supabase';
+import { getDocumentSignedUrl } from '../../lib/storage';
 
 interface InvoicePreviewProps {
   invoice: any;
@@ -39,13 +40,14 @@ export default function InvoicePreview({ invoice, onPdfGenerated }: InvoicePrevi
       });
 
       if (!error && data) {
-        const { data: publicUrlData } = supabase.storage.from('invoice-pdfs').getPublicUrl(fileName);
-        const publicUrl = publicUrlData.publicUrl;
+        // invoice-pdfs is a private bucket (see migration 0095) — store the
+        // permanent storage PATH, not a public URL, and mint a fresh signed
+        // URL for immediate use here. Consumers must call
+        // getDocumentSignedUrl('invoice-pdfs', pdf_url) to reopen it later.
+        await supabase.from('txn_invoices').update({ pdf_url: fileName }).eq('id', invoice.id);
 
-        // Update DB
-        await supabase.from('txn_invoices').update({ pdf_url: publicUrl }).eq('id', invoice.id);
-        
-        if (onPdfGenerated) onPdfGenerated(publicUrl);
+        const { url: signedUrl } = await getDocumentSignedUrl('invoice-pdfs', fileName);
+        if (onPdfGenerated && signedUrl) onPdfGenerated(signedUrl);
       }
 
       // Trigger user download

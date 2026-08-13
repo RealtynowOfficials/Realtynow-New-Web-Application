@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { PageLoader } from '../../components/ui';
-import { Star, Phone, MessageCircle, Calendar, MapPin, Building2, User, Mail } from 'lucide-react';
+import { Star, Phone, MessageCircle, Building2, Mail } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export function AgentsPage() {

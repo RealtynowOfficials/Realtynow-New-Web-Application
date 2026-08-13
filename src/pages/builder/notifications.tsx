@@ -108,7 +108,7 @@ export function BuilderNotifications() {
       />
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 mb-6">
-        <StatCard label="Unread" value={unreadCount || unread.length} icon={<Bell className="h-5 w-5" />} accent="gold" />
+        <StatCard label="Unread" value={unreadCount} icon={<Bell className="h-5 w-5" />} accent="gold" />
         <StatCard label="Total" value={notifications.length} icon={<Info className="h-5 w-5" />} accent="navy" />
       </div>
 

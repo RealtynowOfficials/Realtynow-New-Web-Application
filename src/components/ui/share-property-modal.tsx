@@ -273,7 +273,7 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
               </button>
               
               {/* Native Web Share Fallback */}
-              {typeof navigator !== 'undefined' && navigator.share && (
+              {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
                 <button
                   onClick={handleNativeShare}
                   className="px-4 py-3 bg-navy-900 hover:bg-navy-800 text-white rounded-xl shadow-sm transition-colors flex items-center justify-center"

@@ -1,17 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { useAdminAuth } from '../contexts/admin-auth-context';
 
 export function GlobalAppLoader({ children }: { children: React.ReactNode }) {
   const { loading: authLoading } = useAuth();
-  const { loading: adminLoading } = useAdminAuth();
 
   const [showLoader, setShowLoader] = useState(true);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Proceed when both authentication contexts have resolved their initial state
-    if (!authLoading && !adminLoading) {
+    // Proceed once auth has resolved its initial state
+    if (!authLoading) {
       setIsReady(true);
       // Wait for the 500ms CSS transition to finish before completely unmounting the loader
       const timer = setTimeout(() => {
@@ -19,7 +17,7 @@ export function GlobalAppLoader({ children }: { children: React.ReactNode }) {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [authLoading, adminLoading]);
+  }, [authLoading]);
 
   return (
     <>

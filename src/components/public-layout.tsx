@@ -22,7 +22,6 @@ import {
   ChevronRight,
   ArrowRight,
   LogIn,
-  UserPlus,
   Home,
   Building2,
   Store,
@@ -620,7 +619,11 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
-                          setHoveredMenu(hoveredMenu === configKey ? null : configKey);
+                          // Always open (never toggle-close) on the trigger's own click — a
+                          // fast double-click previously closed the menu right after opening
+                          // it (click 1 opens, click 2 re-toggles closed). Closing already
+                          // works via outside-click, Escape, and switching to another item.
+                          setHoveredMenu(configKey);
                         }}
                         aria-haspopup="true"
                         aria-expanded={isOpen}
@@ -736,7 +739,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               >
                 <button
                   type="button"
-                  onClick={() => setHoveredMenu(hoveredMenu === 'Services' ? null : 'Services')}
+                  onClick={() => setHoveredMenu('Services')}
                   aria-haspopup="true"
                   aria-expanded={hoveredMenu === 'Services'}
                   className={cn(
@@ -859,7 +862,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               {/* Login / Profile */}
               <div className="relative" ref={userMenuRef}>
                 <button
-                  onClick={() => setUserMenu((v) => !v)}
+                  onClick={() => setUserMenu(true)}
                   aria-haspopup="true"
                   aria-expanded={userMenu}
                   className="group relative flex items-center justify-center rounded-full p-0.5 shadow-md shadow-[#D8232A]/20 transition-all duration-300 hover:scale-105 hover:shadow-[#D8232A]/40 active:scale-95"

@@ -227,13 +227,23 @@ export async function updatePropertyStatus(id: string, status: PropertyStatus, r
 }
 
 export async function approveProperty(id: string) {
-  // Direct table update (works with service role or open RLS)
+  // Direct table update (works with service role or open RLS). Note: the
+  // `on_property_status_change` DB trigger writes property_status_history
+  // and notifies the owner on ANY status update regardless of how it
+  // happened, so this path does not skip auditing — but it must still set
+  // approved_by itself (the admin_approve_property RPC does), or that
+  // column is silently left null on every approval taken through here.
+  const {
+    data: { user: currentUser },
+  } = await supabase.auth.getUser();
+
   const { data, error } = await supabase
     .from('properties')
     .update({
       status: 'published',
       approval_status: 'Approved',
       is_live: true,
+      approved_by: currentUser?.id ?? null,
       approved_at: new Date().toISOString(),
       published_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -254,6 +264,9 @@ export async function approveProperty(id: string) {
 
 export async function rejectProperty(id: string, reason?: string) {
   const rejReason = reason ?? 'Property listing rejected by admin.';
+  const {
+    data: { user: currentUser },
+  } = await supabase.auth.getUser();
 
   const { data, error } = await supabase
     .from('properties')
@@ -262,6 +275,7 @@ export async function rejectProperty(id: string, reason?: string) {
       approval_status: 'Rejected',
       is_live: false,
       rejection_reason: rejReason,
+      reviewed_by: currentUser?.id ?? null,
       reviewed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

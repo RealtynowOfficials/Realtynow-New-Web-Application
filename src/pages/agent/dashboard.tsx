@@ -1,40 +1,23 @@
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AgentKanbanBoard } from '../../components/agent/AgentKanbanBoard';
-import { AgentAnalyticsDashboard } from '../../components/agent/AgentAnalyticsDashboard';
+import { useQuery } from '@tanstack/react-query';
 import { AiLeadAssistant } from '../../components/agent/AiLeadAssistant';
-import { Link } from 'react-router-dom';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { PlusCircle } from 'lucide-react';
 import {
   Building2,
   MessageSquare,
   Eye,
   Calendar,
-  Phone,
-  Mail,
   TrendingUp,
-  CheckCircle2,
-  XCircle,
-  ClipboardList,
-  Star,
-  DollarSign,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, StatCard, PageHeader } from '../../components/dashboard-layout';
 import { getAgentSections } from '../portal/sections';
-import { Card, Skeleton, Badge, Button, EmptyState, Modal, Input, Textarea, Select, Avatar } from '../../components/ui';
-import { StatusBadge } from '../../components/property-card';
-import { DataTable, type Column } from '../../components/data-table';
-import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate, formatNumber , generatePropertyUrl} from '../../lib/utils';
+import { Card, Skeleton, Badge, EmptyState } from '../../components/ui';
+import { formatNumber } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { RemindersWidget } from '../../components/reminders-widget';
-import type { Property } from '../../lib/types';
-import { ExportMenu } from '../../components/export-menu';
-import { SavedFiltersMenu } from '../../components/saved-filters-menu';
-import { useSavedFilters } from '../../lib/saved-filters';
 
 const AGENT_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -61,7 +44,9 @@ const APPT_STATUSES = ['requested', 'confirmed', 'completed', 'cancelled'] as co
 export function AgentDashboard() {
   const { t } = useLanguageContext();
   const agentSections = getAgentSections(t);
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const agentDisplayName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || 'Agent';
+  const navigate = useNavigate();
   const realtimeTick = useRealtimeCount('enquiries', { column: 'agent_id', value: user?.id ?? '' });
 
   const { data: stats, isLoading } = useQuery({
@@ -110,8 +95,16 @@ export function AgentDashboard() {
   return (
     <DashboardLayout sections={agentSections} title="Agent Dashboard" badge="Agent">
       <PageHeader
-        title={`Welcome, ${user?.email?.split('@')[0] ?? 'Agent'}`}
+        title={`Welcome, ${agentDisplayName}`}
         subtitle="Your performance at a glance."
+        actions={[
+          {
+            label: 'List Property',
+            icon: <PlusCircle className="h-4 w-4" />,
+            primary: true,
+            onClick: () => navigate('/agent/list-property'),
+          },
+        ]}
       />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {isLoading || !stats ? (

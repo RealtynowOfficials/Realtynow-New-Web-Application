@@ -11,6 +11,8 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { formatDate, formatPrice } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { getAdminSections } from '../portal/sections';
+import { Modal, Select, Button } from '../../components/ui';
+import { useToast } from '../../components/toast';
 
 type LeadStatus = 'new' | 'assigned' | 'contacted' | 'site_visit' | 'negotiation' | 'won' | 'lost' | 'closed' | 'spam';
 
@@ -206,7 +208,38 @@ export function AdminCRMDashboard() {
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [assigneeId, setAssigneeId] = useState('');
   const qc = useQueryClient();
+  const { addToast } = useToast();
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ['crm-assignable-agents'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .eq('role', 'agent')
+        .eq('status', 'active')
+        .order('first_name');
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const assignLead = useMutation({
+    mutationFn: async ({ leadId, agentId }: { leadId: string; agentId: string }) => {
+      const { error } = await supabase.rpc('fn_assign_lead', { p_lead_id: leadId, p_agent_id: agentId });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm-leads'] });
+      qc.invalidateQueries({ queryKey: ['crm-stats'] });
+      addToast('success', 'Lead assigned.');
+      setSelectedLead(null);
+      setAssigneeId('');
+    },
+    onError: (err: any) => addToast('error', err.message ?? 'Could not assign lead'),
+  });
 
   // Realtime subscription
   const realtimeCount = useRealtimeCount('enquiries');
@@ -445,6 +478,43 @@ export function AdminCRMDashboard() {
           </table>
         </div>
       )}
+
+      <Modal
+        open={!!selectedLead}
+        onClose={() => { setSelectedLead(null); setAssigneeId(''); }}
+        title="Assign Lead"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => { setSelectedLead(null); setAssigneeId(''); }}>Cancel</Button>
+            <Button
+              disabled={!assigneeId || assignLead.isPending}
+              onClick={() => selectedLead && assignLead.mutate({ leadId: selectedLead.id, agentId: assigneeId })}
+            >
+              {assignLead.isPending ? 'Assigning…' : 'Assign'}
+            </Button>
+          </>
+        }
+      >
+        {selectedLead && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-navy-900">{selectedLead.name || 'Anonymous'}</p>
+              <p className="text-xs text-navy-500">{selectedLead.phone || selectedLead.email}</p>
+            </div>
+            {selectedLead.assignee && (
+              <p className="text-xs text-navy-500">
+                Currently assigned to <span className="font-semibold text-navy-700">{selectedLead.assignee.first_name} {selectedLead.assignee.last_name}</span>
+              </p>
+            )}
+            <Select label="Assign to agent" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+              <option value="">Select an agent…</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.first_name} {a.last_name}</option>
+              ))}
+            </Select>
+          </div>
+        )}
+      </Modal>
     </DashboardLayout>
   );
 }
