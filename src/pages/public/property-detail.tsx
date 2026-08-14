@@ -285,7 +285,7 @@ export function PropertyDetailPage() {
       const { data } = await supabase
         .from('properties')
         .select('*, cities!inner(name), localities(name), property_types(name)')
-        .eq('status', 'published')
+        .or('status.eq.published,status.eq.live,is_live.eq.true')
         .neq('id', id!)
         .eq('city_id', property!.city_id!)
         .eq('property_type_id', property!.property_type_id!)
@@ -369,7 +369,7 @@ export function PropertyDetailPage() {
         trackPropertyView(id, user?.id);
       }
     }
-  }, [id, property?.status, property?.owner_id, user?.id]);
+  }, [id, property, user?.id]);
 
   useEffect(() => {
     if (id) {

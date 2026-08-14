@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams, Link, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PropertyMap } from '../../components/property-map';
 import { VoiceSearchButton } from '../../components/voice-search-button';
@@ -50,6 +50,7 @@ import { useAuth } from '../../lib/auth';
 import { useToast } from '../../components/toast';
 import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import type { Property } from '../../lib/types';
+import { getCategoryMeta, normalizeCategorySlug } from '../../lib/categories';
 
 import { AdvancedFilters } from '../../components/advanced-filters';
 import { useSEO } from '../../hooks/use-seo';
@@ -854,6 +855,7 @@ function FilterSidebar({ params, setFilter, clearAll, activeCount, types, cities
 }
 
 const FILTER_CHIP_LABELS: Record<string, string> = {
+  category: 'Category',
   purpose: 'Purpose',
   city_id: 'Location',
   city: 'Location',
@@ -884,9 +886,16 @@ function describeFilterChip(
 ): { label: string; value: string } {
   const label = FILTER_CHIP_LABELS[key] || key;
   let resolved = value;
-  if (key === 'city_id') resolved = lookups.cities?.find((c) => c.id === value)?.name ?? value;
-  else if (key === 'locality_id') resolved = lookups.localities?.find((l) => l.id === value)?.name ?? value;
-  else if (key === 'type' || key === 'type_id') resolved = lookups.types?.find((ty) => ty.id === value)?.name ?? value;
+  if (key === 'category') {
+    const meta = getCategoryMeta(value);
+    resolved = meta?.name ?? value;
+  } else if (key === 'city_id') {
+    resolved = lookups.cities?.find((c) => c.id === value)?.name ?? value;
+  } else if (key === 'locality_id') {
+    resolved = lookups.localities?.find((l) => l.id === value)?.name ?? value;
+  } else if (key === 'type' || key === 'type_id') {
+    resolved = lookups.types?.find((ty) => ty.id === value)?.name ?? value;
+  }
   return { label, value: resolved };
 }
 
@@ -897,6 +906,7 @@ export function SearchPage() {
   const { t } = useLanguageContext();
   const { user } = useAuth();
   const { addToast } = useToast();
+  const { category: routeCategory } = useParams<{ category?: string }>();
   const [params, setParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
   const view = (params.get('view') as ViewMode) || 'list';
@@ -942,33 +952,40 @@ export function SearchPage() {
 
   const query = params.get('q') || '';
 
+  const queryClient = useQueryClient();
+
   const searchSuggestions = useCallback(async (q: string) => {
     const cleaned = sanitizeSearchQuery(q);
     if (cleaned.length < 2) {
       setSuggestions([]);
       return;
     }
-    // Same source/status/fields as the main search so a suggestion always
-    // resolves to a non-empty result when selected.
+    // Same canonical live condition and full search_text as main search
     const { data } = await supabase
       .from('v_properties_search')
       .select('title')
-      .or('status.eq.published,is_live.eq.true')
+      .or('status.eq.published,status.eq.live,is_live.eq.true')
       .ilike('search_text', `%${cleaned}%`)
       .limit(6);
     setSuggestions((data ?? []).map((p: { title: string }) => p.title));
   }, []);
 
+  const activeCategorySlug = normalizeCategorySlug(
+    routeCategory || params.get('category') || params.get('type')
+  );
+  const activeCategoryMeta = useMemo(() => getCategoryMeta(activeCategorySlug), [activeCategorySlug]);
+
   const filters: PropertyFilters = useMemo(() => {
     const typeIdParam = params.get('type_id') || undefined;
     const typeNameParam = params.get('type') || undefined;
+
     let resolvedTypeId = typeIdParam;
     if (typeNameParam && types) {
       const found = types.find((t2) => t2.name.toLowerCase() === typeNameParam.toLowerCase());
       if (found) resolvedTypeId = found.id;
     }
 
-    // Phase 11: Resolve ?city=CityName → city_id UUID (footer links use names not UUIDs)
+    // Resolve ?city=CityName → city_id UUID (footer links use names not UUIDs)
     // ?city_id=UUID (filter sidebar) takes precedence when present
     const cityIdParam = params.get('city_id') || undefined;
     const cityParam = params.get('city') || undefined;
@@ -980,7 +997,7 @@ export function SearchPage() {
         : cities?.find((c) => c.name.toLowerCase() === cityParam.toLowerCase())?.id;
     }
 
-    // Phase 11: Resolve ?locality=LocalityName → locality_id UUID
+    // Resolve ?locality=LocalityName → locality_id UUID
     const localityParam = params.get('locality') || undefined;
     let resolvedLocalityId: string | undefined;
     if (localityParam && localities) {
@@ -997,9 +1014,10 @@ export function SearchPage() {
     return {
       q: params.get('q') || undefined,
       city_id: resolvedCityId,
-       
       ...(resolvedLocalityId ? { locality_id: resolvedLocalityId } : {}),
       purpose: params.get('purpose') || undefined,
+      category: activeCategorySlug || undefined,
+      type: typeNameParam,
       property_type_id: resolvedTypeId,
       min_price: parseNumberParam(params, 'min_price'),
       max_price: parseNumberParam(params, 'max_price'),
@@ -1009,21 +1027,39 @@ export function SearchPage() {
       max_area: parseNumberParam(params, 'max_area'),
       furnishing: params.get('furnishing') || undefined,
       facing: params.get('facing') || undefined,
+      possession_status: params.get('possession_status') || undefined,
+      verified_status: params.get('verified_status') || undefined,
       is_luxury: params.get('luxury') === '1' || undefined,
       sort_by: sort,
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE,
     };
-  }, [params, types, cities, localities, sort, page]);
+  }, [params, types, cities, localities, sort, page, activeCategorySlug]);
 
-  // Same data source and filters as every other listing surface (home, category
-  // pages) — v_properties_search's search_text covers locality/city/project/title
-  // in one ilike, so a locality-only query no longer returns 0 results just
-  // because the property's own title/description doesn't mention it.
+  // Query canonical live properties
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['search', filters],
     queryFn: () => fetchPublishedProperties(filters),
   });
+
+  // Supabase Realtime synchronization for instant property discovery
+  useEffect(() => {
+    const channel = supabase
+      .channel('public_search_properties_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'properties' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['search'] });
+          queryClient.invalidateQueries({ queryKey: ['ptypes-all'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -1071,12 +1107,35 @@ export function SearchPage() {
     });
   };
 
-  const pageTitle =
-    filters.purpose === 'Rent'
-      ? t('search.forRentTitle', 'Properties for Rent')
-      : filters.purpose === 'Sale'
-        ? t('search.forSaleTitle', 'Properties for Sale')
-        : t('search.title', 'Search Properties');
+  const cityName = useMemo(() => {
+    if (filters.city_id && cities) {
+      return cities.find((c) => c.id === filters.city_id)?.name;
+    }
+    return params.get('city') || undefined;
+  }, [filters.city_id, cities, params]);
+
+  const pageTitle = useMemo(() => {
+    if (activeCategoryMeta) {
+      if (cityName) return `${activeCategoryMeta.pluralName} in ${cityName}`;
+      if (filters.purpose === 'Rent') return `${activeCategoryMeta.pluralName} for Rent`;
+      if (filters.purpose === 'Sale') return `${activeCategoryMeta.pluralName} for Sale`;
+      return `${activeCategoryMeta.pluralName}`;
+    }
+    if (cityName) return `Properties in ${cityName}`;
+    if (filters.purpose === 'Rent') return t('search.forRentTitle', 'Properties for Rent');
+    if (filters.purpose === 'Sale') return t('search.forSaleTitle', 'Properties for Sale');
+    return t('search.title', 'Search Properties');
+  }, [activeCategoryMeta, cityName, filters.purpose, t]);
+
+  useSEO({
+    title: `${pageTitle} | RealtyNow`,
+    description: `Explore verified ${pageTitle.toLowerCase()} with direct owner contact, 3D tours, and zero brokerage options on RealtyNow.`,
+    schema: {
+      "@context": "https://schema.org",
+      "@type": "SearchResultsPage",
+      "name": pageTitle,
+    }
+  });
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -1268,6 +1327,7 @@ export function SearchPage() {
                     }
                   };
 
+                  syncParam('category', updated.category);
                   syncParam('purpose', updated.purpose);
                   syncParam('city_id', updated.city_id);
                   syncParam('locality_id', updated.locality_id);
@@ -1408,24 +1468,50 @@ export function SearchPage() {
                     )}
                   </>
                 ) : (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-20 gap-4">
-                    <MapPin className="h-12 w-12 text-slate-300" />
-                    <p className="font-bold text-slate-700 text-lg">
-                      {filters.q || filters.city_id
-                        ? `No properties found${filters.q ? ` in ${filters.q}` : ''}`
-                        : t('search.notFoundTitle', 'No properties found')}
-                    </p>
-                    <ul className="text-sm text-slate-500 text-center space-y-1">
-                      <li>{t('search.tryLocation', 'Try a different location or nearby area')}</li>
-                      <li>{t('search.tryType', 'Change the property type')}</li>
-                      <li>{t('search.tryBudget', 'Adjust your budget range')}</li>
-                    </ul>
-                    <button
-                      onClick={clearAll}
-                      className="rounded-xl border border-red-200 bg-red-50 text-red-600 px-5 py-2 text-sm font-bold hover:bg-red-100 transition"
-                    >
-                      {t('search.clearFilters', 'Clear All Filters')}
-                    </button>
+                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 px-6 gap-4 text-center">
+                    {activeCategoryMeta ? (
+                      <div className="p-4 rounded-2xl bg-red-50 text-red-500">
+                        <activeCategoryMeta.icon className="h-12 w-12" />
+                      </div>
+                    ) : (
+                      <MapPin className="h-12 w-12 text-slate-300" />
+                    )}
+                    <div>
+                      <p className="font-bold text-slate-800 text-lg">
+                        {activeCategoryMeta
+                          ? `No ${activeCategoryMeta.pluralName} available in ${cityName || 'this location'} yet`
+                          : filters.q || filters.city_id
+                            ? `No properties found${filters.q ? ` in ${filters.q}` : ''}`
+                            : t('search.notFoundTitle', 'No properties found')}
+                      </p>
+                      <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+                        {activeCategoryMeta
+                          ? `We could not find active ${activeCategoryMeta.name.toLowerCase()} listings matching your filters in ${cityName || 'this area'}.`
+                          : 'Try adjusting your filters, searching a different city or locality, or explore other categories.'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 justify-center mt-2">
+                      {activeCategorySlug && (
+                        <button
+                          onClick={() => setFilter('category', '')}
+                          className="rounded-xl border border-red-200 bg-red-50 text-red-600 px-4 py-2 text-xs font-bold hover:bg-red-100 transition cursor-pointer"
+                        >
+                          Explore All Categories
+                        </button>
+                      )}
+                      <button
+                        onClick={clearAll}
+                        className="rounded-xl border border-slate-200 bg-white text-slate-700 px-4 py-2 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
+                      >
+                        {t('search.clearFilters', 'Clear All Filters')}
+                      </button>
+                      <Link
+                        to="/ai-property-advisor"
+                        className="rounded-xl bg-navy-900 text-white px-4 py-2 text-xs font-bold hover:bg-navy-800 transition"
+                      >
+                        Ask AI Assistant
+                      </Link>
+                    </div>
                   </div>
                 )}
               </>

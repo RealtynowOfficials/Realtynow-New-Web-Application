@@ -285,7 +285,7 @@ export function PageLoader() {
   );
 }
 
-export function Avatar({ src, name, size = 40 }: { src?: string | null; name: string; size?: number }) {
+export function Avatar({ src, name, size = 40 }: { src?: string | null; name?: string | null; size?: number }) {
   if (src)
     return (
       <img
@@ -297,12 +297,13 @@ export function Avatar({ src, name, size = 40 }: { src?: string | null; name: st
         style={{ width: size, height: size }}
       />
     );
+  const safeName = name || '?';
   return (
     <div
       className="grid place-items-center rounded-full bg-navy-700 font-semibold text-white"
       style={{ width: size, height: size, fontSize: size * 0.4 }}
     >
-      {name.slice(0, 2).toUpperCase()}
+      {safeName.slice(0, 2).toUpperCase()}
     </div>
   );
 }

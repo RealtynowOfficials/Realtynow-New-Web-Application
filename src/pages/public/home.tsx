@@ -3,7 +3,7 @@ import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
 import { Link, useNavigate } from 'react-router-dom';
 import { PostPropertyBanner } from '../../components/post-property-banner';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import homeServicesImg from '../../assets/services/home-services.webp';
@@ -54,6 +54,7 @@ import {
   Bed,
   Share2,
   Check,
+  CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
@@ -240,80 +241,139 @@ function Counter({ to, suffix = '', duration = 2000 }: { to: number; suffix?: st
 }
 
 /* ============================================================
-   Hero Section
+   Hero Section — Screenshot 2 (99acres) Style Cinematic Layout
 ============================================================ */
 type HeroSlide = {
   id: string;
   title: string;
-  subtitle: string;
+  subtitle?: string | null;
+  description?: string | null;
   companyLogo?: string | null;
+  developerLogo?: string | null;
+  reraNumber?: string | null;
+  features: string[];
+  overlayPosition: 'left' | 'right' | 'center' | 'both';
+  overlayOpacity: number;
+  contentAlignment: 'left' | 'center' | 'right';
   priceText?: string | null;
   locationText?: string | null;
   imageDesktop: string;
   imageMobile?: string | null;
+  ctaEnabled: boolean;
   ctaText: string;
   ctaLink: string;
   packageTier?: 'Platinum' | 'Gold' | 'Silver' | 'Featured' | 'Free' | null;
   isPinned?: boolean;
 };
 
-// Static fallback slides — shown only when no admin-configured Hero-placement
-// advertisements are currently live, so the homepage never looks empty.
+// Static fallback slides with high-conversion 99acres style formatting
 const HERO_SLIDES: HeroSlide[] = [
   {
-    id: 'hero-ramky',
-    title: 'Discover Premium Living in Hyderabad',
-    subtitle: 'Explore world-class residential high-rises with modern amenities and unparalleled luxury.',
-    priceText: undefined,
+    id: 'hero-hallmark',
+    title: 'OWN A SPACIOUS 2 & 3 BHK NEAR ORR',
+    subtitle: 'Hallmark Skyrena — Premium High-Rise Gated Living',
+    reraNumber: 'RERA No.: P01100004147 | rerait.telangana.gov.in',
+    features: [
+      'Earn ₹ 35,000 - 50,000/month for 1 year',
+      '2BHK: ₹ 35,000/mo | 3BHK: ₹ 45,000/mo',
+      '3BHK 1585 & 1885 sq.ft. (147.25 & 175.12 sq.m.)',
+      '80% Open Space & Ultra-Modern 40,000 sq.ft. Clubhouse',
+    ],
+    overlayPosition: 'right',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
     locationText: 'Hyderabad',
     imageDesktop: '/hero-ramky.jpg',
     imageMobile: '/hero-ramky.jpg',
-    ctaText: 'Explore Projects',
+    ctaEnabled: true,
+    ctaText: 'Explore Now',
     ctaLink: '/search?city=Hyderabad',
   },
   {
     id: 'fallback-2',
-    title: 'Premium Homes, Verified & Ready',
-    subtitle: 'RERA-approved projects with zero brokerage and instant AI-powered shortlisting.',
-    priceText: undefined,
+    title: 'PREMIUM LAKE-FACING RESIDENCES',
+    subtitle: 'My Home Sayuk — Tellapur, Financial District',
+    reraNumber: 'RERA No.: P02400003891 | HMDA Approved',
+    features: [
+      'Zero Brokerage & AI-Assisted Site Visits',
+      '2, 2.5 & 3 BHK Starting from ₹ 1.25 Cr',
+      'Over 50+ World-Class Lifestyle Amenities',
+      'Ready for Possession by Q4 2026',
+    ],
+    overlayPosition: 'right',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
     locationText: 'Hyderabad',
     imageDesktop: '/hero_bg_user.jpg',
     imageMobile: '/hero_bg_user.jpg',
-    ctaText: 'Explore Now',
+    ctaEnabled: true,
+    ctaText: 'View Project',
     ctaLink: '/search?purpose=Buy',
   },
   {
     id: 'fallback-3',
-    title: 'Luxury Living, Redefined',
-    subtitle: 'Handpicked luxury apartments and villas with world-class amenities.',
-    priceText: undefined,
+    title: 'SIGNATURE VILLAS & PENTHOUSES',
+    subtitle: 'The Crown Estates — Kokapet Luxury Enclave',
+    reraNumber: 'RERA No.: P02400007205 | Premium Gated Living',
+    features: [
+      'Private Heated Pools & Landscaped Terraces',
+      '4 & 5 BHK Ultra-Luxury Independent Villas',
+      '10-Minute Drive to HITEC City & Financial District',
+      '100% Vastu Compliant with 3-Car Covered Parking',
+    ],
+    overlayPosition: 'left',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
     locationText: 'Hyderabad',
     imageDesktop: '/hero_luxury_bg.png',
     imageMobile: '/hero_luxury_bg.png',
-    ctaText: 'Explore Now',
+    ctaEnabled: true,
+    ctaText: 'Explore Villas',
     ctaLink: '/search?type=Villa',
   },
 ];
 
-const HERO_SLIDE_INTERVAL_MS = 5000; // Keep in sync with the `hero-progress` animation duration in tailwind.config.js
+const HERO_SLIDE_INTERVAL_MS = 6000;
 
 const heroTextVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' as const } },
+  hidden: { opacity: 0, y: 15 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' as const } },
 };
 
 function mapCampaignToHeroSlide(c: HeroCampaign): HeroSlide {
+  // Extract features from joined hero_campaign_features child table, jsonb features, or description lines
+  let featureList: string[] = [];
+  if (Array.isArray(c.hero_campaign_features) && c.hero_campaign_features.length > 0) {
+    featureList = [...c.hero_campaign_features]
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      .map((f) => f.feature_text)
+      .filter(Boolean);
+  } else if (Array.isArray(c.features) && c.features.length > 0) {
+    featureList = c.features.filter(Boolean);
+  } else if (c.description) {
+    featureList = c.description
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
   return {
     id: c.id,
     title: c.title,
-    subtitle: (c.subtitle && c.subtitle.trim()) || c.description || '',
-    companyLogo: c.logo,
-    // Reuses the existing "priceText" slide slot to surface a Sponsored badge for
-    // Paid campaigns — Free campaigns just show their location, same as before.
+    subtitle: (c.subtitle && c.subtitle.trim()) || null,
+    description: c.description || null,
+    companyLogo: c.logo || null,
+    developerLogo: c.developer_logo || null,
+    reraNumber: c.rera_number || null,
+    features: featureList,
+    overlayPosition: c.overlay_position || 'right',
+    overlayOpacity: typeof c.overlay_opacity === 'number' ? c.overlay_opacity : 0.88,
+    contentAlignment: c.content_alignment || 'left',
     priceText: c.campaign_type === 'Paid' ? (c.package_tier && c.package_tier !== 'Free' ? c.package_tier : 'Sponsored') : null,
     locationText: c.cities?.name ?? null,
-    imageDesktop: c.banner_image || '',
-    imageMobile: c.mobile_banner || c.banner_image || '',
+    imageDesktop: c.banner_image || '/hero-ramky.jpg',
+    imageMobile: c.mobile_banner || c.banner_image || '/hero-ramky.jpg',
+    ctaEnabled: c.cta_enabled !== false,
     ctaText: c.cta_text || 'Explore Now',
     ctaLink: c.cta_url || (c.property_id ? `/property/${c.property_id}` : '/search'),
     packageTier: c.package_tier,
@@ -325,13 +385,14 @@ function HeroSection() {
   const { cityId } = useLocationContext();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
+  const realtimeTick = useRealtimeCount('hero_campaigns');
 
   const { data: campaigns } = useQuery({
-    queryKey: ['hero-campaigns'],
+    queryKey: ['hero-campaigns', realtimeTick],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('hero_campaigns')
-        .select('*, cities(name)')
+        .select('*, cities(name), hero_campaign_features(*)')
         .eq('status', 'Active')
         .order('order_no', { ascending: true });
       if (error) return [];
@@ -346,9 +407,6 @@ function HeroSection() {
       if (c.end_date && new Date(c.end_date).getTime() < now) return false;
       return true;
     });
-    // City-scoped campaigns (city_id set) only show in that city; campaigns left on
-    // "All Cities" (city_id null) always show. Skip the city filter until a city is
-    // detected so slides aren't empty during the initial geolocation lookup.
     const live = cityId ? active.filter((c) => !c.city_id || c.city_id === cityId) : active;
 
     const sortedLive = [...live].sort((a, b) => {
@@ -378,24 +436,16 @@ function HeroSection() {
     return sortedLive.length > 0 ? sortedLive.map(mapCampaignToHeroSlide) : HERO_SLIDES;
   }, [campaigns, cityId]);
 
-  // Plugin instance must stay referentially stable across renders — recreating it
-  // inline on every render (e.g. after setSelectedIndex) re-triggers Autoplay's
-  // init/reset logic and was causing scrollNext() to advance by two slides.
   const autoplayPlugin = useRef(Autoplay({ delay: HERO_SLIDE_INTERVAL_MS, stopOnInteraction: false }));
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, align: 'start', duration: 32 }, [autoplayPlugin.current]);
 
-  // Drive pause-on-hover explicitly off our own hover state rather than the
-  // plugin's built-in stopOnMouseEnter, which didn't reliably see hover/leave
-  // on this nested container and let the timer keep firing underneath.
   useEffect(() => {
     if (!emblaApi) return;
     try {
       if (isHovering) autoplayPlugin.current.stop();
       else autoplayPlugin.current.play();
     } catch {
-      // Autoplay can be mid-(re)init during React StrictMode's double-effect
-      // dev-mode cycle; a missed play/stop here self-corrects on the next
-      // hover change, so failing silently beats crashing the whole section.
+      // Autoplay safe fallback
     }
   }, [isHovering, emblaApi]);
 
@@ -409,8 +459,6 @@ function HeroSection() {
     };
   }, [emblaApi]);
 
-  // Live campaigns can load after mount and change the slide count — re-measure
-  // embla's scroll snaps so autoplay/drag stay in sync with the new slide list.
   useEffect(() => {
     emblaApi?.reInit();
   }, [emblaApi, slides.length]);
@@ -419,8 +467,6 @@ function HeroSection() {
   const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
   const scrollTo = useCallback((index: number) => emblaApi?.scrollTo(index), [emblaApi]);
 
-  // Arrow-key navigation, scoped to pointer-over-hero so it doesn't hijack arrow
-  // keys used elsewhere on the page (search box, forms).
   const isHoveringRef = useRef(false);
   useEffect(() => {
     isHoveringRef.current = isHovering;
@@ -436,8 +482,6 @@ function HeroSection() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [scrollPrev, scrollNext, slides.length]);
 
-  // Wheel navigation — deliberately never calls preventDefault, so a mouse/trackpad
-  // flick over the hero still scrolls the page; it just also nudges the slide.
   const wheelLockRef = useRef(false);
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -458,14 +502,13 @@ function HeroSection() {
 
   return (
     <section
-      className="relative overflow-hidden bg-navy-950 focus:outline-none"
+      className="relative overflow-hidden bg-navy-950 focus:outline-none select-none"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       onWheel={onWheel}
     >
-      <div className="relative h-[380px] sm:h-[430px] lg:h-[470px] max-h-[470px] w-full">
-        {/* Sliding track — slides sit edge-to-edge so the next banner is always
-           physically adjacent, never a blank gap, during the transition. */}
+      <div className="relative h-[360px] sm:h-[390px] lg:h-[420px] max-h-[420px] w-full">
+        {/* Sliding track — cover background image */}
         <div className="h-full w-full overflow-hidden" ref={emblaRef}>
           <div className="flex h-full">
             {slides.map((slide, index) => {
@@ -478,7 +521,7 @@ function HeroSection() {
                     initial="inactive"
                     variants={{
                       active: { scale: 1, opacity: 1, filter: 'blur(0px)' },
-                      inactive: { scale: 1.05, opacity: 0.55, filter: 'blur(6px)' },
+                      inactive: { scale: 1.05, opacity: 0.45, filter: 'blur(6px)' },
                     }}
                     transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
                   >
@@ -509,31 +552,31 @@ function HeroSection() {
               type="button"
               onClick={scrollPrev}
               aria-label="Previous slide"
-              className="absolute left-3 top-1/2 -translate-y-1/2 sm:left-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 sm:left-5 z-20 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-800 shadow-xl backdrop-blur-md transition-all hover:bg-white hover:scale-105 active:scale-95 sm:h-10 sm:w-10"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
             <button
               type="button"
               onClick={scrollNext}
               aria-label="Next slide"
-              className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-800 shadow-lg transition-all hover:bg-white sm:h-11 sm:w-11"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 sm:right-5 z-20 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-800 shadow-xl backdrop-blur-md transition-all hover:bg-white hover:scale-105 active:scale-95 sm:h-10 sm:w-10"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
           </>
         )}
 
-        {/* Animated progress indicator — fills over the autoplay dwell time instead of a static dot */}
+        {/* Animated progress indicator pills */}
         {slides.length > 1 && (
-          <div className="absolute bottom-4 right-4 z-20 flex gap-1.5 sm:right-6">
+          <div className="absolute bottom-12 right-4 z-20 flex gap-1.5 sm:right-8">
             {slides.map((s, idx) => (
               <button
                 type="button"
                 key={s.id}
                 onClick={() => scrollTo(idx)}
                 aria-label={`Go to slide ${idx + 1}`}
-                className="relative h-1 w-7 overflow-hidden rounded-full bg-white/30 sm:w-9"
+                className="relative h-1.5 w-6 overflow-hidden rounded-full bg-white/30 sm:w-8 transition-all"
               >
                 <span
                   key={idx === selectedIndex ? `progress-${selectedIndex}` : undefined}
@@ -548,85 +591,140 @@ function HeroSection() {
           </div>
         )}
 
-        {/* Cinematic scrim — text sits directly on the image, no card, so this carries all the legibility */}
-        <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-t from-navy-950/85 via-navy-950/35 to-navy-950/10" />
+        {/* Adaptive Dynamic Gradient Overlay (Screenshot 2 / 99acres style) */}
+        <div
+          key={`overlay-${activeSlide.id}-${activeSlide.overlayPosition}`}
+          className="pointer-events-none absolute inset-0 z-[5] transition-all duration-700"
+          style={{
+            background:
+              activeSlide.overlayPosition === 'right'
+                ? `linear-gradient(to right, transparent 0%, rgba(10, 25, 47, 0.15) 25%, rgba(10, 25, 47, ${activeSlide.overlayOpacity * 0.85}) 50%, rgba(10, 25, 47, ${activeSlide.overlayOpacity}) 100%)`
+                : activeSlide.overlayPosition === 'left'
+                ? `linear-gradient(to left, transparent 0%, rgba(10, 25, 47, 0.15) 25%, rgba(10, 25, 47, ${activeSlide.overlayOpacity * 0.85}) 50%, rgba(10, 25, 47, ${activeSlide.overlayOpacity}) 100%)`
+                : `radial-gradient(ellipse at center, rgba(10, 25, 47, ${activeSlide.overlayOpacity * 0.9}) 0%, rgba(10, 25, 47, ${activeSlide.overlayOpacity * 0.75}) 70%, rgba(10, 25, 47, 0.4) 100%), linear-gradient(to top, rgba(10, 25, 47, 0.95), transparent)`,
+          }}
+        />
 
-        {/* Slide info — centered directly over the banner image */}
+        {/* Mobile-specific bottom scrim for 100% legibility on phone screens */}
+        <div className="pointer-events-none absolute inset-0 z-[6] sm:hidden bg-gradient-to-t from-navy-950/95 via-navy-950/80 to-transparent" />
+
+        {/* Slide Foreground Content Box */}
         <div className="absolute inset-0 z-10">
-          <AnimatePresence initial={false}>
-            <motion.div
-              key={`panel-${activeSlide.id}-${selectedIndex}`}
-              initial="hidden"
-              animate="visible"
-              exit="hidden"
-              variants={{ visible: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } } }}
-              className="absolute inset-0 flex items-center justify-center px-4 text-center sm:px-8"
+          <div className="container-wide h-full w-full mx-auto px-4 sm:px-8 lg:px-12 flex items-center">
+            <div
+              className={cn(
+                'w-full h-full flex pb-12 sm:pb-14 pt-3 sm:pt-4',
+                activeSlide.overlayPosition === 'right'
+                  ? 'justify-center sm:justify-end items-center text-left'
+                  : activeSlide.overlayPosition === 'left'
+                  ? 'justify-center sm:justify-start items-center text-left'
+                  : 'justify-center items-center text-center',
+              )}
             >
-              <div className="max-w-2xl">
-                {activeSlide.companyLogo && (
-                  <motion.div
-                    variants={heroTextVariants}
-                    className="mx-auto mb-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white/95 p-1 shadow-lg sm:h-12 sm:w-12"
-                  >
-                    <img src={activeSlide.companyLogo} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
-                  </motion.div>
-                )}
-
-                {activeSlide.locationText && (
-                  <motion.p
-                    variants={heroTextVariants}
-                    className="mb-2 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 [text-shadow:0_1px_6px_rgba(0,0,0,0.6)] sm:text-sm"
-                  >
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-red-400" />
-                    {activeSlide.locationText}
-                  </motion.p>
-                )}
-
-                <motion.h2
-                  variants={heroTextVariants}
-                  className="font-display text-2xl font-extrabold uppercase leading-[1.15] tracking-wide text-white [text-shadow:0_4px_24px_rgba(0,0,0,0.55)] sm:text-4xl lg:text-5xl"
-                >
-                  {activeSlide.title}
-                </motion.h2>
-
-                {activeSlide.subtitle && (
-                  <motion.p
-                    variants={heroTextVariants}
-                    className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/90 [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base"
-                  >
-                    {activeSlide.subtitle}
-                  </motion.p>
-                )}
-
-                <motion.div variants={heroTextVariants} className="mt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-5">
-                  {activeSlide.priceText && (
-                    <span className="text-sm font-bold text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.5)] sm:text-base">
-                      {activeSlide.priceText}
-                    </span>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={`panel-${activeSlide.id}-${selectedIndex}`}
+                  initial="hidden"
+                  animate="visible"
+                  exit="hidden"
+                  variants={{ visible: { transition: { staggerChildren: 0.06, delayChildren: 0.04 } } }}
+                  className={cn(
+                    'w-full max-w-lg sm:max-w-xl flex flex-col gap-1.5 sm:gap-2',
+                    activeSlide.overlayPosition === 'center' ? 'items-center text-center' : 'items-start text-left',
                   )}
-                  {activeSlide.ctaLink.startsWith('http') ? (
-                    <a
-                      href={activeSlide.ctaLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
+                >
+                  {/* Top Bar: Developer & Project Logos + RERA Registration */}
+                  <motion.div variants={heroTextVariants} className="flex flex-wrap items-center gap-2">
+                    {activeSlide.developerLogo && (
+                      <div className="h-6 sm:h-7 px-2 py-0.5 rounded bg-white/95 shadow-md backdrop-blur-md flex items-center justify-center">
+                        <img src={activeSlide.developerLogo} alt="Developer logo" className="max-h-full max-w-[80px] object-contain" />
+                      </div>
+                    )}
+                    {activeSlide.companyLogo && (
+                      <div className="h-6 sm:h-7 px-2 py-0.5 rounded bg-white/95 shadow-md backdrop-blur-md flex items-center justify-center">
+                        <img src={activeSlide.companyLogo} alt="Project logo" className="max-h-full max-w-[90px] object-contain" />
+                      </div>
+                    )}
+                    {activeSlide.reraNumber && (
+                      <div className="inline-flex items-center gap-1 rounded bg-navy-950/80 border border-white/20 px-2 py-0.5 text-[10px] sm:text-[11px] text-white/95 font-medium backdrop-blur-md shadow-sm">
+                        <ShieldCheck className="h-3 w-3 text-emerald-400 shrink-0" />
+                        <span className="truncate max-w-[240px] sm:max-w-sm">{activeSlide.reraNumber}</span>
+                      </div>
+                    )}
+                    {activeSlide.locationText && !activeSlide.reraNumber && (
+                      <div className="inline-flex items-center gap-1 rounded bg-navy-950/70 border border-white/15 px-2 py-0.5 text-[11px] text-white/90 font-semibold tracking-wider uppercase backdrop-blur-md">
+                        <MapPin className="h-3 w-3 text-red-400 shrink-0" />
+                        <span>{activeSlide.locationText}</span>
+                      </div>
+                    )}
+                    {activeSlide.priceText && (
+                      <span className="rounded bg-gold-400/90 text-navy-950 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide shadow-sm">
+                        {activeSlide.priceText}
+                      </span>
+                    )}
+                  </motion.div>
+
+                  {/* Main Property Headline Title */}
+                  <motion.h1
+                    variants={heroTextVariants}
+                    className="font-display text-lg sm:text-2xl lg:text-3xl font-black uppercase text-white tracking-tight leading-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.6)]"
+                  >
+                    {activeSlide.title}
+                  </motion.h1>
+
+                  {/* Subtitle */}
+                  {activeSlide.subtitle && (
+                    <motion.p
+                      variants={heroTextVariants}
+                      className="text-xs sm:text-[13px] font-medium text-slate-200/95 leading-snug line-clamp-1 sm:line-clamp-2 [text-shadow:0_1px_6px_rgba(0,0,0,0.5)]"
                     >
-                      {activeSlide.ctaText}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </a>
-                  ) : (
-                    <Link
-                      to={activeSlide.ctaLink}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-full border-2 border-white/85 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-all hover:bg-white hover:text-navy-900 sm:text-sm"
-                    >
-                      {activeSlide.ctaText}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
+                      {activeSlide.subtitle}
+                    </motion.p>
+                  )}
+
+                  {/* Dynamic Property Features Highlights */}
+                  {activeSlide.features && activeSlide.features.length > 0 && (
+                    <motion.div variants={heroTextVariants} className="space-y-1 my-0.5">
+                      {activeSlide.features.slice(0, 3).map((feat, fIdx) => (
+                        <div
+                          key={fIdx}
+                          className="flex items-start gap-1.5 text-[11px] sm:text-xs font-semibold text-white/95 leading-snug [text-shadow:0_1px_4px_rgba(0,0,0,0.7)]"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 text-gold-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug">{feat}</span>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+
+                  {/* Optional CTA Button */}
+                  {activeSlide.ctaEnabled && activeSlide.ctaText && (
+                    <motion.div variants={heroTextVariants} className="pt-1 flex items-center gap-3">
+                      {activeSlide.ctaLink.startsWith('http') ? (
+                        <a
+                          href={activeSlide.ctaLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-white shadow-lg shadow-red-900/40 hover:shadow-red-600/50 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                          {activeSlide.ctaText}
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </a>
+                      ) : (
+                        <Link
+                          to={activeSlide.ctaLink}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-white shadow-lg shadow-red-900/40 hover:shadow-red-600/50 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                          {activeSlide.ctaText}
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      )}
+                    </motion.div>
                   )}
                 </motion.div>
-              </div>
-            </motion.div>
-          </AnimatePresence>
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -859,7 +957,7 @@ function AISmartSearch() {
   };
 
   return (
-    <div className="container-wide relative z-30 -mt-16 sm:-mt-20">
+    <div className="container-wide relative z-30 -mt-10 sm:-mt-14">
       <div className="relative mx-auto w-[92%] sm:w-[85%] lg:w-[78%] max-w-5xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -1014,29 +1112,11 @@ function TrustSection() {
 /* ============================================================
    Property Categories
 ============================================================ */
-const CATEGORIES = [
-  { name: 'Apartment', icon: Building2, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Villa', icon: Home, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Independent House', icon: KeyRound, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Commercial Office', icon: Briefcase, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Retail Shop', icon: Store, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Warehouse', icon: Warehouse, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Plots', icon: LandPlot, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-  { name: 'Co-working', icon: Users, color: 'bg-[#fff0f3] text-[#e11d48] border border-red-100/80 group-hover:bg-[#e11d48] group-hover:text-white' },
-];
+import { CATEGORY_LIST } from '../../lib/categories';
 
 function CategoriesSection() {
   const { t } = useLanguageContext();
-  const categoryNames: Record<string, string> = {
-    Apartment: t('property.typeApartment', 'Apartment'),
-    Villa: t('property.typeVilla', 'Villa'),
-    'Independent House': t('property.typeHouse', 'Independent House'),
-    'Commercial Office': t('property.typeOffice', 'Commercial Office'),
-    'Retail Shop': t('property.typeShop', 'Retail Shop'),
-    Warehouse: t('property.typeWarehouse', 'Warehouse'),
-    Plots: t('property.typePlots', 'Plots'),
-    'Co-working': t('property.typeCoworking', 'Co-working'),
-  };
+  const { city } = useLocationContext();
 
   return (
     <SectionShell
@@ -1045,33 +1125,37 @@ function CategoriesSection() {
       id="categories"
     >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-        {CATEGORIES.map((cat, i) => (
-          <motion.div
-            key={cat.name}
-            initial={{ opacity: 0, y: 15 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.04 }}
-            whileHover={{ y: -4 }}
-          >
-            <Link
-              to={`/search?type=${encodeURIComponent(cat.name)}`}
-              className="group flex flex-col items-center gap-2 rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-4 transition shadow-sm hover:shadow-md hover:border-red-300"
+        {CATEGORY_LIST.map((cat, i) => {
+          const targetUrl = `/search?category=${encodeURIComponent(cat.slug)}${city ? `&city=${encodeURIComponent(city)}` : ''}`;
+          const Icon = cat.icon;
+          return (
+            <motion.div
+              key={cat.id}
+              initial={{ opacity: 0, y: 15 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.04 }}
+              whileHover={{ y: -4 }}
             >
-              <div
-                className={cn(
-                  'grid h-11 w-11 place-items-center rounded-xl transition group-hover:scale-110',
-                  cat.color,
-                )}
+              <Link
+                to={targetUrl}
+                className="group flex flex-col items-center gap-2 rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-4 transition shadow-sm hover:shadow-md hover:border-red-300 cursor-pointer block h-full"
               >
-                <cat.icon className="h-5 w-5" />
-              </div>
-              <span className="text-center text-[11px] sm:text-xs font-bold text-slate-800 leading-tight">
-                {categoryNames[cat.name] ?? cat.name}
-              </span>
-            </Link>
-          </motion.div>
-        ))}
+                <div
+                  className={cn(
+                    'grid h-11 w-11 place-items-center rounded-xl transition group-hover:scale-110',
+                    cat.color,
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span className="text-center text-[11px] sm:text-xs font-bold text-slate-800 leading-tight group-hover:text-red-600 transition-colors">
+                  {cat.name}
+                </span>
+              </Link>
+            </motion.div>
+          );
+        })}
       </div>
     </SectionShell>
   );
@@ -1640,9 +1724,9 @@ function SignatureCollection() {
       // so the homepage never looks empty.
       const fetchLuxury = async (scopeToCity: boolean) => {
         let q = supabase
-          .from('properties')
-          .select('*, cities(name), localities(name), property_types(name)')
-          .eq('status', 'published')
+          .from('v_properties_search')
+          .select('*')
+          .or('status.eq.published,status.eq.live,is_live.eq.true')
           .eq('is_luxury', true);
         if (scopeToCity && cityId) q = q.eq('city_id', cityId);
         const { data } = await q.order('price', { ascending: false }).limit(9);
@@ -3003,7 +3087,7 @@ function LuxuryAdBannersSection() {
       subtitle: 'Starting from ₹15 Cr',
       cta: 'View Collection',
       image: 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg',
-      link: '/search?type=Penthouse',
+      link: '/search?city=Mumbai&category=Apartment',
       tag: 'Sponsored',
     },
     {
@@ -3012,7 +3096,7 @@ function LuxuryAdBannersSection() {
       subtitle: 'Limited Edition Estates',
       cta: 'Explore Villas',
       image: 'https://images.pexels.com/photos/1732414/pexels-photo-1732414.jpeg',
-      link: '/search?type=Villa',
+      link: '/search?city=Gurugram&category=Villa',
       tag: 'Exclusive',
     },
     {
@@ -3021,7 +3105,7 @@ function LuxuryAdBannersSection() {
       subtitle: 'Private Beach Access',
       cta: 'Discover More',
       image: 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg',
-      link: '/search?type=Mansion',
+      link: '/search?category=Villa',
       tag: 'Premium',
     },
     {
@@ -3030,7 +3114,7 @@ function LuxuryAdBannersSection() {
       subtitle: 'Smart Homes & Helipad',
       cta: 'View Apartments',
       image: 'https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg',
-      link: '/search?type=Apartment',
+      link: '/search?city=Bengaluru&category=Apartment',
       tag: 'Trending',
     }
   ];
@@ -3099,35 +3183,36 @@ function LuxuryAdBannersSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              className="relative overflow-hidden rounded-3xl h-[320px] shadow-xl group block border border-slate-200/60 shrink-0 w-[calc(100%-8px)] md:w-[calc(50%-12px)] snap-start"
+              className="relative overflow-hidden rounded-3xl h-[320px] shadow-xl group border border-slate-200/60 shrink-0 w-[calc(100%-8px)] md:w-[calc(50%-12px)] snap-start cursor-pointer"
             >
-              <img
-                src={ad.image}
-                alt={ad.title}
-                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-              
-              <div className="absolute top-4 left-4">
-                <span className="bg-red-600 text-white text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-sm shadow-md">
-                  {ad.tag}
-                </span>
-              </div>
-              
-              <div className="absolute bottom-6 left-6 right-6 flex flex-col items-start gap-2 z-10">
-                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white leading-tight drop-shadow-md">
-                  {ad.title}
-                </h3>
-                <p className="text-sm font-semibold text-amber-400 drop-shadow-md">
-                  {ad.subtitle}
-                </p>
-                <Link
-                  to={ad.link}
-                  className="mt-2 inline-flex items-center gap-2 bg-white/20 hover:bg-red-600 text-white backdrop-blur-md border border-white/40 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl hover:scale-105"
-                >
-                  {ad.cta} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                </Link>
-              </div>
+              <Link to={ad.link} className="block h-full w-full relative">
+                <img
+                  src={ad.image}
+                  alt={ad.title}
+                  className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+                
+                <div className="absolute top-4 left-4 z-10">
+                  <span className="bg-red-600 text-white text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-sm shadow-md">
+                    {ad.tag}
+                  </span>
+                </div>
+                
+                <div className="absolute bottom-6 left-6 right-6 flex flex-col items-start gap-2 z-10">
+                  <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white leading-tight drop-shadow-md group-hover:text-amber-300 transition-colors">
+                    {ad.title}
+                  </h3>
+                  <p className="text-sm font-semibold text-amber-400 drop-shadow-md">
+                    {ad.subtitle}
+                  </p>
+                  <span
+                    className="mt-2 inline-flex items-center gap-2 bg-white/20 group-hover:bg-red-600 text-white backdrop-blur-md border border-white/40 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl group-hover:scale-105"
+                  >
+                    {ad.cta} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </span>
+                </div>
+              </Link>
             </motion.div>
           ))}
         </div>
@@ -3149,7 +3234,7 @@ function ThreeColumnAdBannersSection() {
       subtitle: 'Move-in ready with Alexa',
       cta: 'View Details',
       image: 'https://images.pexels.com/photos/259950/pexels-photo-259950.jpeg',
-      link: '/search',
+      link: '/search?q=Smart+Homes&type=Apartment',
       tag: 'Featured',
     },
     {
@@ -3158,7 +3243,7 @@ function ThreeColumnAdBannersSection() {
       subtitle: 'High Footfall Areas',
       cta: 'Explore Spaces',
       image: 'https://images.pexels.com/photos/269077/pexels-photo-269077.jpeg',
-      link: '/search',
+      link: '/search?category=Commercial',
       tag: 'Ad',
     },
     {
@@ -3167,7 +3252,7 @@ function ThreeColumnAdBannersSection() {
       subtitle: 'Build your dream home',
       cta: 'See Plots',
       image: 'https://images.pexels.com/photos/2104152/pexels-photo-2104152.jpeg',
-      link: '/search',
+      link: '/search?category=Plot',
       tag: 'Sponsored',
     },
     {
@@ -3176,7 +3261,7 @@ function ThreeColumnAdBannersSection() {
       subtitle: 'Zero Brokerage Fees',
       cta: 'View Villas',
       image: 'https://images.pexels.com/photos/208736/pexels-photo-208736.jpeg',
-      link: '/search',
+      link: '/search?category=Villa',
       tag: 'Hot Deal',
     }
   ];
@@ -3249,35 +3334,36 @@ function ThreeColumnAdBannersSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              className="relative overflow-hidden rounded-3xl h-[260px] shadow-lg hover:shadow-xl group block border border-slate-200/60 shrink-0 w-[calc(100%-8px)] md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] snap-start"
+              className="relative overflow-hidden rounded-3xl h-[260px] shadow-lg hover:shadow-xl group border border-slate-200/60 shrink-0 w-[calc(100%-8px)] md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] snap-start cursor-pointer"
             >
-              <img
-                src={ad.image}
-                alt={ad.title}
-                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-              
-              <div className="absolute top-3 left-3">
-                <span className="bg-amber-500 text-white text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-sm shadow-sm">
-                  {ad.tag}
-                </span>
-              </div>
-              
-              <div className="absolute bottom-5 left-5 right-5 flex flex-col items-start gap-1 z-10">
-                <h3 className="text-lg sm:text-xl font-bold text-white leading-tight drop-shadow-md">
-                  {ad.title}
-                </h3>
-                <p className="text-xs sm:text-sm font-semibold text-amber-300 drop-shadow-md">
-                  {ad.subtitle}
-                </p>
-                <Link
-                  to={ad.link}
-                  className="mt-2 inline-flex items-center gap-1.5 bg-white/20 hover:bg-white text-white hover:text-red-600 backdrop-blur-md border border-white/40 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md hover:scale-105"
-                >
-                  {ad.cta} <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4 transition-transform group-hover:translate-x-1" />
-                </Link>
-              </div>
+              <Link to={ad.link} className="block h-full w-full relative">
+                <img
+                  src={ad.image}
+                  alt={ad.title}
+                  className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                
+                <div className="absolute top-3 left-3 z-10">
+                  <span className="bg-amber-500 text-white text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-sm shadow-sm">
+                    {ad.tag}
+                  </span>
+                </div>
+                
+                <div className="absolute bottom-5 left-5 right-5 flex flex-col items-start gap-1 z-10">
+                  <h3 className="text-lg sm:text-xl font-bold text-white leading-tight drop-shadow-md group-hover:text-amber-300 transition-colors">
+                    {ad.title}
+                  </h3>
+                  <p className="text-xs sm:text-sm font-semibold text-amber-300 drop-shadow-md">
+                    {ad.subtitle}
+                  </p>
+                  <span
+                    className="mt-2 inline-flex items-center gap-1.5 bg-white/20 group-hover:bg-white text-white group-hover:text-red-600 backdrop-blur-md border border-white/40 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md group-hover:scale-105"
+                  >
+                    {ad.cta} <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4 transition-transform group-hover:translate-x-1" />
+                  </span>
+                </div>
+              </Link>
             </motion.div>
           ))}
         </div>
@@ -3285,52 +3371,203 @@ function ThreeColumnAdBannersSection() {
     </section>
   );
 }
+
 
 /* ============================================================
-   Main HomePage
-            <motion.div
-              key={ad.id}
-              initial={{ opacity: 0, y: 15 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className="relative overflow-hidden rounded-3xl h-[320px] shadow-xl group block border border-slate-200/60 shrink-0 w-[calc(100%-8px)] md:w-[calc(50%-12px)] snap-start"
-            >
-              <img
-                src={ad.image}
-                alt={ad.title}
-                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-              
-              <div className="absolute top-4 left-4">
-                <span className="bg-red-600 text-white text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-sm shadow-md">
-                  {ad.tag}
-                </span>
-              </div>
-              
-              <div className="absolute bottom-6 left-6 right-6 flex flex-col items-start gap-2 z-10">
-                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white leading-tight drop-shadow-md">
-                  {ad.title}
-                </h3>
-                <p className="text-sm font-semibold text-amber-400 drop-shadow-md">
-                  {ad.subtitle}
-                </p>
-                <Link
-                  to={ad.link}
-                  className="mt-2 inline-flex items-center gap-2 bg-white/20 hover:bg-red-600 text-white backdrop-blur-md border border-white/40 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl hover:scale-105"
-                >
-                  {ad.cta} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                </Link>
-              </div>
-            </motion.div>
-          ))}
+   Explore Builders in Hyderabad Carousel
+============================================================ */
+function ExploreBuildersCarousel() {
+  const queryClient = useQueryClient();
+  const { data: builders, isLoading, isError } = useQuery({
+    queryKey: ['home-explore-hyderabad-builders'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('builders')
+        .select('*')
+        .eq('status', 'approved')
+        .eq('public_visible', true)
+        .order('is_featured', { ascending: false })
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(12);
+      if (error) throw error;
+
+      const builderRows = data ?? [];
+      const ids = builderRows.map((b) => b.id);
+      const projectCounts = new Map<string, number>();
+      if (ids.length > 0) {
+        const { data: projectRows } = await supabase.from('projects').select('builder_id').in('builder_id', ids);
+        (projectRows ?? []).forEach((p: { builder_id: string }) => {
+          projectCounts.set(p.builder_id, (projectCounts.get(p.builder_id) ?? 0) + 1);
+        });
+      }
+      return builderRows.map((b, i) => ({
+        ...b,
+        _projectCount: projectCounts.get(b.id) ?? 0,
+        _cover: b.cover_image || BUILDER_COVER_FALLBACKS[i % BUILDER_COVER_FALLBACKS.length],
+      }));
+    },
+  });
+
+  useEffect(() => {
+    // Realtime synchronization with builders table
+    const channel = supabase
+      .channel('public:builders-explore')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'builders' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['home-explore-hyderabad-builders'] });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    { align: 'start', loop: false, containScroll: 'trimSnaps' },
+    [Autoplay({ delay: 5500, stopOnInteraction: true, stopOnMouseEnter: true })],
+  );
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.on('select', () => setSelectedIndex(emblaApi.selectedScrollSnap()));
+  }, [emblaApi]);
+
+  const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
+
+  if (isError) return null;
+  if (!isLoading && (!builders || builders.length === 0)) return null;
+
+  return (
+    <section className="py-12 sm:py-16 bg-slate-50 border-y border-slate-100" id="explore-builders-hyderabad">
+      <div className="container-wide">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                Explore Builders in Hyderabad
+              </h2>
+            </div>
+            <p className="text-sm text-slate-500">
+              Discover top real estate developers and their premium projects in Hyderabad.
+            </p>
+          </div>
+          <Link
+            to="/builders"
+            className="inline-flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
+          >
+            View All <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
+
+        {isLoading ? (
+          <div className="flex gap-4 overflow-hidden">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="skeleton min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] h-[340px] rounded-2xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="relative">
+            <div className="overflow-hidden" ref={emblaRef}>
+              <div className="flex gap-4">
+                {(builders ?? []).map((b, i) => (
+                  <motion.div
+                    key={b.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05 }}
+                    whileHover={{ y: -4 }}
+                    className="min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)]"
+                  >
+                    <Link
+                      to={`/builders/${b.id}`}
+                      className="group block h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-xl transition-all duration-300"
+                    >
+                      <div className="relative h-40 overflow-hidden bg-slate-100">
+                        <img
+                          src={b._cover}
+                          alt={b.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                        />
+                        <div className="absolute -bottom-6 left-4 h-14 w-14 rounded-xl bg-white border border-slate-200 shadow-md grid place-items-center overflow-hidden">
+                          {b.logo_url ? (
+                            <img src={b.logo_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Building2 className="h-6 w-6 text-navy-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-8 pb-5 px-4">
+                        <p className="font-display font-bold text-navy-900 truncate">{b.name}</p>
+                        {b.description && (
+                          <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{b.description}</p>
+                        )}
+                        <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
+                          {b._projectCount > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400" /> {b._projectCount} Projects
+                            </span>
+                          )}
+                          {b.established_year && (
+                            <span className="flex items-center gap-1">
+                              <Award className="h-3.5 w-3.5 text-slate-400" />
+                              {new Date().getFullYear() - b.established_year}+ Yrs
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                          <span className="text-xs font-bold text-red-600 group-hover:text-red-700 inline-flex items-center gap-1">
+                            View Builder <ArrowRight className="h-3.5 w-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            {(builders?.length ?? 0) > 4 && (
+              <>
+                <button
+                  onClick={scrollPrev}
+                  className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                  aria-label="Previous builder"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={scrollNext}
+                  className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                  aria-label="Next builder"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
+
+            {(builders?.length ?? 0) > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-2 lg:hidden">
+                {(builders ?? []).map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => emblaApi && emblaApi.scrollTo(i)}
+                    className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-red-600' : 'w-1.5 bg-slate-300'}`}
+                    aria-label={`Go to builder ${i + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
 }
-
 
 /* ============================================================
    Main HomePage
@@ -3346,6 +3583,7 @@ export function HomePage() {
       <SponsoredPropertiesCarousel />
       <LuxuryAdBannersSection />
       <ExploreHyderabad />
+      <ExploreBuildersCarousel />
       <TopAgents />
       <PostPropertyBanner />
       <SignatureCollection />

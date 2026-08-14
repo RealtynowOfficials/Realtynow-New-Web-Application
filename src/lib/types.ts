@@ -156,6 +156,9 @@ export interface Property {
   city_name?: string;
   locality_name?: string;
   property_type_name?: string;
+  property_type_category?: string;
+  builder_name?: string;
+  project_name?: string;
   // 360° Virtual Tour fields
   has_virtual_tour?: boolean;
   virtual_tour_cover?: string | null;
@@ -424,6 +427,15 @@ export interface Advertisement {
   updated_at?: string;
 }
 
+export interface HeroCampaignFeature {
+  id?: string;
+  hero_campaign_id?: string;
+  feature_text: string;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface HeroCampaign {
   id: string;
   title: string;
@@ -432,8 +444,15 @@ export interface HeroCampaign {
   banner_image?: string | null;
   mobile_banner?: string | null;
   logo?: string | null;
+  developer_logo?: string | null;
+  rera_number?: string | null;
+  overlay_position?: 'left' | 'right' | 'center' | 'both';
+  overlay_opacity?: number | null;
+  content_alignment?: 'left' | 'center' | 'right';
+  cta_enabled?: boolean;
   cta_text?: string | null;
   cta_url?: string | null;
+  features?: string[] | null;
   city_id?: string | null;
   campaign_type: 'Paid' | 'Free';
   package_tier?: 'Platinum' | 'Gold' | 'Silver' | 'Featured' | 'Free' | null;
@@ -449,6 +468,7 @@ export interface HeroCampaign {
   updated_at?: string;
   cities?: { name: string } | null;
   property?: Property | null;
+  hero_campaign_features?: HeroCampaignFeature[];
 }
 
 export interface AuditLog {

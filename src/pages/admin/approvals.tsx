@@ -276,26 +276,56 @@ export function AdminApprovals() {
 
   const statusMutation = useMutation({
     mutationFn: async ({ id, status, reason }: { id: string; status: string; reason?: string }) => {
+      const property = data?.find((p: any) => p.id === id);
+      if (status === 'published' || status === 'approved') {
+        if (property && (!property.title || property.title.trim() === '')) {
+          throw new Error('This property cannot be published because the title is missing.');
+        }
+        if (property && (!property.price || property.price <= 0) && (!property.rent_amount || property.rent_amount <= 0)) {
+          throw new Error('This property cannot be published because price/rent amount is required.');
+        }
+      }
+
       await updatePropertyStatus(id, status as Property['status'], reason);
       if (['published', 'approved', 'rejected', 'changes_requested'].includes(status)) {
-        const property = data?.find((p: any) => p.id === id);
-        if (property?.owner?.email) {
+        if (property?.owner?.email || property?.owner_id) {
           await supabase.from('notifications').insert({
             user_id: property.owner_id,
             type: 'property_status',
-            title: `Property ${status}`,
-            body: `Your property "${property.title}" status is now ${status}.${reason ? ` Reason: ${reason}` : ''}`,
+            title: `Property ${status === 'published' ? 'Live' : status}`,
+            body: `Your property "${property.title}" status is now ${status === 'published' ? 'Live' : status}.${reason ? ` Reason: ${reason}` : ''}`,
             link: generatePropertyUrl({ id: id }),
           });
         }
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       setSelected(null);
       setShowReject(false);
       setShowRequestChanges(false);
       setRejectionReason('');
       setRejectError('');
+      
+      const isLive = variables.status === 'published' || variables.status === 'approved';
+      if (isLive) {
+        toast.addToast('success', 'Property is now LIVE on customer portal!');
+      } else if (variables.status === 'rejected') {
+        toast.addToast('success', 'Property rejected.');
+      } else {
+        toast.addToast('success', `Status updated to ${variables.status}.`);
+      }
+
+      // Comprehensive multi-query cache invalidation
+      queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+      queryClient.invalidateQueries({ queryKey: ['home-sponsored-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['home-luxury'] });
+      queryClient.invalidateQueries({ queryKey: ['home-exclusive-properties'] });
+    },
+    onError: (err: unknown) => {
+      toast.addToast('error', err instanceof Error ? err.message : 'Failed to update property status');
     },
   });
 
@@ -493,17 +523,18 @@ export function AdminApprovals() {
                   View
                 </Button>
                 <div className="flex gap-1.5">
-                  {p.status === 'approved' ? (
+                  {p.status === 'published' ? (
                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                      ✓ Approved
+                      ✓ Live
                     </span>
                   ) : (
                     <button
-                      onClick={() => statusMutation.mutate({ id: p.id, status: 'approved' })}
+                      onClick={() => statusMutation.mutate({ id: p.id, status: 'published' })}
                       disabled={statusMutation.isPending}
                       className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all"
+                      title="Make property Live immediately on customer portal"
                     >
-                      <Check className="h-3.5 w-3.5" /> Approve
+                      <Check className="h-3.5 w-3.5" /> Make Live
                     </button>
                   )}
                   {p.status !== 'rejected' && (
@@ -535,23 +566,19 @@ export function AdminApprovals() {
         footer={
           selected && (
             <div className="flex flex-wrap gap-2">
-              {selected.status === 'approved' ? (
+              {selected.status !== 'published' ? (
                 <Button
                   variant="gold"
                   icon={<Send className="h-4 w-4" />}
                   onClick={() => statusMutation.mutate({ id: selected.id, status: 'published' })}
                   loading={statusMutation.isPending}
                 >
-                  Publish (Go live)
+                  Make Live (Publish)
                 </Button>
               ) : (
-                <button
-                  onClick={() => statusMutation.mutate({ id: selected.id, status: 'approved' })}
-                  disabled={statusMutation.isPending}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" /> Approve
-                </button>
+                <span className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200">
+                  <Check className="h-4 w-4" /> Currently Live on Portal
+                </span>
               )}
               <Button
                 variant="secondary"
@@ -1291,15 +1318,8 @@ export function AdminProperties() {
                 size="sm"
                 variant="ghost"
                 className="text-emerald-600"
-                title="Approve"
-                onClick={async () => {
-                  try {
-                    await updatePropertyStatus(p.id, 'published');
-                    queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
-                  } catch (e) {
-                    console.error('Failed to approve:', e);
-                  }
-                }}
+                title="Make Live (Publish)"
+                onClick={() => statusMutation.mutate({ id: p.id, status: 'published' })}
                 icon={<Check className="h-4 w-4" />}
               />
               <Button
@@ -1307,15 +1327,10 @@ export function AdminProperties() {
                 variant="ghost"
                 className="text-amber-600"
                 title="Reject"
-                onClick={async () => {
+                onClick={() => {
                   const reason = window.prompt("Reason for rejection:");
                   if (reason !== null) {
-                    try {
-                      await updatePropertyStatus(p.id, 'rejected', reason);
-                      queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
-                    } catch (e) {
-                      console.error('Failed to reject:', e);
-                    }
+                    statusMutation.mutate({ id: p.id, status: 'rejected', reason: reason || undefined });
                   }
                 }}
                 icon={<X className="h-4 w-4" />}

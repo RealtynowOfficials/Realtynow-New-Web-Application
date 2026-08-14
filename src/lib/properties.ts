@@ -7,6 +7,8 @@ export interface PropertyFilters {
   city_id?: string;
   locality_id?: string;
   property_type_id?: string;
+  category?: string;
+  type?: string;
   min_price?: number;
   max_price?: number;
   bedrooms?: number;
@@ -79,11 +81,14 @@ export function sanitizeSearchQuery(raw: string): string {
   return normalizeCityAliases(cleaned);
 }
 
+import { normalizeCategorySlug } from './categories';
+
 export function buildPublishedQuery(filters: PropertyFilters = {}) {
+  // Canonical public live filter: status is published/live OR is_live is true
   let q = supabase
     .from('v_properties_search')
     .select('*', { count: 'exact' })
-    .or('status.eq.published,is_live.eq.true');
+    .or('status.eq.published,status.eq.live,is_live.eq.true');
 
   if (filters.purpose) {
     if (filters.purpose.toLowerCase() === 'pg') {
@@ -92,6 +97,102 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
       q = q.eq('purpose', filters.purpose);
     }
   }
+
+  // Canonical Category Filtering & Strict Isolation
+  const categorySlug = normalizeCategorySlug(filters.category || filters.type);
+  if (categorySlug) {
+    switch (categorySlug) {
+      case 'apartment':
+        q = q
+          .or('property_type_name.ilike.%Apartment%,property_type_name.ilike.%Flat%,property_type_name.ilike.%Builder Floor%,property_type_name.ilike.%Studio%,property_type_name.ilike.%Penthouse%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%Independent House%')
+          .not('property_type_name', 'ilike', '%Plot%')
+          .not('property_type_name', 'ilike', '%Land%')
+          .not('property_type_name', 'ilike', '%Office%')
+          .not('property_type_name', 'ilike', '%Shop%')
+          .not('property_type_name', 'ilike', '%Warehouse%');
+        break;
+
+      case 'villa':
+        q = q
+          .or('property_type_name.ilike.%Villa%,property_type_name.ilike.%Bungalow%,property_type_name.ilike.%Duplex%')
+          .not('property_type_name', 'ilike', '%Apartment%')
+          .not('property_type_name', 'ilike', '%Flat%')
+          .not('property_type_name', 'ilike', '%Independent House%')
+          .not('property_type_name', 'ilike', '%Plot%')
+          .not('property_type_name', 'ilike', '%Land%')
+          .not('property_type_name', 'ilike', '%Office%')
+          .not('property_type_name', 'ilike', '%Shop%')
+          .not('property_type_name', 'ilike', '%Warehouse%');
+        break;
+
+      case 'independent-house':
+        q = q
+          .or('property_type_name.ilike.%Independent House%,property_type_name.ilike.%Row House%,property_type_name.ilike.%Individual House%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%Apartment%')
+          .not('property_type_name', 'ilike', '%Flat%')
+          .not('property_type_name', 'ilike', '%Plot%')
+          .not('property_type_name', 'ilike', '%Office%')
+          .not('property_type_name', 'ilike', '%Shop%')
+          .not('property_type_name', 'ilike', '%Warehouse%');
+        break;
+
+      case 'commercial-office':
+        q = q
+          .or('property_type_name.ilike.%Office%,property_type_name.ilike.%Commercial Space%,property_type_name.ilike.%IT Park%,property_type_name.ilike.%Business Center%')
+          .not('property_type_name', 'ilike', '%Shop%')
+          .not('property_type_name', 'ilike', '%Retail%')
+          .not('property_type_name', 'ilike', '%Warehouse%')
+          .not('property_type_name', 'ilike', '%Apartment%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%Plot%');
+        break;
+
+      case 'retail-shop':
+        q = q
+          .or('property_type_name.ilike.%Shop%,property_type_name.ilike.%Retail%,property_type_name.ilike.%Showroom%')
+          .not('property_type_name', 'ilike', '%Office%')
+          .not('property_type_name', 'ilike', '%Warehouse%')
+          .not('property_type_name', 'ilike', '%Apartment%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%Plot%');
+        break;
+
+      case 'warehouse':
+        q = q
+          .or('property_type_name.ilike.%Warehouse%,property_type_name.ilike.%Godown%,property_type_name.ilike.%Industrial Shed%,property_type_name.ilike.%Cold Storage%')
+          .not('property_type_name', 'ilike', '%Office%')
+          .not('property_type_name', 'ilike', '%Shop%')
+          .not('property_type_name', 'ilike', '%Apartment%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%Plot%');
+        break;
+
+      case 'plots':
+        q = q
+          .or('property_type_category.eq.Plot,property_type_name.ilike.%Plot%,property_type_name.ilike.%Land%')
+          .not('property_type_name', 'ilike', '%Apartment%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%House%')
+          .not('property_type_name', 'ilike', '%Office%')
+          .not('property_type_name', 'ilike', '%Shop%')
+          .not('property_type_name', 'ilike', '%Warehouse%');
+        break;
+
+      case 'co-working':
+        q = q
+          .or('purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,property_type_name.ilike.%PG%,property_type_name.ilike.%Co-working%,property_type_name.ilike.%Coworking%,property_type_name.ilike.%Shared Office%')
+          .not('property_type_name', 'ilike', '%Villa%')
+          .not('property_type_name', 'ilike', '%Plot%')
+          .not('property_type_name', 'ilike', '%Warehouse%');
+        break;
+    }
+  } else if (filters.category && !categorySlug) {
+    q = q.or(`property_type_category.ilike.%${filters.category}%,property_type_name.ilike.%${filters.category}%`);
+  }
+
   if (filters.city_id) q = q.eq('city_id', filters.city_id);
   if (filters.locality_id) q = q.eq('locality_id', filters.locality_id);
   if (filters.property_type_id) q = q.eq('property_type_id', filters.property_type_id);
@@ -114,6 +215,7 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
     q = q.contains('amenities', filters.amenities);
   }
 
+  // Multi-Token Full-Text & Keyword Search
   if (filters.q) {
     const cleaned = sanitizeSearchQuery(filters.q);
     if (cleaned) {
@@ -121,11 +223,16 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
       if (isNumeric) {
         q = q.or(`search_text.ilike.%${cleaned}%,price.eq.${cleaned},rent_amount.eq.${cleaned}`);
       } else {
-        // search_text already concatenates title, description, address, city, locality,
-        // property type, builder, project, and agent/owner names — so a locality- or
-        // city-only query (e.g. "Hyde" → "Hyderabad") matches even when the property's
-        // own title/description never mentions it. See v_properties_search view.
-        q = q.ilike('search_text', `%${cleaned}%`);
+        // Multi-keyword tokenization: split words to support queries like "2 BHK Kokapet" or "Villa Hyderabad"
+        const tokens = cleaned.split(/\s+/).filter((w) => w.length > 1);
+        if (tokens.length <= 1) {
+          q = q.ilike('search_text', `%${cleaned}%`);
+        } else {
+          // Chain each meaningful token into search_text filter for high-precision AND matching
+          for (const token of tokens) {
+            q = q.ilike('search_text', `%${token}%`);
+          }
+        }
       }
     }
   }
@@ -169,14 +276,14 @@ export async function fetchPublishedProperties(filters: PropertyFilters = {}) {
   const { data, error, count } = await q;
   if (error) throw error;
   
-  // v_properties_search already returns city_name, locality_name, property_type_name
-  return { data: data as Property[], count: count ?? 0 };
+  // v_properties_search already returns city_name, locality_name, property_type_name, property_type_category
+  return { data: (data ?? []) as Property[], count: count ?? 0 };
 }
 
 export async function fetchProperty(id: string) {
   const { data, error } = await supabase
     .from('properties')
-    .select('*, cities(name), localities(name), property_types(name)')
+    .select('*, cities(name), localities(name), property_types(name, category), builders(name), projects(name)')
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
@@ -184,13 +291,18 @@ export async function fetchProperty(id: string) {
   const r = data as unknown as {
     cities?: { name: string };
     localities?: { name: string };
-    property_types?: { name: string };
+    property_types?: { name: string; category?: string };
+    builders?: { name: string };
+    projects?: { name: string };
   };
   return {
     ...data,
     city_name: r.cities?.name ?? null,
     locality_name: r.localities?.name ?? null,
     property_type_name: r.property_types?.name ?? null,
+    property_type_category: r.property_types?.category ?? null,
+    builder_name: r.builders?.name ?? null,
+    project_name: r.projects?.name ?? null,
   } as unknown as Property;
 }
 
@@ -227,22 +339,37 @@ export async function updatePropertyStatus(id: string, status: PropertyStatus, r
 }
 
 export async function approveProperty(id: string) {
-  // Direct table update (works with service role or open RLS). Note: the
-  // `on_property_status_change` DB trigger writes property_status_history
-  // and notifies the owner on ANY status update regardless of how it
-  // happened, so this path does not skip auditing — but it must still set
-  // approved_by itself (the admin_approve_property RPC does), or that
-  // column is silently left null on every approval taken through here.
   const {
     data: { user: currentUser },
   } = await supabase.auth.getUser();
 
+  // Primary: Atomic RPC procedure
+  const { data: rpcData, error: rpcError } = await supabase.rpc('admin_make_property_live', {
+    p_property_id: id,
+    p_admin_id: currentUser?.id,
+  });
+
+  if (!rpcError && rpcData) {
+    return rpcData;
+  }
+
+  // Fallback 1: admin_approve_property RPC
+  const { data: rpcData2, error: rpcError2 } = await supabase.rpc('admin_approve_property', {
+    p_property_id: id,
+    p_admin_id: currentUser?.id,
+  });
+  if (!rpcError2 && rpcData2) {
+    return rpcData2;
+  }
+
+  // Fallback 2: Direct atomic table update
   const { data, error } = await supabase
     .from('properties')
     .update({
       status: 'published',
       approval_status: 'Approved',
       is_live: true,
+      is_active: true,
       approved_by: currentUser?.id ?? null,
       approved_at: new Date().toISOString(),
       published_at: new Date().toISOString(),
@@ -252,14 +379,8 @@ export async function approveProperty(id: string) {
     .select()
     .maybeSingle();
 
-  if (!error && data) {
-    return data;
-  }
-
-  // Fallback to RPC
-  const { data: rpcData, error: rpcError } = await supabase.rpc('admin_approve_property', { p_property_id: id });
-  if (rpcError) throw rpcError;
-  return rpcData;
+  if (error) throw error;
+  return data;
 }
 
 export async function rejectProperty(id: string, reason?: string) {

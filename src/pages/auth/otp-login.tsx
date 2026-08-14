@@ -539,9 +539,9 @@ export function OtpLoginPage() {
 
       {/* ───────────── Right — glass login card ───────────── */}
       <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-5 py-10 sm:px-8">
-
+        
         {/* ── Real-estate illustration pattern layer ── */}
-        {Boolean(false) && (
+        {(() => false)() && (
         <div className="pointer-events-none absolute inset-0 overflow-hidden select-none" aria-hidden="true">
 
           {/* Soft gradient orbs */}

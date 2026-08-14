@@ -120,7 +120,7 @@ export const getAdminSections = (t: (key: string, fallback?: string) => string):
   {
     items: [
       { to: '/admin', label: t('dashboard:dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
-      { to: '/admin/properties', label: t('dashboard:listProperty', 'Properties'), icon: Building2 },
+      { to: '/admin/properties', label: t('dashboard:listedProperties', 'Listed Properties'), icon: Building2 },
       { to: '/admin/bulk-import', label: 'Bulk Import', icon: FileText },
       { to: '/admin/approvals', label: t('dashboard:approvals', 'Approvals'), icon: FileText },
       { to: '/admin/agent-applications', label: t('dashboard:agentApps', 'Agent Applications'), icon: Users },

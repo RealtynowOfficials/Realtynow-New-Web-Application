@@ -729,6 +729,12 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
   const handleNext = async () => {
     if (!validateStep()) return;
     
+    // Redirect to Plot wizard if Land category is selected
+    if (activeStep === 1 && watch('category') === 'Land') {
+      navigate(profile?.role === 'agent' ? '/agent/list-property/plot' : '/portal/list-property/plot');
+      return;
+    }
+
     if (activeStep < WIZARD_STEPS.length - 1) {
       if (!completedSteps.includes(activeStep)) {
         setCompletedSteps(prev => [...prev, activeStep]);
@@ -1119,15 +1125,6 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
                               </motion.button>
                             );
                           })}
-                        </div>
-                        <div className="text-center">
-                          <button
-                            type="button"
-                            onClick={() => navigate(profile?.role === 'agent' ? '/agent/list-property/plot' : '/portal/list-property/plot')}
-                            className="text-sm font-semibold text-red-600 hover:underline"
-                          >
-                            Listing a plot, land, or layout? Use the dedicated Open Plot flow →
-                          </button>
                         </div>
                       </div>
                     )}

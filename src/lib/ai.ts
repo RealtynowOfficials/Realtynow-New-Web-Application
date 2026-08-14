@@ -176,7 +176,8 @@ async function answerRealtyNowPropertySearch(message: string): Promise<string> {
       const bhk = p.bedrooms ? `${p.bedrooms}BHK ` : '';
       const type = p.property_type_name ? `${p.property_type_name} ` : '';
       const where = [p.locality_name, p.city_name].filter(Boolean).join(', ');
-      return `${i + 1}. ${p.title} — ${bhk}${type}in ${where} — ${priceLabel} (${generatePropertyUrl(p)})`;
+      const url = generatePropertyUrl(p);
+      return `${i + 1}. [${p.title}](${url}) — ${bhk}${type}in ${where} — ${priceLabel}`;
     });
 
     return `${intro}\n\nHere's what's currently listed on RealtyNow:\n${lines.join('\n')}\n\nOpen any listing above on RealtyNow for full details or to schedule a visit.`;

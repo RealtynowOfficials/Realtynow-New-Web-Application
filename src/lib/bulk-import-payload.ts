@@ -183,7 +183,15 @@ export function buildRowPayload(
   for (const field of fields) {
     if (!field.maps_to || field.field_type === 'file' || field.field_type === 'location') continue;
     const rawValue = raw[field.field_key] ?? '';
-    if (rawValue === '') continue;
+    // For empty cells: number fields that map directly to `properties.*` default
+    // to 0 so NOT NULL columns (e.g. `price`) are never omitted from the payload.
+    if (rawValue === '') {
+      if (field.field_type === 'number' && field.maps_to.startsWith('properties.')) {
+        const colName = field.maps_to.slice('properties.'.length);
+        payload[colName] = 0;
+      }
+      continue;
+    }
     const value = coerceValue(field, rawValue);
 
     if (field.maps_to === 'properties.property_type_id') {

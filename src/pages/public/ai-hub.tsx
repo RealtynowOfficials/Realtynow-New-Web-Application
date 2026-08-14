@@ -11,10 +11,10 @@ import {
   ArrowRight,
   ShieldCheck,
 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { callAI } from '../../lib/ai';
 import { VoiceSearchButton } from '../../components/voice-search-button';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { useSearchParams } from 'react-router-dom';
 
 export const AIHubPage: React.FC = () => {
   const { t } = useLanguageContext();
@@ -27,6 +27,57 @@ export const AIHubPage: React.FC = () => {
   >(defaultTab || 'assistant');
   const [loading, setLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+
+  /** Renders AI text with [label](url) links as clickable elements. */
+  const renderAIText = (text: string) => {
+    const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+    while ((match = LINK_RE.exec(text)) !== null) {
+      if (match.index > last) parts.push(text.slice(last, match.index));
+      const [, label, href] = match;
+      const isInternal = href.startsWith('/');
+      parts.push(
+        isInternal ? (
+          <Link
+            key={key++}
+            to={href}
+            className="text-red-400 underline hover:text-red-300 font-medium transition-colors"
+          >
+            {label}
+          </Link>
+        ) : (
+          <a
+            key={key++}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-red-400 underline hover:text-red-300 font-medium transition-colors"
+          >
+            {label}
+          </a>
+        ),
+      );
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) parts.push(text.slice(last));
+    // Split on newlines and re-insert <br /> so whitespace-pre-line still works
+    const withBreaks: React.ReactNode[] = [];
+    parts.forEach((part, idx) => {
+      if (typeof part === 'string') {
+        const lines = part.split('\n');
+        lines.forEach((line, li) => {
+          withBreaks.push(line);
+          if (li < lines.length - 1) withBreaks.push(<br key={`br-${idx}-${li}`} />);
+        });
+      } else {
+        withBreaks.push(part);
+      }
+    });
+    return <>{withBreaks}</>;
+  };
 
   // Chat State
   const [chatInput, setChatInput] = useState<string>('');
@@ -264,7 +315,7 @@ export const AIHubPage: React.FC = () => {
                         : 'bg-slate-800/90 text-slate-200 border border-slate-700/60 rounded-bl-none'
                     }`}
                   >
-                    {m.text}
+                    {renderAIText(m.text)}
                   </div>
                 </div>
               ))}
@@ -334,265 +385,9 @@ export const AIHubPage: React.FC = () => {
                 <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
                   AI Property Answer
                 </h4>
-                <p className="text-sm text-slate-200 whitespace-pre-line leading-relaxed bg-slate-900 p-4 rounded-lg border border-slate-800">
-                  {smartSearchAnswer}
+                <p className="text-sm text-slate-200 leading-relaxed bg-slate-900 p-4 rounded-lg border border-slate-800">
+                  {renderAIText(smartSearchAnswer)}
                 </p>
               </div>
             )}
-          </div>
-        )}
-
-        {/* TAB 3: Recommendations */}
-        {activeTab === 'recommendations' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-3xl mx-auto space-y-6">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Zap className="w-5 h-5 text-red-500" /> AI Property Matchmaker & Locality Recommendations
-              </h3>
-              <p className="text-xs text-slate-400">
-                Receive customized locality and property recommendations based on your preferences.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <input
-                type="text"
-                value={recInput}
-                onChange={(e) => setRecInput(e.target.value)}
-                placeholder="e.g. 3 BHK in IT hubs with high appreciation under 1.5 Cr"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-500"
-              />
-              <button
-                onClick={handleRecommendations}
-                disabled={loading}
-                className="bg-red-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500 transition-all flex items-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" /> Generate Recommendations
-              </button>
-            </div>
-
-            {recOutput && (
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 whitespace-pre-line leading-relaxed">
-                {recOutput}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 4: Copy Generator */}
-        {activeTab === 'generator' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-4xl mx-auto space-y-6">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-red-500" /> AI Property Copy & SEO Generator
-              </h3>
-              <p className="text-xs text-slate-400">
-                Generate high-converting property titles, descriptions, and SEO meta copy for your listings.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-medium text-slate-300">Property Title Baseline:</label>
-                <input
-                  type="text"
-                  value={genTitle}
-                  onChange={(e) => setGenTitle(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-300">City:</label>
-                <input
-                  type="text"
-                  value={genCity}
-                  onChange={(e) => setGenCity(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-300">Locality:</label>
-                <input
-                  type="text"
-                  value={genLocality}
-                  onChange={(e) => setGenLocality(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-300">Property Type:</label>
-                <input
-                  type="text"
-                  value={genType}
-                  onChange={(e) => setGenType(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handleGenerateCopy}
-              disabled={loading}
-              className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition-all flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" /> Generate Copy & SEO
-            </button>
-
-            {genOutput && (
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-                <div>
-                  <span className="text-xs font-bold text-red-400 uppercase">Generated Title:</span>
-                  <p className="text-sm font-semibold text-white mt-1">{genOutput.title}</p>
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-amber-400 uppercase">Generated Description:</span>
-                  <p className="text-sm text-slate-300 leading-relaxed mt-1">{genOutput.description}</p>
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-emerald-400 uppercase">SEO Meta Description:</span>
-                  <p className="text-xs text-slate-400 mt-1">{genOutput.seo}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 5: Lead Summary */}
-        {activeTab === 'lead-summary' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-3xl mx-auto space-y-6">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-red-500" /> AI Customer Lead Summarizer
-              </h3>
-              <p className="text-xs text-slate-400">
-                Summarize long customer inquiry messages into quick actionable bullet points for agents.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <textarea
-                rows={4}
-                value={leadText}
-                onChange={(e) => setLeadText(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-500"
-              />
-              <button
-                onClick={handleSummarizeLead}
-                disabled={loading}
-                className="bg-red-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500 transition-all flex items-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" /> Summarize Lead
-              </button>
-            </div>
-
-            {leadSummaryOutput && (
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 whitespace-pre-line leading-relaxed">
-                {leadSummaryOutput}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 6: AI Translation */}
-        {activeTab === 'translation' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-3xl mx-auto space-y-6">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Languages className="w-5 h-5 text-red-500" /> AI Multilingual Real Estate Translator
-              </h3>
-              <p className="text-xs text-slate-400">Translate property copy into major Indian languages.</p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-300">Target Language:</label>
-                <select
-                  value={transLang}
-                  onChange={(e) => setTransLang(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                >
-                  <option value="Hindi">Hindi (हिन्दी)</option>
-                  <option value="Telugu">Telugu (తెలుగు)</option>
-                  <option value="Tamil">Tamil (தமிழ்)</option>
-                  <option value="Kannada">Kannada (కన్నడ)</option>
-                  <option value="Marathi">Marathi (मराठी)</option>
-                  <option value="Bengali">Bengali (বাংলা)</option>
-                </select>
-              </div>
-
-              <textarea
-                rows={3}
-                value={transText}
-                onChange={(e) => setTransText(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-500"
-              />
-
-              <button
-                onClick={handleTranslate}
-                disabled={loading}
-                className="bg-red-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500 transition-all flex items-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" /> Translate Text
-              </button>
-
-              {transOutput && (
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-200">
-                  {transOutput}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 7: Market Insights */}
-        {activeTab === 'market' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-3xl mx-auto space-y-6">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-red-500" /> AI Market & Locality Insights Generator
-              </h3>
-              <p className="text-xs text-slate-400">
-                Generate price per sqft trends, appreciation estimates, and locality advantages.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-300">City:</label>
-                <input
-                  type="text"
-                  value={marketCity}
-                  onChange={(e) => setMarketCity(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-300">Locality:</label>
-                <input
-                  type="text"
-                  value={marketLocality}
-                  onChange={(e) => setMarketLocality(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white mt-1"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handleMarketInsights}
-              disabled={loading}
-              className="bg-red-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm hover:bg-red-500 transition-all flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" /> Analyze Market
-            </button>
-
-            {marketOutput && (
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 text-sm text-slate-200 whitespace-pre-line leading-relaxed">
-                {marketOutput}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 };

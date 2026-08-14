@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
@@ -38,7 +38,7 @@ export default function SavedProperties() {
     }
   }, [user]);
 
-  const currentFavoriteIds = user ? dbFavoriteIds || [] : guestFavoriteIds;
+  const currentFavoriteIds = useMemo(() => user ? dbFavoriteIds || [] : guestFavoriteIds, [user, dbFavoriteIds, guestFavoriteIds]);
 
   useEffect(() => {
     async function fetchSavedProperties() {

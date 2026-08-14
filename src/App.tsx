@@ -329,6 +329,8 @@ function AppRoutes() {
               children: [
                 { path: '/', element: <HomePage /> },
                 { path: '/search', element: <SearchPage /> },
+                { path: '/properties/:category', element: <SearchPage /> },
+                { path: '/category/:category', element: <SearchPage /> },
                 { path: '/buy', element: <CategoryPage category="buy" /> },
                 { path: '/rent', element: <CategoryPage category="rent" /> },
                 { path: '/commercial', element: <CategoryPage category="commercial" /> },
