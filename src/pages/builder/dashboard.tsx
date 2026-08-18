@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
+import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
 import { Card, Skeleton, Badge } from '../../components/ui';
 import { Building2, MessageSquare, Briefcase, TrendingUp } from 'lucide-react';
 import { getBuilderSections } from '../portal/sections';
@@ -67,55 +67,45 @@ export function BuilderDashboard() {
         title={`Welcome, ${profile?.first_name || 'Builder'}`}
         subtitle="Manage your projects, track leads, and analyze your portfolio."
       />
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="p-6">
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-navy-100 p-3 text-navy-600">
-              <Building2 className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-navy-600">Total Projects</p>
-              {isLoading ? <Skeleton className="h-8 w-16 mt-1" /> : <p className="text-2xl font-bold text-navy-900">{stats?.projects || 0}</p>}
-            </div>
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-gold-100 p-3 text-gold-600">
-              <MessageSquare className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-navy-600">New Leads</p>
-              {isLoading ? <Skeleton className="h-8 w-16 mt-1" /> : <p className="text-2xl font-bold text-navy-900">{stats?.newLeads || 0}</p>}
-            </div>
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-success-100 p-3 text-success-600">
-              <Briefcase className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-navy-600">Closed Deals</p>
-              {isLoading ? <Skeleton className="h-8 w-16 mt-1" /> : <p className="text-2xl font-bold text-navy-900">{stats?.wonLeads || 0}</p>}
-            </div>
-          </div>
-        </Card>
-        <Card className="p-6 border-emerald-200 bg-emerald-50">
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-emerald-100 p-3 text-emerald-600">
-              <TrendingUp className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-emerald-700">Conversion</p>
-              {isLoading ? <Skeleton className="h-8 w-16 mt-1" /> : <p className="text-2xl font-bold text-emerald-900">
-                {stats?.newLeads && stats?.newLeads > 0 
-                  ? Math.round((stats.wonLeads / (stats.newLeads + stats.wonLeads)) * 100) 
-                  : 0}%
-              </p>}
-            </div>
-          </div>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {isLoading || !stats ? (
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)
+        ) : (
+          <>
+            <StatCard
+              label="Total Projects"
+              value={stats.projects}
+              icon={<Building2 className="h-5 w-5" />}
+              accent="navy"
+              to="/builder/projects"
+            />
+            <StatCard
+              label="New Leads"
+              value={stats.newLeads}
+              icon={<MessageSquare className="h-5 w-5" />}
+              accent="gold"
+              to="/builder/leads"
+            />
+            <StatCard
+              label="Closed Deals"
+              value={stats.wonLeads}
+              icon={<Briefcase className="h-5 w-5" />}
+              accent="success"
+              to="/builder/bookings"
+            />
+            <StatCard
+              label="Conversion"
+              value={`${
+                stats.newLeads && stats.newLeads > 0
+                  ? Math.round((stats.wonLeads / (stats.newLeads + stats.wonLeads)) * 100)
+                  : 0
+              }%`}
+              icon={<TrendingUp className="h-5 w-5" />}
+              accent="success"
+              to="/builder/analytics"
+            />
+          </>
+        )}
       </div>
       
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">

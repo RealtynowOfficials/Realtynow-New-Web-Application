@@ -334,7 +334,7 @@ function AppRoutes() {
                 { path: '/buy', element: <CategoryPage category="buy" /> },
                 { path: '/rent', element: <CategoryPage category="rent" /> },
                 { path: '/commercial', element: <CategoryPage category="commercial" /> },
-                { path: '/projects', element: <CategoryPage category="commercial" /> },
+                { path: '/projects', element: <CategoryPage category="projects" /> },
                 { path: '/plots', element: <CategoryPage category="plots" /> },
                 { path: '/luxury', element: <CategoryPage category="luxury" /> },
                 { path: '/property/:id', element: <PropertyDetailPage /> },
@@ -361,6 +361,7 @@ function AppRoutes() {
                 { path: '/ai-hub', element: <AIHubPage /> },
                 { path: '/agents', element: <AgentsPage /> },
                 { path: '/agents/:id', element: <AgentProfilePage /> },
+                { path: '/agent/:id', element: <AgentProfilePage /> },
                 { path: '/builders', element: <BuildersPage /> },
                 { path: '/builders/:id', element: <BuilderProfilePage /> },
                 { path: '/hyderabad-localities', element: <HyderabadLocalitiesPage /> },
@@ -368,6 +369,8 @@ function AppRoutes() {
                 { path: '/borewell-services', element: <BorewellServicesPage /> },
                 { path: '/home-loans', element: <HomeLoansPage /> },
                 // Common aliases and redirects to prevent 404s
+                { path: '/help', element: <Navigate to="/portal/help" replace /> },
+                { path: '/support', element: <Navigate to="/portal/help" replace /> },
                 { path: '/post-property', element: <Navigate to="/portal/list-property" replace /> },
                 { path: '/properties', element: <Navigate to="/search" replace /> },
                 { path: '/register', element: <Navigate to="/signup" replace /> },
@@ -483,7 +486,6 @@ function AppRoutes() {
                 { path: '/agent/bulk-upload', element: <BulkUpload /> },
               ],
             },
-            { path: '/agents', element: <Navigate to="/agent/login" replace /> },
             {
               element: <ProtectedRoute allowRoles={['partner']} />,
               children: [{ path: '/partner', element: <PartnerDashboard /> }],

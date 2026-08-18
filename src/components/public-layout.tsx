@@ -820,7 +820,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               <Link
                 to="/ai-hub"
                 className={cn(
-                  'nav-link flex items-center gap-1.5 rounded-xl py-2 text-base font-medium transition-colors lg:px-3 xl:px-5',
+                  'nav-link flex items-center gap-1.5 rounded-xl py-2 text-[13px] font-medium transition-colors lg:px-2.5 xl:px-4',
                   isRouteActive('/ai-hub', location.pathname)
                     ? 'bg-[#D8232A]/5 text-[#D8232A]'
                     : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
@@ -1242,7 +1242,11 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                   { label: t('footer.plotsLand', 'Plots & Land'), path: '/search?type=Plots' },
                 ].map((link, idx) => (
                   <li key={idx}>
-                    <Link to={link.path} className="group flex items-center gap-2 hover:text-white transition-colors">
+                    <Link
+                      to={link.path}
+                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                      className="group flex items-center gap-2 hover:text-white transition-colors"
+                    >
                       <span className="h-px w-0 bg-red-500 transition-all duration-300 group-hover:w-3"></span>
                       {link.label}
                     </Link>
@@ -1266,7 +1270,11 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                   { label: t('footer.propsKondapur', 'Properties in Kondapur'), path: '/search?city=Hyderabad&locality=Kondapur' },
                 ].map((link, idx) => (
                   <li key={idx}>
-                    <Link to={link.path} className="group flex items-center gap-2 hover:text-white transition-colors">
+                    <Link
+                      to={link.path}
+                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                      className="group flex items-center gap-2 hover:text-white transition-colors"
+                    >
                       <span className="h-px w-0 bg-red-500 transition-all duration-300 group-hover:w-3"></span>
                       {link.label}
                     </Link>

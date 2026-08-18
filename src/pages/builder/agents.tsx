@@ -452,7 +452,7 @@ export function BuilderAgents() {
                   type="checkbox"
                   checked={assignSelected.has(p.id)}
                   onChange={() => toggleAssignProject(p.id)}
-                  className="rounded border-navy-300 text-navy-700 focus:ring-navy-400"
+                  className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                 />
                 <span className="font-medium text-navy-900">{p.name}</span>
               </label>

@@ -19,6 +19,7 @@ import { getPortalSections } from './sections';
 import { Card, Button, Select, Badge } from '../../components/ui';
 import { useToast } from '../../hooks/useToast';
 import { supabase } from '../../lib/supabase';
+import { checkListingLimit } from '../../lib/listing-limits';
 import { getListingPurposes, getWorkflowForPurpose, type ListingPurpose, type WorkflowField } from '../../lib/listing-config';
 import {
   parseImportFile,
@@ -76,39 +77,22 @@ export function BulkUpload() {
     if (!user) return;
     
     async function checkQuota() {
-      // 1. check if customer
+      // 1. check if non-customer (agent, builder, partner, admin have elevated limits)
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single();
-      if (profile?.role !== 'customer') {
+      if (profile?.role && profile.role !== 'customer') {
         setQuotaChecked(true);
+        setQuotaExceeded(false);
+        setRemainingQuota(Infinity);
         return;
       }
       
-      // 2. check if active subscription
-      const { count: pkgCount } = await supabase
-        .from('agent_packages')
-        .select('*', { count: 'exact', head: true })
-        .eq('agent_id', user!.id)
-        .eq('status', 'active')
-        .gt('expires_at', new Date().toISOString());
-        
-      if (pkgCount && pkgCount > 0) {
-        setQuotaChecked(true);
-        return;
-      }
-      
-      // 3. check properties count
-      const { count: propCount } = await supabase
-        .from('properties')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user!.id);
-        
-      const limit = 2;
-      const current = propCount || 0;
-      if (current >= limit) {
+      const usage = await checkListingLimit(user!.id);
+      if (!usage.canList) {
         setQuotaExceeded(true);
         setRemainingQuota(0);
       } else {
-        setRemainingQuota(limit - current);
+        setQuotaExceeded(false);
+        setRemainingQuota(usage.limit === Infinity ? Infinity : Math.max(0, usage.limit - usage.used));
       }
       setQuotaChecked(true);
     }

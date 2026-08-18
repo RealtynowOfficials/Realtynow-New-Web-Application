@@ -197,3 +197,42 @@ export function generatePropertyUrl(p?: { id?: string | null; title?: string | n
   
   return `/property/${slug}-${p.id}`;
 }
+
+/**
+ * Normalizes phone numbers into E.164 standard (+91XXXXXXXXXX for India by default).
+ * Accepts raw strings like "98765 43210", "+91 98765-43210", "09876543210".
+ */
+export function normalizePhoneNumber(phone?: string | null, defaultCountryCode = '+91'): string {
+  if (!phone) return '';
+  const digitsOnly = phone.replace(/\D/g, '');
+  if (!digitsOnly) return '';
+
+  if (phone.trim().startsWith('+')) {
+    return `+${digitsOnly}`;
+  }
+
+  if (digitsOnly.length === 10) {
+    return `${defaultCountryCode}${digitsOnly}`;
+  }
+  if (digitsOnly.length === 11 && digitsOnly.startsWith('0')) {
+    return `${defaultCountryCode}${digitsOnly.slice(1)}`;
+  }
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+    return `+${digitsOnly}`;
+  }
+
+  return `+${digitsOnly}`;
+}
+
+/**
+ * Builds standard wa.me URL for the assigned Agent with a professional prefilled message.
+ */
+export function buildWhatsAppUrl(phone?: string | null, propertyTitle?: string | null): string {
+  const normalized = normalizePhoneNumber(phone).replace(/\+/g, '');
+  if (!normalized) return '';
+
+  const titleText = propertyTitle?.trim() ? `'${propertyTitle.trim()}'` : 'this property';
+  const text = `Hi, I'm interested in the property ${titleText} listed on RealtyNow. I would like to know more details.`;
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`;
+}
+

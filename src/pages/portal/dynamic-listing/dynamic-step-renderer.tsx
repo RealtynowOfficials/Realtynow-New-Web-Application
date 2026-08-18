@@ -95,8 +95,12 @@ function FieldInput({
         <Input
           type="number"
           label={labelText}
+          placeholder={field.placeholder ?? undefined}
           value={value == null ? '' : String(value)}
-          onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+          onChange={(e) => {
+            const val = e.target.value;
+            onChange(val === '' ? '' : val);
+          }}
           error={error}
         />
       );
@@ -117,7 +121,7 @@ function FieldInput({
             type="checkbox"
             checked={!!value}
             onChange={(e) => onChange(e.target.checked)}
-            className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400"
+            className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
           />
           {field.label}
         </label>

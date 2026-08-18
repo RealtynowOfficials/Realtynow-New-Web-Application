@@ -31,7 +31,7 @@ export function GlobalNotificationListener() {
           const newNotif = payload.new as any;
           
           // 1. Show an in-app Toast notification so the user sees it visually on the page
-          addToast('info', newNotif.title || 'New Notification');
+          addToast('success', newNotif.title || 'New Notification');
 
           // 2. Trigger browser's native Push Notification API if permission is granted
           if ('Notification' in window && Notification.permission === 'granted') {

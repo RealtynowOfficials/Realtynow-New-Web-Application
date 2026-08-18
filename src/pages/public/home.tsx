@@ -55,10 +55,17 @@ import {
   Share2,
   Check,
   CheckCircle2,
+  Calendar,
+  X,
 } from 'lucide-react';
+import { useClickOutside } from '../../hooks/useClickOutside';
+import { parsePropertySearchQuery, fetchLocationCategoryDiscovery, type LocationDiscoveryResult } from '../../lib/search-engine';
+import type { CategorySlug } from '../../lib/categories';
+import { normalizeSearchQuery } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
-import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
+import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { sharePropertyNativeOrCopy } from '../../lib/share-service';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useToast } from '../../components/toast';
 import { AppShowcase } from '../../components/app-showcase';
@@ -68,6 +75,8 @@ import { useLocationContext } from '../../contexts/location-context';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { useAuth } from '../../lib/auth';
 import { PostPropertyLink } from '../../components/post-property-link';
+import { ContactAgentModal } from '../../components/contact-agent-modal';
+import { BookVisitModal } from '../../components/book-visit-modal';
 
 type HomeCardProperty = Property & {
   city_name?: string | null;
@@ -93,6 +102,9 @@ export function HomePropertyCard({
   const favorited = favoriteIds ? favoriteIds.includes(property.id) : false;
   
   const [localFavorited, setLocalFavorited] = useState(() => getLocalFavoriteIds().includes(property.id));
+  const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [visitModalOpen, setVisitModalOpen] = useState(false);
+
   useEffect(() => {
     if (!user) {
       const handleSyncFavorites = () => setLocalFavorited(getLocalFavoriteIds().includes(property.id));
@@ -113,93 +125,131 @@ export function HomePropertyCard({
   const handleShareClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}${generatePropertyUrl(property)}`;
+    await sharePropertyNativeOrCopy(property, () => {
+      addToast('success', 'Public property link copied to clipboard!');
+    });
+  };
+
+  const handleWhatsAppClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const agentId = (property as any).assigned_agent_id || (property as any).owner_id;
+    if (!agentId) {
+      addToast('error', 'WhatsApp is currently unavailable for this property');
+      return;
+    }
+
     try {
-      if (navigator.share) {
-        await navigator.share({ title: property.title, url });
+      const { data: agentProfile } = await supabase
+        .from('profiles')
+        .select('phone, phone_number, whatsapp_number')
+        .eq('id', agentId)
+        .maybeSingle();
+
+      const targetPhone = agentProfile?.whatsapp_number || agentProfile?.phone_number || agentProfile?.phone;
+      if (!targetPhone) {
+        addToast('error', 'WhatsApp is currently unavailable for this agent.');
         return;
       }
-      await navigator.clipboard.writeText(url);
-      addToast('success', 'Link copied to clipboard');
+
+      const waUrl = buildWhatsAppUrl(targetPhone, property.title);
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
     } catch {
-      /* user cancelled share sheet — no-op */
+      addToast('error', 'WhatsApp is currently unavailable for this agent.');
     }
   };
 
   return (
-    <Link
-      to={generatePropertyUrl(property)}
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-shadow duration-300 hover:shadow-[0_16px_36px_rgba(0,0,0,0.12)]"
-    >
-      <div className="relative aspect-video w-full overflow-hidden bg-slate-100">
-        <img
-          src={property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
-          alt={property.title}
-          loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
-        />
-        {badge && (
-          <span
-            className={cn(
-              'absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-white shadow',
-              badge.className,
-            )}
-          >
-            {badge.icon} {badge.label}
-          </span>
-        )}
-        <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
-          <button
-            onClick={handleFavorite}
-            className={cn(
-              'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-transform hover:scale-110 cursor-pointer',
-              isCurrentlyFavorited ? 'text-red-500' : 'text-slate-600 hover:text-slate-900',
-            )}
-            title={isCurrentlyFavorited ? t('common.removeFromFavorites', 'Remove') : t('common.addToFavorites', 'Save')}
-          >
-            <Heart className={cn('h-4 w-4', isCurrentlyFavorited && 'fill-red-500')} />
-          </button>
-          <button
-            onClick={handleShareClick}
-            aria-label="Share this property"
-            className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-white"
-          >
-            <Share2 className="h-3.5 w-3.5" />
-          </button>
+    <div className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-shadow duration-300 hover:shadow-[0_16px_36px_rgba(0,0,0,0.12)]">
+      <Link
+        to={generatePropertyUrl(property)}
+        className="block flex-1"
+      >
+        <div className="relative aspect-video w-full overflow-hidden bg-slate-100">
+          <img
+            src={property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            alt={property.title}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+          />
+          {badge && (
+            <span
+              className={cn(
+                'absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-white shadow',
+                badge.className,
+              )}
+            >
+              {badge.icon} {badge.label}
+            </span>
+          )}
+          <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleFavorite}
+              className={cn(
+                'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-transform hover:scale-110 cursor-pointer',
+                isCurrentlyFavorited ? 'text-red-500' : 'text-slate-600 hover:text-slate-900',
+              )}
+              title={isCurrentlyFavorited ? t('common.removeFromFavorites', 'Remove') : t('common.addToFavorites', 'Save')}
+            >
+              <Heart className={cn('h-4 w-4', isCurrentlyFavorited && 'fill-red-500')} />
+            </button>
+            <button
+              type="button"
+              onClick={handleShareClick}
+              aria-label="Share this property"
+              className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-white"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {property.possession_status && (
+            <span className="absolute bottom-2.5 left-2.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">
+              {property.possession_status}
+            </span>
+          )}
+          {reraNumber && (
+            <span className="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[9px] font-bold text-slate-700 shadow-sm backdrop-blur">
+              <ShieldCheck className="h-3 w-3 text-emerald-600" /> RERA
+            </span>
+          )}
         </div>
-        {property.possession_status && (
-          <span className="absolute bottom-2.5 left-2.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">
-            {property.possession_status}
-          </span>
-        )}
-        {reraNumber && (
-          <span className="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[9px] font-bold text-slate-700 shadow-sm backdrop-blur">
-            <ShieldCheck className="h-3 w-3 text-emerald-600" /> RERA
-          </span>
-        )}
-      </div>
 
-      <div className="flex flex-1 flex-col p-3.5">
-        <p className="font-display text-base font-extrabold text-slate-900">
-          {formatCompactPrice(getPropertyPrice(property), property.purpose)}
-        </p>
-        <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
-          {property.title}
-        </h3>
-        <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-          <MapPin className="h-3 w-3 shrink-0" />
-          <span className="line-clamp-1">
-            {property.locality_name ? `${property.locality_name}, ` : ''}
-            {property.city_name ?? 'Hyderabad'}
-          </span>
-        </p>
-        {property.bedrooms != null && (
-          <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-            <Bed className="h-3 w-3 text-slate-400" /> {property.bedrooms} BHK
-          </span>
-        )}
+        <div className="flex flex-col p-3.5">
+          <p className="font-display text-base font-extrabold text-slate-900">
+            {formatCompactPrice(getPropertyPrice(property), property.purpose)}
+          </p>
+          <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
+            {property.title}
+          </h3>
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+            <MapPin className="h-3 w-3 shrink-0" />
+            <span className="line-clamp-1">
+              {property.locality_name ? `${property.locality_name}, ` : ''}
+              {property.city_name ?? 'Hyderabad'}
+            </span>
+          </p>
+          {property.bedrooms != null && (
+            <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+              <Bed className="h-3 w-3 text-slate-400" /> {property.bedrooms} BHK
+            </span>
+          )}
+        </div>
+      </Link>
+
+      {/* View Details Button */}
+      <div className="mt-auto pt-2.5 px-3 pb-3 border-t border-slate-100">
+        <Link
+          to={generatePropertyUrl(property)}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-[#E31E24] border border-slate-200 hover:border-red-200 transition-all text-center flex items-center justify-center gap-1.5 group/btn"
+        >
+          <span>{t('common.viewDetails', 'View Details')}</span>
+          <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover/btn:text-[#E31E24] group-hover/btn:translate-x-0.5 transition-transform" />
+        </Link>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -269,67 +319,181 @@ type HeroSlide = {
 // Static fallback slides with high-conversion 99acres style formatting
 const HERO_SLIDES: HeroSlide[] = [
   {
-    id: 'hero-hallmark',
-    title: 'OWN A SPACIOUS 2 & 3 BHK NEAR ORR',
-    subtitle: 'Hallmark Skyrena — Premium High-Rise Gated Living',
-    reraNumber: 'RERA No.: P01100004147 | rerait.telangana.gov.in',
+    id: 'hero-luxury-villas',
+    title: 'SIGNATURE VILLAS & PRIVATE MANSIONS',
+    subtitle: 'The Crown Enclave — Kokapet & Jubilee Hills Luxury Living',
+    reraNumber: 'RERA No.: P02400007205 | Ultra-Luxury Gated Community',
     features: [
-      'Earn ₹ 35,000 - 50,000/month for 1 year',
-      '2BHK: ₹ 35,000/mo | 3BHK: ₹ 45,000/mo',
-      '3BHK 1585 & 1885 sq.ft. (147.25 & 175.12 sq.m.)',
-      '80% Open Space & Ultra-Modern 40,000 sq.ft. Clubhouse',
-    ],
-    overlayPosition: 'right',
-    overlayOpacity: 0.88,
-    contentAlignment: 'left',
-    locationText: 'Hyderabad',
-    imageDesktop: '/hero-ramky.jpg',
-    imageMobile: '/hero-ramky.jpg',
-    ctaEnabled: true,
-    ctaText: 'Explore Now',
-    ctaLink: '/search?city=Hyderabad',
-  },
-  {
-    id: 'fallback-2',
-    title: 'PREMIUM LAKE-FACING RESIDENCES',
-    subtitle: 'My Home Sayuk — Tellapur, Financial District',
-    reraNumber: 'RERA No.: P02400003891 | HMDA Approved',
-    features: [
-      'Zero Brokerage & AI-Assisted Site Visits',
-      '2, 2.5 & 3 BHK Starting from ₹ 1.25 Cr',
-      'Over 50+ World-Class Lifestyle Amenities',
-      'Ready for Possession by Q4 2026',
-    ],
-    overlayPosition: 'right',
-    overlayOpacity: 0.88,
-    contentAlignment: 'left',
-    locationText: 'Hyderabad',
-    imageDesktop: '/hero_bg_user.jpg',
-    imageMobile: '/hero_bg_user.jpg',
-    ctaEnabled: true,
-    ctaText: 'View Project',
-    ctaLink: '/search?purpose=Buy',
-  },
-  {
-    id: 'fallback-3',
-    title: 'SIGNATURE VILLAS & PENTHOUSES',
-    subtitle: 'The Crown Estates — Kokapet Luxury Enclave',
-    reraNumber: 'RERA No.: P02400007205 | Premium Gated Living',
-    features: [
-      'Private Heated Pools & Landscaped Terraces',
-      '4 & 5 BHK Ultra-Luxury Independent Villas',
-      '10-Minute Drive to HITEC City & Financial District',
-      '100% Vastu Compliant with 3-Car Covered Parking',
+      'Private Heated Swimming Pools & Landscaped Terraces',
+      '4, 5 & 6 BHK Independent Villas on 500-1200 Sq.Yards',
+      '10-Minute Drive to Financial District & HITEC City',
+      '100% Vastu Compliant with 4-Car Covered Parking',
     ],
     overlayPosition: 'left',
     overlayOpacity: 0.88,
     contentAlignment: 'left',
     locationText: 'Hyderabad',
-    imageDesktop: '/hero_luxury_bg.png',
-    imageMobile: '/hero_luxury_bg.png',
+    imageDesktop: '/hero-villa-luxury.jpg',
+    imageMobile: '/hero-villa-luxury.jpg',
     ctaEnabled: true,
     ctaText: 'Explore Villas',
     ctaLink: '/search?type=Villa',
+    packageTier: 'Platinum',
+    isPinned: true,
+  },
+  {
+    id: 'hero-lake-apartments',
+    title: 'PREMIUM LAKE-FACING RESIDENCES',
+    subtitle: 'My Home Sayuk & Marina Heights — Tellapur, Financial District',
+    reraNumber: 'RERA No.: P02400003891 | HMDA Approved High-Rise',
+    features: [
+      'Zero Brokerage & AI-Assisted Site Visits',
+      '2, 2.5 & 3 BHK Starting from ₹ 1.25 Cr',
+      'Over 50+ World-Class Resort Style Lifestyle Amenities',
+      'Panoramic Lake Views with 80% Green Open Spaces',
+    ],
+    overlayPosition: 'right',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-lake-apartments.jpg',
+    imageMobile: '/hero-lake-apartments.jpg',
+    ctaEnabled: true,
+    ctaText: 'View Apartments',
+    ctaLink: '/search?category=apartment',
+    packageTier: 'Platinum',
+  },
+  {
+    id: 'hero-open-plots',
+    title: 'PREMIUM HMDA & RERA APPROVED PLOTS',
+    subtitle: 'Greenwood County — Mokila & Shankarpalli Growth Corridor',
+    reraNumber: 'RERA No.: P02400005512 | 100% Clear Title Plots',
+    features: [
+      '200 to 1,000 Sq.Yards Villa Plots with Immediate Registration',
+      '60ft & 40ft Black-Top Roads with Underground Utilities',
+      '15 Minutes to Neopolis & Outer Ring Road (ORR Exit 1)',
+      'Gated Community with 24/7 Security & Grand Clubhouse',
+    ],
+    overlayPosition: 'left',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-open-plots.jpg',
+    imageMobile: '/hero-open-plots.jpg',
+    ctaEnabled: true,
+    ctaText: 'Explore Plots',
+    ctaLink: '/plots',
+    packageTier: 'Gold',
+  },
+  {
+    id: 'hero-commercial-it',
+    title: 'GRADE-A COMMERCIAL & IT PARKS',
+    subtitle: 'Cyber Gateway Towers — HITEC City & Gachibowli',
+    reraNumber: 'RERA No.: P02400008890 | Ready-to-Occupy Commercial',
+    features: [
+      '5,000 to 1,00,000 Sq.Ft Pre-Leased & Bare-Shell Offices',
+      'High Rental Yields up to 9.2% with Fortune 500 Tenants',
+      'IGBC Platinum Rated Green Building with 100% Power Backup',
+      'Direct Metro Connectivity & Multi-Level Car Parking',
+    ],
+    overlayPosition: 'right',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-commercial-it.jpg',
+    imageMobile: '/hero-commercial-it.jpg',
+    ctaEnabled: true,
+    ctaText: 'Explore Commercial',
+    ctaLink: '/commercial',
+    packageTier: 'Platinum',
+  },
+  {
+    id: 'hero-penthouse-sky',
+    title: 'EXCLUSIVE SKY PENTHOUSES & DUPLEXES',
+    subtitle: 'The Horizon Heights — Banjara Hills Road No. 12',
+    reraNumber: 'RERA No.: P02400009123 | Limited Edition Residences',
+    features: [
+      '360° City Skyline & KBR National Park Panoramic Views',
+      'Private High-Speed Elevators Opening Directly into Foyer',
+      'Double-Height Living Ceilings with Italian Marble & Jacuzzi',
+      '24/7 Concierge Services, Private Helipad & Sky Lounge',
+    ],
+    overlayPosition: 'left',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-penthouse-sky.jpg',
+    imageMobile: '/hero-penthouse-sky.jpg',
+    ctaEnabled: true,
+    ctaText: 'View Penthouses',
+    ctaLink: '/search?luxury=1',
+    packageTier: 'Platinum',
+  },
+  {
+    id: 'hero-gated-community',
+    title: 'NEXT-GEN SMART HOMES NEAR IT CORRIDOR',
+    subtitle: 'Aparna CyberLife — Gachibowli Financial District',
+    reraNumber: 'RERA No.: P01100004147 | Walk-to-Work Living',
+    features: [
+      'Automated Lighting, Climate Control & Biometric Locks',
+      '2, 3 & 4 BHK Designer Apartments Starting ₹ 95 Lakhs',
+      'Olympic Size Swimming Pool, Tennis Courts & Co-Working Cafe',
+      '5 Minutes to Microsoft, Google & Amazon Headquarters',
+    ],
+    overlayPosition: 'right',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-gated-community.jpg',
+    imageMobile: '/hero-gated-community.jpg',
+    ctaEnabled: true,
+    ctaText: 'Explore Smart Homes',
+    ctaLink: '/search?purpose=Buy',
+    packageTier: 'Gold',
+  },
+  {
+    id: 'hero-luxury-farmhouse',
+    title: 'ECO-LUXURY FARMHOUSES & RESORT LIVING',
+    subtitle: 'Serene Meadows — Gandipet & Osman Sagar Enclave',
+    reraNumber: 'HMDA & DTCP Approved | Pollution-Free Green Sanctuary',
+    features: [
+      '0.5 to 2 Acre Gated Farmhouse Plots with Organic Orchard',
+      'Private Clubhouse, Organic Farming Zone & Nature Trails',
+      '25 Minutes from Gachibowli via Outer Ring Road',
+      'Solar Powered Sustainable Living with Rainwater Harvesting',
+    ],
+    overlayPosition: 'left',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-luxury-farmhouse.jpg',
+    imageMobile: '/hero-luxury-farmhouse.jpg',
+    ctaEnabled: true,
+    ctaText: 'View Farmhouses',
+    ctaLink: '/search?q=Farmhouse',
+    packageTier: 'Gold',
+  },
+  {
+    id: 'hero-township-neopolis',
+    title: 'NEW LAUNCH: NEOPOLIS INTEGRATED TOWNSHIP',
+    subtitle: 'Prestige Clairemont — The Future of Urban Hyderabad',
+    reraNumber: 'RERA No.: P02400009944 | Phase 1 Early Booking Open',
+    features: [
+      '60-Storey Iconic Twin Towers with Skybridge & Skywalk',
+      'Special Pre-Launch Pricing & Flexible 10:90 Payment Plans',
+      '1 Lakh Sq.Ft Mega Clubhouse with 70+ Sporting Facilities',
+      'Direct Access to Trumpet Interchange & Regional Ring Road',
+    ],
+    overlayPosition: 'right',
+    overlayOpacity: 0.88,
+    contentAlignment: 'left',
+    locationText: 'Hyderabad',
+    imageDesktop: '/hero-township-neopolis.jpg',
+    imageMobile: '/hero-township-neopolis.jpg',
+    ctaEnabled: true,
+    ctaText: 'Explore New Launches',
+    ctaLink: '/projects',
+    packageTier: 'Platinum',
   },
 ];
 
@@ -811,6 +975,26 @@ function AISmartSearch() {
   const [locating, setLocating] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [locationDiscovery, setLocationDiscovery] = useState<LocationDiscoveryResult | null>(null);
+  const [propertySuggestions, setPropertySuggestions] = useState<string[]>([]);
+  const [isSearchingDiscovery, setIsSearchingDiscovery] = useState(false);
+
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const hasSuggestions = !!(
+    (locationDiscovery && locationDiscovery.categories.length > 0) ||
+    propertySuggestions.length > 0
+  );
+
+  useClickOutside(
+    searchContainerRef,
+    () => {
+      setLocationDiscovery(null);
+      setPropertySuggestions([]);
+    },
+    hasSuggestions,
+  );
 
   const activePlaceholders = useMemo(() => SEARCH_PLACEHOLDERS[tab] || SEARCH_PLACEHOLDERS.Buy, [tab]);
   const typedPlaceholder = useTypingPlaceholder(activePlaceholders, !query);
@@ -853,6 +1037,7 @@ function AISmartSearch() {
 
           const detectedName = [locality, city].filter(Boolean).join(', ') || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
           setQuery(detectedName);
+          handleQueryChange(detectedName);
           toast.addToast('success', `Live location detected: ${detectedName}`);
           
           detectLocation().catch(() => {});
@@ -913,13 +1098,85 @@ function AISmartSearch() {
     rec.lang = 'en-IN';
     rec.continuous = false;
     rec.interimResults = false;
-    rec.onresult = (e) => { setQuery(e.results[0][0].transcript); setListening(false); };
+    rec.onresult = (e) => {
+      const spokenText = e.results[0][0].transcript;
+      setQuery(spokenText);
+      handleQueryChange(spokenText);
+      setListening(false);
+    };
     rec.onerror = (e) => {
       setListening(false);
       toast.addToast('error', voiceErrorMessage(e.error));
     };
     rec.onend = () => setListening(false);
     rec.start();
+  };
+
+  const handleQueryChange = (text: string) => {
+    setQuery(text);
+    if (searchError) setSearchError('');
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    const trimmed = text.trim();
+    if (trimmed.length < 2) {
+      setLocationDiscovery(null);
+      setPropertySuggestions([]);
+      return;
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      setIsSearchingDiscovery(true);
+      try {
+        const { normalized } = normalizeSearchQuery(trimmed);
+        const parsed = parsePropertySearchQuery(trimmed);
+        const targetLoc = parsed.location || normalized;
+
+        const purpose = tab === 'Rent' || tab === 'PG' ? 'Rent' : tab === 'Buy' ? 'Sale' : undefined;
+
+        // 1. Fetch Location Category Discovery from live database inventory
+        const disc = await fetchLocationCategoryDiscovery(targetLoc, purpose);
+        if (disc.categories.length > 0) {
+          setLocationDiscovery(disc);
+        } else {
+          setLocationDiscovery(null);
+        }
+
+        // 2. Fetch Top Property Matches
+        const { data: propData } = await supabase
+          .from('v_properties_search')
+          .select('title')
+          .or('status.eq.published,status.eq.live,is_live.eq.true')
+          .ilike('search_text', `%${normalized}%`)
+          .limit(4);
+
+        setPropertySuggestions((propData ?? []).map((p: { title: string }) => p.title));
+      } catch {
+        // Fallback gracefully
+      } finally {
+        setIsSearchingDiscovery(false);
+      }
+    }, 250);
+  };
+
+  const handleSelectDiscovery = (locName: string, catType?: CategorySlug) => {
+    const params = new URLSearchParams();
+    params.set('locality', locName);
+    if (catType) {
+      params.set('category', catType);
+    }
+    if (tab === 'Rent') params.set('purpose', 'Rent');
+    else if (tab === 'PG') params.set('purpose', 'PG');
+    else if (tab === 'Buy') params.set('purpose', 'Sale');
+    else if (tab === 'Commercial') params.set('type', 'Commercial');
+    else if (tab === 'Plots') params.set('type', 'Plot');
+    else if (tab === 'Projects') params.set('category', 'Project');
+
+    setLocationDiscovery(null);
+    setPropertySuggestions([]);
+    navigate(`/search?${params.toString()}`);
   };
 
   const handleAISearch = async () => {
@@ -948,6 +1205,8 @@ function AISmartSearch() {
         params.set('category', 'Project');
       }
 
+      setLocationDiscovery(null);
+      setPropertySuggestions([]);
       navigate(`/search?${params.toString()}`);
     } catch {
       navigate(`/search?q=${encodeURIComponent(trimmedQuery)}`);
@@ -970,7 +1229,12 @@ function AISmartSearch() {
             {SEARCH_TABS.map((tItem) => (
               <button
                 key={tItem}
-                onClick={() => setTab(tItem)}
+                onClick={() => {
+                  setTab(tItem);
+                  if (query.trim()) {
+                    handleQueryChange(query);
+                  }
+                }}
                 className={cn(
                   'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-200',
                   tab === tItem
@@ -990,20 +1254,17 @@ function AISmartSearch() {
           </div>
 
           {/* Main Search Input & Actions */}
-          <div className="flex flex-col md:flex-row items-center gap-2.5 pt-2.5">
+          <div ref={searchContainerRef} className="relative flex flex-col md:flex-row items-center gap-2.5 pt-2.5">
             <div className="relative w-full flex-1">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  if (searchError) setSearchError('');
-                }}
+                onChange={(e) => handleQueryChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAISearch()}
                 aria-label="Search properties"
                 aria-invalid={!!searchError}
                 className={cn(
-                  'w-full rounded-2xl border bg-slate-50/70 py-3.5 pl-12 pr-32 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 transition-all',
+                  'w-full rounded-2xl border bg-slate-50/70 py-3.5 pl-12 pr-36 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 transition-all',
                   searchError
                     ? 'border-red-400 focus:ring-red-500/30 focus:border-red-500'
                     : 'border-slate-200/80 focus:ring-red-500/30 focus:border-red-400',
@@ -1015,7 +1276,20 @@ function AISmartSearch() {
                   <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse bg-red-500 align-middle" />
                 </div>
               )}
-              <div className="absolute right-3 top-1/2 flex -translate-y-1/2 gap-1">
+              <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                {query && (
+                  <button
+                    onClick={() => {
+                      setQuery('');
+                      setLocationDiscovery(null);
+                      setPropertySuggestions([]);
+                    }}
+                    className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+                    title="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
                 <button
                   onClick={handleVoice}
                   className={cn('grid h-8 w-8 place-items-center rounded-xl transition-all', listening ? 'bg-red-500 text-white animate-pulse' : 'text-slate-500 hover:bg-slate-200/60')}
@@ -1037,6 +1311,91 @@ function AISmartSearch() {
                   <Navigation className={cn("h-4 w-4 transition-transform", locating && "animate-spin")} />
                 </button>
               </div>
+
+              {/* Location-Aware Discovery Dropdown */}
+              <AnimatePresence>
+                {hasSuggestions && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute z-50 mt-2 left-0 w-full rounded-2xl border border-slate-100 bg-white shadow-2xl overflow-hidden divide-y divide-slate-100 max-h-[380px] overflow-y-auto"
+                  >
+                    {/* Location Discovery Section */}
+                    {locationDiscovery && locationDiscovery.categories.length > 0 && (
+                      <div className="p-3 bg-slate-50/70">
+                        <div className="flex items-center justify-between px-1 mb-2">
+                          <button
+                            onClick={() => handleSelectDiscovery(locationDiscovery.location)}
+                            className="flex items-center gap-1.5 text-xs font-extrabold text-slate-900 hover:text-red-600 transition text-left"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                            <span>
+                              {locationDiscovery.city && locationDiscovery.city.toLowerCase() !== locationDiscovery.location.toLowerCase()
+                                ? `${locationDiscovery.location}, ${locationDiscovery.city}`
+                                : locationDiscovery.location}
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-400">
+                              ({locationDiscovery.totalCount} properties)
+                            </span>
+                          </button>
+                          <span className="text-[10px] uppercase font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                            Location Identified
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] font-semibold text-slate-500 px-1 mb-2">
+                          Available property types in {locationDiscovery.location}:
+                        </p>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                          {locationDiscovery.categories.map((cat) => (
+                            <button
+                              key={cat.type}
+                              onClick={() => handleSelectDiscovery(locationDiscovery.location, cat.type)}
+                              className="group flex items-center justify-between gap-1.5 p-2 rounded-xl border border-slate-200/80 bg-white hover:border-red-400 hover:bg-red-50/40 transition-all text-left shadow-sm"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-sm shrink-0">{cat.emoji}</span>
+                                <span className="text-xs font-bold text-slate-800 group-hover:text-red-700 truncate">
+                                  {cat.label}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 group-hover:bg-red-100 group-hover:text-red-800 shrink-0">
+                                {cat.count}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Matching Property Titles */}
+                    {propertySuggestions.length > 0 && (
+                      <div className="py-1">
+                        <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                          Matching Listings
+                        </div>
+                        {propertySuggestions.map((title) => (
+                          <button
+                            key={title}
+                            onClick={() => {
+                              setQuery(title);
+                              setLocationDiscovery(null);
+                              setPropertySuggestions([]);
+                              navigate(`/search?q=${encodeURIComponent(title)}`);
+                            }}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-red-50 hover:text-red-700 transition text-left"
+                          >
+                            <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="line-clamp-1">{title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <button
@@ -1171,24 +1530,22 @@ function SponsoredPropertiesCarousel() {
   const { data } = useQuery({
     queryKey: ['home-sponsored-properties', cityId],
     queryFn: async () => {
-      // Over-fetch candidate ids so there's enough to work with after city-scoping below.
+      // 1. Fetch active paid campaigns
       const { data: campaignRows } = await supabase.rpc('fn_get_active_sponsored_property_ids', { p_limit: 20 });
       const ids = ((campaignRows ?? []) as { property_id: string }[]).map((r) => r.property_id);
 
+      let paidList: any[] = [];
       if (ids.length > 0) {
         const { data: propertyRows } = await supabase.from('v_properties_search').select('*').in('id', ids);
         const byId = new Map((propertyRows ?? []).map((p) => [p.id, p]));
         const ordered = ids
           .map((id) => byId.get(id))
           .filter((p): p is NonNullable<typeof p> => Boolean(p));
-        // Prefer campaigns for the detected city; widen back to all cities if none match there.
         const scoped = cityId ? ordered.filter((p) => p.city_id === cityId) : ordered;
-        const picked = (scoped.length > 0 ? scoped : ordered).slice(0, 6);
-        if (picked.length > 0) return picked.map((p) => ({ ...p, _isPaidCampaign: true }));
+        paidList = (scoped.length > 0 ? scoped : ordered).map((p) => ({ ...p, _isPaidCampaign: true }));
       }
 
-      // No active paid campaigns — fall back to admin-marked Featured properties,
-      // scoped to the detected city when we have one (widen if that's empty).
+      // 2. Fetch admin-marked Featured properties
       const fetchFeatured = async (scopeToCity: boolean) => {
         let q = supabase
           .from('v_properties_search')
@@ -1196,7 +1553,7 @@ function SponsoredPropertiesCarousel() {
           .or('status.eq.published,is_live.eq.true')
           .eq('is_featured', true);
         if (scopeToCity && cityId) q = q.eq('city_id', cityId);
-        const { data } = await q.order('created_at', { ascending: false }).limit(6);
+        const { data } = await q.order('created_at', { ascending: false }).limit(20);
         return data ?? [];
       };
 
@@ -1204,23 +1561,51 @@ function SponsoredPropertiesCarousel() {
       if (featuredRows.length === 0 && cityId) {
         featuredRows = await fetchFeatured(false);
       }
-      return featuredRows.map((p) => ({ ...p, _isPaidCampaign: false }));
+      const regularList = featuredRows.map((p) => ({ ...p, _isPaidCampaign: false }));
+
+      // 3. Combine paid campaigns and organic featured properties without duplicates
+      const seen = new Set<string>();
+      const combined: any[] = [];
+      for (const item of [...paidList, ...regularList]) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          combined.push(item);
+        }
+      }
+      return combined;
     },
   });
 
   const [emblaRef, emblaApi] = useEmblaCarousel(
-    { align: 'start', loop: true, containScroll: 'trimSnaps' },
-    [Autoplay({ delay: 4500, stopOnInteraction: true, stopOnMouseEnter: true })],
+    { align: 'start', loop: true, slidesToScroll: 1 },
+    [Autoplay({ delay: 4000, stopOnInteraction: true, stopOnMouseEnter: true })],
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollSnaps, setScrollSnaps] = useState<number[]>([]);
+
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setSelectedIndex(emblaApi.selectedScrollSnap());
+  }, [emblaApi]);
 
   useEffect(() => {
     if (!emblaApi) return;
-    emblaApi.on('select', () => setSelectedIndex(emblaApi.selectedScrollSnap()));
+    setScrollSnaps(emblaApi.scrollSnapList());
+    onSelect();
+    emblaApi.on('select', onSelect);
+    emblaApi.on('reInit', () => {
+      setScrollSnaps(emblaApi.scrollSnapList());
+      onSelect();
+    });
+  }, [emblaApi, onSelect]);
+
+  const scrollPrev = useCallback(() => {
+    if (emblaApi) emblaApi.scrollPrev();
   }, [emblaApi]);
 
-  const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
-  const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
+  const scrollNext = useCallback(() => {
+    if (emblaApi) emblaApi.scrollNext();
+  }, [emblaApi]);
 
   if (!data || data.length === 0) return null;
 
@@ -1247,15 +1632,15 @@ function SponsoredPropertiesCarousel() {
         <div className="relative">
           <div className="overflow-hidden" ref={emblaRef}>
             <div className="flex gap-4">
-              {data.slice(0, 6).map((p, i) => (
+              {data.map((p, i) => (
                 <motion.div
                   key={p.id}
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: i * 0.04 }}
                   whileHover={{ y: -5 }}
-                  className="relative min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] xl:flex-[0_0_calc(20%-13px)]"
+                  className="relative min-w-0 flex-[0_0_85%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(33.333%-11px)] xl:flex-[0_0_calc(25%-12px)]"
                 >
                   <HomePropertyCard
                     property={p}
@@ -1270,18 +1655,28 @@ function SponsoredPropertiesCarousel() {
             </div>
           </div>
 
-          {data.length > 4 && (
+          {data.length > 1 && (
             <>
               <button
-                onClick={scrollPrev}
-                className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  scrollPrev();
+                }}
+                className="absolute left-[-16px] top-[40%] -translate-y-1/2 z-30 hidden lg:flex h-11 w-11 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_24px_rgba(0,0,0,0.12)] text-slate-700 transition-all hover:scale-110 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 active:scale-95 cursor-pointer"
                 aria-label="Previous slide"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
               <button
-                onClick={scrollNext}
-                className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  scrollNext();
+                }}
+                className="absolute right-[-16px] top-[40%] -translate-y-1/2 z-30 hidden lg:flex h-11 w-11 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_24px_rgba(0,0,0,0.12)] text-slate-700 transition-all hover:scale-110 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 active:scale-95 cursor-pointer"
                 aria-label="Next slide"
               >
                 <ChevronRight className="h-5 w-5" />
@@ -1289,16 +1684,19 @@ function SponsoredPropertiesCarousel() {
             </>
           )}
 
-          <div className="mt-6 flex items-center justify-center gap-2">
-            {data.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => emblaApi && emblaApi.scrollTo(i)}
-                className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-red-600' : 'w-1.5 bg-slate-300 hover:bg-slate-400'}`}
-                aria-label={`Go to slide ${i + 1}`}
-              />
-            ))}
-          </div>
+          {scrollSnaps.length > 1 && (
+            <div className="mt-6 flex items-center justify-center gap-2">
+              {scrollSnaps.map((_, i) => (
+                <button
+                  type="button"
+                  key={i}
+                  onClick={() => emblaApi && emblaApi.scrollTo(i)}
+                  className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${i === selectedIndex ? 'w-8 bg-red-600' : 'w-2 bg-slate-300 hover:bg-slate-400'}`}
+                  aria-label={`Go to slide ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -1327,15 +1725,15 @@ function ExploreHyderabad() {
       title="Explore in Hyderabad"
       subtitle="Discover premium properties across Hyderabad's richest localities"
       id="cities"
-    >
-      <div className="flex items-center justify-end -mt-10 mb-4 sm:-mt-12">
+      action={
         <Link
           to="/hyderabad-localities"
           className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
         >
           View All <ArrowRight className="h-3.5 w-3.5" />
         </Link>
-      </div>
+      }
+    >
       <div className="mt-4 grid grid-cols-4 gap-4 sm:gap-6 lg:grid-cols-8">
         {HYDERABAD_RICH_AREAS.map((locality, i) => (
           <motion.div
@@ -1683,7 +2081,7 @@ function AIFeaturesSection() {
                       >
                         <div
                           className={cn(
-                            'h-13 w-13 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105',
+                            'h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105',
                             item.bg,
                           )}
                         >
@@ -1719,9 +2117,6 @@ function SignatureCollection() {
   const { data } = useQuery({
     queryKey: ['home-luxury', cityId],
     queryFn: async () => {
-      // Scope to the detected city when we have one; if that comes back empty
-      // (e.g. little luxury inventory yet in that city), widen to all cities
-      // so the homepage never looks empty.
       const fetchLuxury = async (scopeToCity: boolean) => {
         let q = supabase
           .from('v_properties_search')
@@ -1729,7 +2124,7 @@ function SignatureCollection() {
           .or('status.eq.published,status.eq.live,is_live.eq.true')
           .eq('is_luxury', true);
         if (scopeToCity && cityId) q = q.eq('city_id', cityId);
-        const { data } = await q.order('price', { ascending: false }).limit(9);
+        const { data } = await q.order('price', { ascending: false }).limit(20);
         return data ?? [];
       };
 
@@ -1755,18 +2150,35 @@ function SignatureCollection() {
   });
 
   const [emblaRef, emblaApi] = useEmblaCarousel(
-    { align: 'start', loop: true, containScroll: 'trimSnaps' },
-    [Autoplay({ delay: 4000, stopOnInteraction: true, stopOnMouseEnter: true })]
+    { align: 'start', loop: true, slidesToScroll: 1 },
+    [Autoplay({ delay: 4000, stopOnInteraction: true, stopOnMouseEnter: true })],
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollSnaps, setScrollSnaps] = useState<number[]>([]);
+
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setSelectedIndex(emblaApi.selectedScrollSnap());
+  }, [emblaApi]);
 
   useEffect(() => {
     if (!emblaApi) return;
-    emblaApi.on('select', () => setSelectedIndex(emblaApi.selectedScrollSnap()));
+    setScrollSnaps(emblaApi.scrollSnapList());
+    onSelect();
+    emblaApi.on('select', onSelect);
+    emblaApi.on('reInit', () => {
+      setScrollSnaps(emblaApi.scrollSnapList());
+      onSelect();
+    });
+  }, [emblaApi, onSelect]);
+
+  const scrollPrev = useCallback(() => {
+    if (emblaApi) emblaApi.scrollPrev();
   }, [emblaApi]);
 
-  const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
-  const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
+  const scrollNext = useCallback(() => {
+    if (emblaApi) emblaApi.scrollNext();
+  }, [emblaApi]);
 
   if (!data || data.length === 0) return null;
 
@@ -1824,16 +2236,16 @@ function SignatureCollection() {
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.1 + 0.3, duration: 0.5 }}
+                  transition={{ delay: i * 0.08, duration: 0.5 }}
                   whileHover={{ y: -5 }}
-                  className="relative min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] xl:flex-[0_0_calc(20%-13px)]"
+                  className="relative min-w-0 flex-[0_0_85%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(33.333%-11px)] xl:flex-[0_0_calc(25%-12px)]"
                 >
                   <HomePropertyCard
                     property={p}
                     badge={{
                       label: 'Signature',
-                      className: 'bg-black/60',
-                      icon: <Sparkles className="h-2.5 w-2.5" />,
+                      className: 'bg-navy-950/90 text-amber-300 border border-amber-500/30 backdrop-blur-md',
+                      icon: <Sparkles className="h-2.5 w-2.5 text-amber-400" />,
                     }}
                   />
                 </motion.div>
@@ -1842,37 +2254,50 @@ function SignatureCollection() {
           </div>
 
           {/* Navigation Controls */}
-          {data.length > 4 && (
+          {data.length > 1 && (
             <>
               <button
-                onClick={scrollPrev}
-                className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_10px_30px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:bg-slate-50 hover:text-red-600 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-100"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  scrollPrev();
+                }}
+                className="absolute left-[-16px] top-[40%] -translate-y-1/2 z-30 hidden lg:flex h-11 w-11 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_24px_rgba(0,0,0,0.12)] text-slate-700 transition-all hover:scale-110 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 active:scale-95 cursor-pointer"
                 aria-label="Previous slide"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
 
               <button
-                onClick={scrollNext}
-                className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_10px_30px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:bg-slate-50 hover:text-red-600 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-100"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  scrollNext();
+                }}
+                className="absolute right-[-16px] top-[40%] -translate-y-1/2 z-30 hidden lg:flex h-11 w-11 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_24px_rgba(0,0,0,0.12)] text-slate-700 transition-all hover:scale-110 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 active:scale-95 cursor-pointer"
                 aria-label="Next slide"
               >
-                <ChevronRight className="h-6 w-6" />
+                <ChevronRight className="h-5 w-5" />
               </button>
             </>
           )}
 
           {/* Pagination Dots */}
-          <div className="mt-8 flex items-center justify-center gap-2">
-            {data.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => emblaApi && emblaApi.scrollTo(i)}
-                className={`h-2 transition-all duration-300 rounded-full ${i === selectedIndex ? 'w-8 bg-red-600' : 'w-2 bg-slate-300 hover:bg-slate-400'}`}
-                aria-label={`Go to slide ${i + 1}`}
-              />
-            ))}
-          </div>
+          {scrollSnaps.length > 1 && (
+            <div className="mt-8 flex items-center justify-center gap-2">
+              {scrollSnaps.map((_, i) => (
+                <button
+                  type="button"
+                  key={i}
+                  onClick={() => emblaApi && emblaApi.scrollTo(i)}
+                  className={`h-2 transition-all duration-300 rounded-full cursor-pointer ${i === selectedIndex ? 'w-8 bg-red-600' : 'w-2 bg-slate-300 hover:bg-slate-400'}`}
+                  aria-label={`Go to slide ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
 
         </motion.div>
       </div>
@@ -3009,12 +3434,12 @@ function FinalCTA() {
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               to="/signup"
-              className="btn rounded-xl bg-white px-6 py-3.5 text-base text-secondary-600 hover:bg-white/90"
+              className="btn rounded-xl bg-white px-7 py-3.5 text-base font-extrabold text-red-600 shadow-lg hover:bg-slate-50 transition-all active:scale-95"
             >
               {t('common.getStartedFree', 'Get Started Free')} <ArrowRight className="h-5 w-5" />
             </Link>
             <PostPropertyLink to="/portal/list-property"
-              className="btn rounded-xl glass-card px-6 py-3.5 text-base text-white hover:bg-white/20"
+              className="btn rounded-xl border border-white/30 bg-white/10 backdrop-blur-md px-7 py-3.5 text-base font-extrabold text-white hover:bg-white/20 transition-all active:scale-95"
             >
               {t('forms.postProperty', 'Post a Property')}
             </PostPropertyLink>

@@ -172,7 +172,7 @@ export default function AdminDiscountCampaigns() {
               </div>
               <div>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" name="is_active" defaultChecked={editCampaign ? editCampaign.is_active : true} />
+                  <input type="checkbox" name="is_active" defaultChecked={editCampaign ? editCampaign.is_active : true} className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer" />
                   Is Active
                 </label>
               </div>

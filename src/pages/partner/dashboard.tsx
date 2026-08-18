@@ -57,18 +57,26 @@ export function PartnerDashboard() {
             value={partner?.status === 'active' ? t('dashboard.active', 'Active') : partner?.status ?? '—'}
             icon={<ShieldCheck className="h-5 w-5" />}
             accent={partner?.status === 'active' ? 'success' : 'error'}
+            to="/partner"
           />
           <StatCard
             label={t('dashboard.verification', 'Verification')}
             value={partner?.verification_status ?? t('dashboard.pending', 'Pending')}
             icon={<Award className="h-5 w-5" />}
             accent="gold"
+            to="/partner"
           />
-          <StatCard label={t('dashboard.partnerTypeLabel', 'Partner Type')} value={partner?.partner_type ?? '—'} icon={<Building2 className="h-5 w-5" />} />
+          <StatCard
+            label={t('dashboard.partnerTypeLabel', 'Partner Type')}
+            value={partner?.partner_type ?? '—'}
+            icon={<Building2 className="h-5 w-5" />}
+            to="/partner"
+          />
           <StatCard
             label={t('dashboard.partnerSince', 'Partner Since')}
             value={partner?.approved_at ? formatDate(partner.approved_at) : '—'}
             icon={<Wallet className="h-5 w-5" />}
+            to="/partner"
           />
         </div>
       )}

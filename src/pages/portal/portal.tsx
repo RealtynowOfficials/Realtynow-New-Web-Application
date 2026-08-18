@@ -106,6 +106,7 @@ export function PortalDashboard() {
               value={stats.total}
               icon={<Building2 className="h-5 w-5" />}
               accent="navy"
+              to="/portal/my-properties"
             />
             <StatCard
               label={t('portal.published', 'Published')}
@@ -113,18 +114,21 @@ export function PortalDashboard() {
               icon={<Home className="h-5 w-5" />}
               accent="success"
               trend={`${stats.pending} ${t('portal.pending', 'pending')}`}
+              to="/portal/my-properties"
             />
             <StatCard
               label={t('portal.totalViews', 'Total Views')}
               value={stats.views}
               icon={<Eye className="h-5 w-5" />}
               accent="gold"
+              to="/portal/my-properties"
             />
             <StatCard
               label={t('portal.savedAndEnquiries', 'Saved & Enquiries')}
               value={`${stats.favorites} / ${stats.enquiries}`}
               icon={<Heart className="h-5 w-5" />}
               accent="navy"
+              to="/portal/saved-properties"
             />
           </>
         )}

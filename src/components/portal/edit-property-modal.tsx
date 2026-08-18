@@ -432,9 +432,9 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
         place_id: form.place_id || null,
         latitude: form.latitude,
         longitude: form.longitude,
-        price: form.purpose === 'Sale' ? num(form.price) ?? 0 : num(form.price) ?? 0,
-        rent_amount: num(form.rent_amount),
-        security_deposit: num(form.security_deposit),
+        price: form.purpose === 'Sale' ? num(form.price) ?? 0 : num(form.rent_amount) ?? 0,
+        rent_amount: form.purpose === 'Rent' ? num(form.rent_amount) : null,
+        security_deposit: form.purpose === 'Rent' ? num(form.security_deposit) : null,
         bedrooms: num(form.bedrooms) ?? 0,
         bathrooms: num(form.bathrooms) ?? 0,
         balconies: num(form.balconies) ?? 0,
@@ -520,14 +520,51 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
           {/* Pricing */}
           <section className="rounded-2xl border border-navy-100 p-4">
             <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Pricing</h4>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Input label="Price (₹)" type="number" value={form.price} error={errors.price} onChange={(e) => set('price', e.target.value)} disabled={form.purpose === 'Rent'} />
-              <Input label="Monthly Rent (₹)" type="number" value={form.rent_amount} error={errors.rent_amount} onChange={(e) => set('rent_amount', e.target.value)} disabled={form.purpose === 'Sale'} />
-              <Input label="Security Deposit (₹)" type="number" value={form.security_deposit} onChange={(e) => set('security_deposit', e.target.value)} />
-              <Input label="Maintenance (₹/mo)" type="number" value={form.maintenance} onChange={(e) => set('maintenance', e.target.value)} />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {form.purpose === 'Sale' ? (
+                <Input
+                  label="Asking Price (₹) *"
+                  type="number"
+                  value={form.price}
+                  error={errors.price}
+                  onChange={(e) => {
+                    set('price', e.target.value);
+                    if (errors.price) setErrors((errs) => ({ ...errs, price: '' }));
+                  }}
+                  placeholder="e.g. 8500000"
+                />
+              ) : (
+                <Input
+                  label="Monthly Rent (₹) *"
+                  type="number"
+                  value={form.rent_amount}
+                  error={errors.rent_amount}
+                  onChange={(e) => {
+                    set('rent_amount', e.target.value);
+                    if (errors.rent_amount) setErrors((errs) => ({ ...errs, rent_amount: '' }));
+                  }}
+                  placeholder="e.g. 25000"
+                />
+              )}
+              {form.purpose === 'Rent' && (
+                <Input
+                  label="Security Deposit (₹)"
+                  type="number"
+                  value={form.security_deposit}
+                  onChange={(e) => set('security_deposit', e.target.value)}
+                  placeholder="e.g. 50000"
+                />
+              )}
+              <Input
+                label="Maintenance (₹/mo)"
+                type="number"
+                value={form.maintenance}
+                onChange={(e) => set('maintenance', e.target.value)}
+                placeholder="e.g. 2000"
+              />
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm font-medium text-navy-700">
-              <input type="checkbox" checked={form.negotiable} onChange={(e) => set('negotiable', e.target.checked)} className="h-4 w-4 rounded border-navy-300 text-red-600" />
+            <label className="mt-3 flex items-center gap-2 text-sm font-medium text-navy-700 cursor-pointer">
+              <input type="checkbox" checked={form.negotiable} onChange={(e) => set('negotiable', e.target.checked)} className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer" />
               Price is negotiable
             </label>
           </section>

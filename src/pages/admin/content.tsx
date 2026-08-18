@@ -242,7 +242,7 @@ export function AdminTestimonials() {
                           return n;
                         })
                       }
-                      className="rounded border-navy-300 text-navy-700"
+                      className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                     />
                     <Badge variant={t.is_active ? 'success' : 'default'}>{t.is_active ? 'Active' : 'Hidden'}</Badge>
                   </div>
@@ -374,7 +374,7 @@ export function AdminTestimonials() {
               type="checkbox"
               checked={form.is_active}
               onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-              className="rounded border-navy-300 text-navy-700"
+              className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
             />
             Active (visible on website)
           </label>
@@ -745,7 +745,7 @@ export function AdminFaqs() {
               type="checkbox"
               checked={form.is_active}
               onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-              className="rounded border-navy-300 text-navy-700"
+              className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
             />
             Active
           </label>

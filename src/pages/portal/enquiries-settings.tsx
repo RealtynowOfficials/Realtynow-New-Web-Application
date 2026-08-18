@@ -169,34 +169,7 @@ export function PortalEnquiries() {
   );
 }
 
-export function PortalHelp() {
-  const { t } = useLanguageContext();
-  const { data, isLoading } = useQuery({
-    queryKey: ['faqs'],
-    queryFn: async () => {
-      const { data } = await supabase.from('faqs').select('*').eq('is_active', true);
-      return data ?? [];
-    },
-  });
-  return (
-    <DashboardLayout sections={getPortalSections(t)} title={t('portal.helpCenter', 'Help Center')}>
-      <PageHeader
-        title={t('portal.helpCenter', 'Help center')}
-        subtitle={t('portal.helpSubtitle', 'Find answers to common questions.')}
-      />
-      <div className="space-y-3">
-        {isLoading
-          ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)
-          : data?.map((f) => (
-              <Card key={f.id} className="p-5">
-                <p className="font-semibold text-navy-900">{f.question}</p>
-                <p className="mt-2 text-sm text-navy-600">{f.answer}</p>
-              </Card>
-            ))}
-      </div>
-    </DashboardLayout>
-  );
-}
+export { PortalHelp } from './portal-help';
 
 export function PortalSettings() {
   const { t } = useLanguageContext();

@@ -155,7 +155,7 @@ export default function InvoiceWizard({ onCancel }: { onCancel: () => void }) {
             <button
               type="button"
               onClick={() => append({ title: '', quantity: 1, unit_price: 0, total: 0 })}
-              className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-md flex items-center gap-1 hover:bg-blue-100"
+              className="text-sm bg-red-50 text-red-600 px-3 py-1.5 rounded-xl flex items-center gap-1 hover:bg-red-100 font-bold transition cursor-pointer border border-red-200"
             >
               <Plus className="w-4 h-4" /> Add Row
             </button>
@@ -254,14 +254,14 @@ export default function InvoiceWizard({ onCancel }: { onCancel: () => void }) {
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 border rounded-md font-medium text-gray-700 hover:bg-gray-50"
+            className="px-4 py-2.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-50 transition cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md font-medium flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
+            className="px-6 py-2.5 bg-red-600 text-white rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 shadow-md shadow-red-600/20 transition cursor-pointer"
           >
             {isSubmitting && <Spinner className="w-4 h-4" />}
             Generate Invoice

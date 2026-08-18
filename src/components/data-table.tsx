@@ -117,6 +117,7 @@ export function DataTable<T>({
   loading,
   error,
   searchable = true,
+  searchPlaceholder = 'Search records…',
   searchKeys,
   dateKey = 'created_at' as keyof T,
   dateFilterable = true,
@@ -221,92 +222,100 @@ export function DataTable<T>({
       {/* Top Filter & Toolbar Bar */}
       <div
         className={cn(
-          'flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-navy-100 shadow-sm',
+          'flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs mb-4',
           sticky && 'sticky top-0 z-20',
         )}
       >
         {/* Left: Search Bar */}
         {searchable && (
-          <div className="relative min-w-[220px] flex-1 max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-400" />
+          <div className="relative min-w-[240px] flex-1 max-w-md">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Search records…"
+              placeholder={searchPlaceholder ?? "Search records…"}
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setPage(1);
               }}
-              className="pl-9 text-sm"
+              className="pl-9.5 text-xs sm:text-sm bg-slate-50/50 border-slate-200 focus:bg-white focus:border-red-500 rounded-xl h-10 transition-all"
             />
           </div>
         )}
 
-        {/* Middle: Advanced Date Filter */}
-        {dateFilterable && (
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-navy-600 bg-navy-50 px-2.5 py-1.5 rounded-xl border border-navy-100">
-              <Calendar className="h-4 w-4 text-navy-500" />
-              <span>Date:</span>
-              <select
-                value={datePreset}
-                onChange={(e) => {
-                  setDatePreset(e.target.value as DatePreset);
-                  setPage(1);
-                }}
-                className="bg-transparent font-bold text-navy-900 focus:outline-none cursor-pointer pr-1"
-              >
-                <option value="all">All Time</option>
-                <option value="today">Today</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-                <option value="this_month">This Month</option>
-                <option value="custom">Custom Range</option>
-              </select>
-            </div>
-
-            {datePreset === 'custom' && (
-              <div className="flex items-center gap-1.5 bg-navy-50 p-1 rounded-xl border border-navy-100 text-xs">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="bg-white border border-navy-200 rounded px-2 py-1 text-xs"
-                />
-                <span className="text-navy-400">to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="bg-white border border-navy-200 rounded px-2 py-1 text-xs"
-                />
+        <div className="flex flex-wrap items-center gap-2.5 ml-auto">
+          {/* Middle: Advanced Date Filter */}
+          {dateFilterable && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 h-10">
+                <Calendar className="h-4 w-4 text-slate-400" />
+                <span className="text-slate-500 font-medium">Date:</span>
+                <select
+                  value={datePreset}
+                  onChange={(e) => {
+                    setDatePreset(e.target.value as DatePreset);
+                    setPage(1);
+                  }}
+                  className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer pr-1"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="7days">Last 7 Days</option>
+                  <option value="30days">Last 30 Days</option>
+                  <option value="this_month">This Month</option>
+                  <option value="custom">Custom Range</option>
+                </select>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Right: View Toggle Switcher (Table vs Card Grid) */}
-        <div className="flex items-center gap-1 bg-navy-100/70 p-1 rounded-xl">
-          <button
-            onClick={() => setViewMode('table')}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-              viewMode === 'table' ? 'bg-white text-navy-900 shadow-sm' : 'text-navy-600 hover:text-navy-900',
-            )}
-          >
-            <LayoutList className="h-4 w-4" />
-            <span>Table</span>
-          </button>
-          <button
-            onClick={() => setViewMode('grid')}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-              viewMode === 'grid' ? 'bg-white text-navy-900 shadow-sm' : 'text-navy-600 hover:text-navy-900',
-            )}
-          >
-            <LayoutGrid className="h-4 w-4" />
-            <span>Cards</span>
-          </button>
+              {datePreset === 'custom' && (
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200/80 text-xs h-10">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
+                  />
+                  <span className="text-slate-400">to</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Right: View Toggle Switcher (Table vs Card Grid) */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60 h-10">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer h-8',
+                viewMode === 'table'
+                  ? 'bg-white text-red-600 shadow-2xs border border-slate-200/50'
+                  : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              <LayoutList className={cn('h-3.5 w-3.5', viewMode === 'table' ? 'text-red-600' : 'text-slate-400')} />
+              <span>Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer h-8',
+                viewMode === 'grid'
+                  ? 'bg-white text-red-600 shadow-2xs border border-slate-200/50'
+                  : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              <LayoutGrid className={cn('h-3.5 w-3.5', viewMode === 'grid' ? 'text-red-600' : 'text-slate-400')} />
+              <span>Cards</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -328,7 +337,7 @@ export function DataTable<T>({
                         type="checkbox"
                         checked={!!allOnPageSelected}
                         onChange={() => onSelectAll?.(pageRows.map(getRowId))}
-                        className="rounded border-navy-300 text-navy-700 focus:ring-navy-400"
+                        className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                       />
                     </th>
                   )}
@@ -393,7 +402,7 @@ export function DataTable<T>({
                               type="checkbox"
                               checked={!!selected}
                               onChange={() => onToggleSelect(id)}
-                              className="rounded border-navy-300 text-navy-700 focus:ring-navy-400"
+                              className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                             />
                           </td>
                         )}

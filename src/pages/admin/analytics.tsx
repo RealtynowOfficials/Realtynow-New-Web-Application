@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Users, Home, IndianRupee, TrendingUp, Calendar, ArrowUpRight, Megaphone, Activity } from 'lucide-react';
 
@@ -82,13 +83,16 @@ export default function AdminAnalyticsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Revenue Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <Link
+          to="/admin/payments"
+          className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 block group hover:shadow-md hover:border-green-300 transition-all cursor-pointer"
+        >
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-gray-500">Total Revenue (30d)</p>
+              <p className="text-sm font-medium text-gray-500 group-hover:text-green-600 transition-colors">Total Revenue (30d)</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">{stats ? formatCurrency(stats.revenue_30d) : '₹0'}</h3>
             </div>
-            <div className="p-2 bg-green-50 rounded-lg">
+            <div className="p-2 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
               <IndianRupee className="h-5 w-5 text-green-600" />
             </div>
           </div>
@@ -97,16 +101,19 @@ export default function AdminAnalyticsPage() {
             <span className="text-green-500 font-medium">12.5%</span>
             <span className="text-gray-400 ml-2">vs last month</span>
           </div>
-        </div>
+        </Link>
 
         {/* Users Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <Link
+          to="/admin/applications"
+          className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 block group hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+        >
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-gray-500">Active Agents</p>
+              <p className="text-sm font-medium text-gray-500 group-hover:text-blue-600 transition-colors">Active Agents</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">{stats?.active_agents || 0}</h3>
             </div>
-            <div className="p-2 bg-blue-50 rounded-lg">
+            <div className="p-2 bg-blue-50 rounded-lg group-hover:scale-110 transition-transform">
               <Users className="h-5 w-5 text-blue-600" />
             </div>
           </div>
@@ -114,16 +121,19 @@ export default function AdminAnalyticsPage() {
             <span className="text-gray-900 font-medium">{stats?.new_users_30d || 0}</span>
             <span className="text-gray-500 ml-1">new users this month</span>
           </div>
-        </div>
+        </Link>
 
         {/* Properties Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <Link
+          to="/admin/manage"
+          className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 block group hover:shadow-md hover:border-purple-300 transition-all cursor-pointer"
+        >
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-gray-500">Published Listings</p>
+              <p className="text-sm font-medium text-gray-500 group-hover:text-purple-600 transition-colors">Published Listings</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">{stats?.published_properties || 0}</h3>
             </div>
-            <div className="p-2 bg-purple-50 rounded-lg">
+            <div className="p-2 bg-purple-50 rounded-lg group-hover:scale-110 transition-transform">
               <Home className="h-5 w-5 text-purple-600" />
             </div>
           </div>
@@ -131,16 +141,19 @@ export default function AdminAnalyticsPage() {
             <span className="text-gray-900 font-medium">{stats?.pending_verification || 0}</span>
             <span className="text-yellow-600 ml-1">pending verification</span>
           </div>
-        </div>
+        </Link>
 
         {/* Leads Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <Link
+          to="/admin/crm"
+          className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 block group hover:shadow-md hover:border-orange-300 transition-all cursor-pointer"
+        >
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-gray-500">Platform Leads (30d)</p>
+              <p className="text-sm font-medium text-gray-500 group-hover:text-orange-600 transition-colors">Platform Leads (30d)</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">{stats?.new_leads_30d || 0}</h3>
             </div>
-            <div className="p-2 bg-orange-50 rounded-lg">
+            <div className="p-2 bg-orange-50 rounded-lg group-hover:scale-110 transition-transform">
               <TrendingUp className="h-5 w-5 text-orange-600" />
             </div>
           </div>
@@ -148,7 +161,7 @@ export default function AdminAnalyticsPage() {
             <span className="text-green-600 font-medium">{stats?.won_leads || 0}</span>
             <span className="text-gray-500 ml-1">leads won total</span>
           </div>
-        </div>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -159,6 +172,38 @@ export default function AdminAnalyticsPage() {
               <Megaphone className="h-5 w-5 text-gray-400 mr-2" />
               Ads & Sponsored Performance
             </h2>
+            <Link to="/admin/sponsored" className="text-xs font-bold text-red-600 hover:text-red-700">
+              Manage Ads →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Link
+              to="/admin/sponsored"
+              className="p-4 border border-gray-100 rounded-lg bg-gray-50/50 hover:bg-red-50/30 hover:border-red-200 transition-all block cursor-pointer"
+            >
+              <p className="text-sm text-gray-500">Active Banners</p>
+              <p className="text-xl font-bold text-gray-900 mt-1">{stats?.active_banners || 0}</p>
+            </Link>
+            <Link
+              to="/admin/sponsored"
+              className="p-4 border border-gray-100 rounded-lg bg-gray-50/50 hover:bg-red-50/30 hover:border-red-200 transition-all block cursor-pointer"
+            >
+              <p className="text-sm text-gray-500">Total Ad Clicks</p>
+              <p className="text-xl font-bold text-gray-900 mt-1">{stats?.total_ad_clicks || 0}</p>
+            </Link>
+          </div>
+        </div>
+
+        {/* System Health / Overview */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center">
+              <Activity className="h-5 w-5 text-gray-400 mr-2" />
+              System Overview
+            </h2>
+            <Link to="/admin/audit" className="text-xs font-bold text-red-600 hover:text-red-700">
+              View Audit Logs →
+            </Link>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 border border-gray-100 rounded-lg bg-gray-50/50">

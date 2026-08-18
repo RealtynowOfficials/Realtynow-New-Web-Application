@@ -87,7 +87,7 @@ export function NotificationCard({
         type="checkbox"
         checked={selected}
         onChange={(e) => onToggleSelect(e.target.checked)}
-        className="mt-1.5 h-4 w-4 shrink-0 cursor-pointer rounded border-navy-300 text-red-600 focus:ring-red-400"
+        className="mt-1.5 h-4 w-4 shrink-0 cursor-pointer rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600"
         aria-label="Select notification"
       />
 

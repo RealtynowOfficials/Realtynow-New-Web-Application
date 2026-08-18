@@ -6,6 +6,21 @@
 
 :root {
   --color-bg: #fafafa;
+  accent-color: #b61f24;
+}
+
+@layer base {
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: #b61f24;
+  }
+}
+
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: #b61f24;
 }
 
 html {

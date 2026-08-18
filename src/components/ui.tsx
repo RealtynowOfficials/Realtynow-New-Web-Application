@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, type HTMLMotionProps } from 'framer-motion';
 import { X } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -166,28 +167,35 @@ export function Modal({
 }) {
   if (!open) return null;
   const sizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-navy-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+
+  const content = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-navy-950/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.2 }}
-        className={cn('relative w-full bg-white rounded-2xl shadow-cardHover', sizes[size])}
+        className={cn('relative z-10 w-full bg-white rounded-2xl shadow-2xl border border-slate-200/80', sizes[size])}
       >
         {title && (
           <div className="flex items-center justify-between border-b border-navy-100 px-5 py-4">
             <h3 className="font-display text-lg font-semibold text-navy-900">{title}</h3>
-            <button onClick={onClose} className="rounded-lg p-1.5 text-navy-400 hover:bg-navy-50 hover:text-navy-700">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-navy-400 hover:bg-navy-50 hover:text-navy-700 cursor-pointer"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
         )}
-        <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">{children}</div>
+        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-navy-100 px-5 py-3.5">{footer}</div>}
       </motion.div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 }
 
 export function Skeleton({ className }: { className?: string }) {
@@ -290,7 +298,7 @@ export function Avatar({ src, name, size = 40 }: { src?: string | null; name?: s
     return (
       <img
         src={src}
-        alt={name}
+        alt={name ?? undefined}
         width={size}
         height={size}
         className="rounded-full object-cover"

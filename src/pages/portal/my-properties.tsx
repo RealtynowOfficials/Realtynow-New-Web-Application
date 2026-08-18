@@ -21,6 +21,7 @@ import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
 import { PostPropertyLink } from '../../components/post-property-link';
 import { EditPropertyModal } from '../../components/portal/edit-property-modal';
+import { EnableNotificationsCard } from '../../components/enable-notifications-card';
 
 const MY_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -94,10 +95,10 @@ export function PortalMyProperties() {
       if (key === 'all') return true;
       if (key === 'draft') return p.status === 'draft';
       if (key === 'pending')
-        return ['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending';
+        return p.status !== 'draft' && (['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending');
       if (key === 'published') return (p.status === 'published' || p.is_live) && p.status !== 'rejected';
       if (key === 'rejected')
-        return ['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected';
+        return p.status !== 'draft' && (['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected');
       return p.status === key;
     }).length;
   };
@@ -109,11 +110,11 @@ export function PortalMyProperties() {
       } else if (tab === 'draft') {
         if (p.status !== 'draft') return false;
       } else if (tab === 'pending') {
-        if (!(['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending')) return false;
+        if (p.status === 'draft' || !(['submitted', 'pending_verification'].includes(p.status) || p.approval_status === 'Pending')) return false;
       } else if (tab === 'published') {
         if (!((p.status === 'published' || p.is_live) && p.status !== 'rejected')) return false;
       } else if (tab === 'rejected') {
-        if (!(['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected')) return false;
+        if (p.status === 'draft' || !(['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected')) return false;
       } else if (p.status !== tab) return false;
 
       if (rich.city && p.city_id !== rich.city) return false;
@@ -214,7 +215,11 @@ export function PortalMyProperties() {
         <div className="space-y-1">
           <StatusBadge status={p.status} />
           <div className="mt-1">
-            {p.status === 'rejected' ? (
+            {p.status === 'draft' ? (
+              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                Draft (Not Submitted)
+              </span>
+            ) : p.status === 'rejected' ? (
               <div className="text-[11px] text-red-600 bg-red-50 p-1.5 rounded border border-red-200">
                 <span className="font-bold">{t('portal.rejected', 'Rejected')}:</span>{' '}
                 {p.rejection_reason || 'Needs corrections'}
@@ -222,7 +227,7 @@ export function PortalMyProperties() {
             ) : (
               <div className="flex items-center gap-1 text-[10px] text-navy-600 font-medium">
                 <span
-                  className={`px-1.5 py-0.5 rounded ${['submitted', 'pending_verification', 'approved', 'published'].includes(p.status) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}
+                  className={`px-1.5 py-0.5 rounded ${['submitted', 'pending_verification', 'approved', 'published'].includes(p.status) ? 'bg-green-100 text-green-800 font-bold' : 'bg-gray-100 text-gray-500'}`}
                 >
                   {t('portal.submitted', 'Submitted')}
                 </span>
@@ -352,6 +357,8 @@ export function PortalMyProperties() {
           </div>
         }
       />
+
+      <EnableNotificationsCard context="your listings" className="mb-4" />
 
       <div className="sticky top-16 z-20 -mx-1 mb-4 space-y-3 bg-navy-50/95 px-1 pb-3 pt-1 backdrop-blur-sm">
         <div className="flex gap-2 overflow-x-auto">
@@ -499,26 +506,23 @@ export function PortalMyProperties() {
                   </Button>
                 )}
                 {p.status === 'draft' ? (
-                  <PostPropertyLink to={`/portal/list-property?draft_id=${p.id}`} className="flex-1">
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      className="w-full"
-                    >
-                      Continue Listing
-                    </Button>
-                  </PostPropertyLink>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="flex-1"
+                    onClick={() => setEditPropertyId(p.id)}
+                  >
+                    Continue Listing
+                  </Button>
                 ) : null}
                 <div className="flex gap-1 ml-auto">
-                  {p.status !== 'draft' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Edit3 className="h-4 w-4" />}
-                      title="Edit property"
-                      onClick={() => setEditPropertyId(p.id)}
-                    />
-                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Edit3 className="h-4 w-4" />}
+                    title="Edit property"
+                    onClick={() => setEditPropertyId(p.id)}
+                  />
                   <Link to={generatePropertyUrl(p)}>
                     <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
                   </Link>

@@ -22,11 +22,17 @@ export function AIAssistant({ context }: { context?: string }) {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
-  // AI Hub page (reachable via any of these aliases, see App.tsx) has its own
-  // embedded assistant — hide the floating widget there so there's only one chatbot.
-  const hidden = ['/ai-advisor', '/ai-property-advisor', '/ai_property_advisor', '/ai-hub'].includes(
-    location.pathname,
-  );
+  // AI Hub page has its own embedded assistant, and portal/admin/dashboard routes
+  // have data tables and forms — hide floating widget there so it doesn't block action buttons.
+  const hidden =
+    ['/ai-advisor', '/ai-property-advisor', '/ai_property_advisor', '/ai-hub'].includes(
+      location.pathname,
+    ) ||
+    location.pathname.startsWith('/portal') ||
+    location.pathname.startsWith('/admin') ||
+    location.pathname.startsWith('/agent') ||
+    location.pathname.startsWith('/builder') ||
+    location.pathname.startsWith('/partner');
 
   useEffect(() => {
     setMessages([

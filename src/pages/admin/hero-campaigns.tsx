@@ -1157,7 +1157,7 @@ export function AdminHeroCampaigns() {
                     type="checkbox"
                     checked={form.cta_enabled}
                     onChange={(e) => setForm((f) => ({ ...f, cta_enabled: e.target.checked }))}
-                    className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-600"
+                    className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-600 accent-red-600 cursor-pointer"
                   />
                   Enable CTA Button
                 </label>
@@ -1219,7 +1219,7 @@ export function AdminHeroCampaigns() {
                   id="is_pinned"
                   checked={form.is_pinned}
                   onChange={(e) => setForm((f) => ({ ...f, is_pinned: e.target.checked }))}
-                  className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-600"
+                  className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-600 accent-red-600 cursor-pointer"
                 />
                 <label htmlFor="is_pinned" className="text-xs font-semibold text-navy-900 cursor-pointer">
                   Pin as Top First Slide (Forces this banner to appear 1st)

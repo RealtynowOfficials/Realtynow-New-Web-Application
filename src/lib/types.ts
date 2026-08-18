@@ -550,12 +550,22 @@ export interface AgentApplication {
   profile_image: string | null;
   id_doc_url: string | null;
   license_doc_url: string | null;
+  verification_state?: Record<string, StepVerificationState> | null;
+  verification_timeline?: any[] | null;
   status: ApplicationStatus;
   rejection_reason: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface StepVerificationState {
+  status: 'pending' | 'in_progress' | 'completed' | 'rejected';
+  completed_at?: string;
+  completed_by?: string;
+  checks?: Record<string, boolean>;
+  notes?: string;
 }
 
 export interface BuilderApplication {
@@ -574,6 +584,8 @@ export interface BuilderApplication {
   gst_doc_url: string | null;
   rera_doc_url: string | null;
   pan_doc_url: string | null;
+  verification_state?: Record<string, StepVerificationState> | null;
+  verification_timeline?: any[] | null;
   status: ApplicationStatus;
   rejection_reason: string | null;
   reviewed_by: string | null;
@@ -616,6 +628,8 @@ export interface PartnerApplication {
   business_reg_doc_url: string | null;
   address_proof_doc_url: string | null;
   other_doc_url: string | null;
+  verification_state?: Record<string, StepVerificationState> | null;
+  verification_timeline?: any[] | null;
   status: ApplicationStatus;
   admin_notes: string | null;
   rejection_reason: string | null;

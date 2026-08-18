@@ -81,6 +81,121 @@ export function sanitizeSearchQuery(raw: string): string {
   return normalizeCityAliases(cleaned);
 }
 
+// ─── Property Term Dictionary ──────────────────────────────────────────────
+// Maps plural / synonym / alternate forms → canonical singular DB term.
+// The DB stores property_type_name values like "Open Plot", "Flat", "Villa",
+// so we normalize user queries to match the singular form stored there.
+const PROPERTY_TERM_MAP: Record<string, string> = {
+  // Plots / Land
+  plots: 'plot',
+  'plot land': 'plot',
+  'land plot': 'plot',
+  'land plots': 'plot',
+  'open plots': 'open plot',
+  'residential plots': 'residential plot',
+  'commercial plots': 'commercial plot',
+  'farm plots': 'farm land',
+  'farm lands': 'farm land',
+  lands: 'land',
+  // Apartments / Flats
+  apartments: 'apartment',
+  flats: 'flat',
+  'builder floors': 'builder floor',
+  penthouses: 'penthouse',
+  studios: 'studio',
+  // Villas
+  villas: 'villa',
+  bungalows: 'bungalow',
+  duplexes: 'duplex',
+  // Houses
+  houses: 'house',
+  homes: 'home',
+  'row houses': 'row house',
+  // Offices
+  offices: 'office',
+  // Shops
+  shops: 'shop',
+  showrooms: 'showroom',
+  // Warehouses
+  warehouses: 'warehouse',
+  godowns: 'godown',
+  // Projects
+  projects: 'project',
+};
+
+// Category-only terms — when the entire query resolves to one of these,
+// it means the user's intent is captured by the category filter alone;
+// we skip the redundant search_text ILIKE to avoid over-filtering.
+const PURE_CATEGORY_TERMS = new Set([
+  'plot', 'plots', 'land', 'open plot', 'open plots', 'residential plot',
+  'residential plots', 'apartment', 'apartments', 'flat', 'flats',
+  'villa', 'villas', 'house', 'houses', 'independent house',
+  'commercial office', 'office', 'retail shop', 'shop', 'warehouse',
+  'co-working', 'coworking', 'pg',
+]);
+
+export const PURE_PURPOSE_TERMS: Record<string, 'Sale' | 'Rent'> = {
+  sale: 'Sale',
+  'for sale': 'Sale',
+  buy: 'Sale',
+  'to buy': 'Sale',
+  purchase: 'Sale',
+  rent: 'Rent',
+  'for rent': 'Rent',
+  rental: 'Rent',
+  lease: 'Rent',
+  'to let': 'Rent',
+};
+
+/**
+ * Normalizes a search query by:
+ * 1. Sanitizing (trim, collapse whitespace, strip punctuation)
+ * 2. Lowercasing for dictionary lookup
+ * 3. Mapping plural/synonym forms → canonical singular property terms
+ *
+ * Returns { normalized: string; isCategoryOnly: boolean; isPurposeOnly: boolean; detectedPurpose?: 'Sale' | 'Rent' }
+ */
+export function normalizeSearchQuery(raw: string): {
+  normalized: string;
+  isCategoryOnly: boolean;
+  isPurposeOnly: boolean;
+  detectedPurpose?: 'Sale' | 'Rent';
+} {
+  const sanitized = sanitizeSearchQuery(raw);
+  const lower = sanitized.toLowerCase();
+
+  const detectedPurpose = PURE_PURPOSE_TERMS[lower];
+  if (detectedPurpose) {
+    return {
+      normalized: lower,
+      isCategoryOnly: false,
+      isPurposeOnly: true,
+      detectedPurpose,
+    };
+  }
+
+  // Check if the full phrase matches a known plural/synonym
+  if (PROPERTY_TERM_MAP[lower]) {
+    const normalized = PROPERTY_TERM_MAP[lower];
+    return {
+      normalized,
+      isCategoryOnly: PURE_CATEGORY_TERMS.has(normalized),
+      isPurposeOnly: false,
+    };
+  }
+
+  // Token-level normalization: normalize each word that matches a plural
+  const tokens = lower.split(/\s+/).filter(Boolean);
+  const normalizedTokens = tokens.map((tok) => PROPERTY_TERM_MAP[tok] ?? tok);
+  const normalized = normalizedTokens.join(' ');
+
+  return {
+    normalized,
+    isCategoryOnly: PURE_CATEGORY_TERMS.has(normalized),
+    isPurposeOnly: false,
+  };
+}
+
 import { normalizeCategorySlug } from './categories';
 
 export function buildPublishedQuery(filters: PropertyFilters = {}) {
@@ -90,11 +205,19 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
     .select('*', { count: 'exact' })
     .or('status.eq.published,status.eq.live,is_live.eq.true');
 
-  if (filters.purpose) {
-    if (filters.purpose.toLowerCase() === 'pg') {
+  let activePurpose = filters.purpose;
+  if (!activePurpose && filters.q) {
+    const normalizedInfo = normalizeSearchQuery(filters.q);
+    if (normalizedInfo.detectedPurpose) {
+      activePurpose = normalizedInfo.detectedPurpose;
+    }
+  }
+
+  if (activePurpose) {
+    if (activePurpose.toLowerCase() === 'pg') {
       q = q.or('purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,search_text.ilike.%pg%');
     } else {
-      q = q.eq('purpose', filters.purpose);
+      q = q.eq('purpose', activePurpose);
     }
   }
 
@@ -215,21 +338,39 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
     q = q.contains('amenities', filters.amenities);
   }
 
-  // Multi-Token Full-Text & Keyword Search
+  // ── Multi-Token Full-Text & Keyword Search ────────────────────────────────
+  // Normalize the query first to handle plural/synonym forms (e.g. "plots" → "plot")
+  // so that the ILIKE pattern matches the actual singular terms stored in search_text.
+  // When the query is a pure property-category term (e.g. "plots", "apartments") AND
+  // a category filter has already been applied above, we skip the redundant text
+  // search to avoid over-filtering.
   if (filters.q) {
-    const cleaned = sanitizeSearchQuery(filters.q);
-    if (cleaned) {
+    const { normalized: cleaned, isCategoryOnly, isPurposeOnly } = normalizeSearchQuery(filters.q);
+
+    // If the full query is JUST a category keyword AND the category filter is active,
+    // or if the full query is JUST a transaction purpose keyword (e.g. "sale", "rent"),
+    // skip the text search entirely — the category/purpose block already handles it.
+    const categoryAlreadyHandled = !!categorySlug && isCategoryOnly;
+    const purposeAlreadyHandled = isPurposeOnly;
+
+    if (cleaned && !categoryAlreadyHandled && !purposeAlreadyHandled) {
       const isNumeric = !isNaN(Number(cleaned));
       if (isNumeric) {
         q = q.or(`search_text.ilike.%${cleaned}%,price.eq.${cleaned},rent_amount.eq.${cleaned}`);
       } else {
         // Multi-keyword tokenization: split words to support queries like "2 BHK Kokapet" or "Villa Hyderabad"
-        const tokens = cleaned.split(/\s+/).filter((w) => w.length > 1);
-        if (tokens.length <= 1) {
-          q = q.ilike('search_text', `%${cleaned}%`);
+        // Strip purpose stop words so "apartment for sale" doesn't fail on "for sale" in search_text
+        const tokens = cleaned
+          .split(/\s+/)
+          .filter((w) => w.length > 1 && !['for', 'sale', 'rent', 'buy', 'to', 'in'].includes(w.toLowerCase()));
+        
+        const targetTokens = tokens.length > 0 ? tokens : cleaned.split(/\s+/).filter((w) => w.length > 1);
+
+        if (targetTokens.length <= 1) {
+          q = q.ilike('search_text', `%${targetTokens[0] || cleaned}%`);
         } else {
           // Chain each meaningful token into search_text filter for high-precision AND matching
-          for (const token of tokens) {
+          for (const token of targetTokens) {
             q = q.ilike('search_text', `%${token}%`);
           }
         }
@@ -281,12 +422,39 @@ export async function fetchPublishedProperties(filters: PropertyFilters = {}) {
 }
 
 export async function fetchProperty(id: string) {
+  if (!id) return null;
+  
+  // Extract UUID if present inside slug string
+  const uuidMatch = id.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  let targetId = uuidMatch ? uuidMatch[0] : id;
+
+  const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(targetId);
+
+  if (!isUuid) {
+    // Search fallback if input isn't a 36-char UUID
+    const { data: searchMatch } = await supabase
+      .from('v_properties_search')
+      .select('id')
+      .ilike('title', `%${targetId}%`)
+      .limit(1)
+      .maybeSingle();
+    if (searchMatch?.id) {
+      targetId = searchMatch.id;
+    } else {
+      return null;
+    }
+  }
+
   const { data, error } = await supabase
     .from('properties')
     .select('*, cities(name), localities(name), property_types(name, category), builders(name), projects(name)')
-    .eq('id', id)
+    .eq('id', targetId)
     .maybeSingle();
-  if (error) throw error;
+
+  if (error) {
+    console.warn('fetchProperty error:', error);
+    return null;
+  }
   if (!data) return null;
   const r = data as unknown as {
     cities?: { name: string };

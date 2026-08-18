@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Trash2 } from 'lucide-react';
+import { Bell, Trash2, X } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
@@ -120,14 +120,24 @@ export function NotificationBell() {
           >
             <div className="flex items-center justify-between border-b border-navy-100 px-4 py-3">
               <p className="font-display text-sm font-semibold text-navy-900">Notifications</p>
-              {unreadCount > 0 && (
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={() => markAllReadMutation.mutate()}
+                    className="text-xs font-medium text-navy-700 hover:text-navy-900"
+                  >
+                    Mark all read
+                  </button>
+                )}
                 <button
-                  onClick={() => markAllReadMutation.mutate()}
-                  className="text-xs font-medium text-navy-700 hover:text-navy-900"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg p-1 text-navy-400 hover:bg-navy-50 hover:text-navy-700"
+                  aria-label="Close notifications"
+                  title="Close"
                 >
-                  Mark all read
+                  <X className="h-4 w-4" />
                 </button>
-              )}
+              </div>
             </div>
 
             <div className="max-h-96 overflow-y-auto">

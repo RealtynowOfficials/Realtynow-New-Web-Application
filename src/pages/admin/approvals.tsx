@@ -946,6 +946,19 @@ export function AdminProperties() {
     end_date: ''
   });
   const [savingHero, setSavingHero] = useState(false);
+
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, status, reason }: { id: string; status: any; reason?: string }) => {
+      await updatePropertyStatus(id, status, reason);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+      toast.addToast('success', `Property status updated to ${variables.status}`);
+    },
+    onError: (err: any) => {
+      toast.addToast('error', err?.message || 'Failed to update property status');
+    },
+  });
   
   const saveHeroCampaign = async () => {
     if (!heroProperty) return;

@@ -282,7 +282,7 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [searchParams] = useSearchParams();
-  const draftIdParam = searchParams.get('draft_id');
+  const draftIdParam = searchParams.get('draft_id') || searchParams.get('id');
   const [draftId, setDraftId] = useState<string | null>(draftIdParam);
   const [submissionId] = useState(() => crypto.randomUUID());
   const [showPreview, setShowPreview] = useState(false);
@@ -585,8 +585,41 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
     if (draftIdParam && isRestoring) {
       import('../../lib/properties').then(({ getDraftProperty }) => {
         getDraftProperty(draftIdParam).then((draft) => {
-          if (draft && draft.draft_data) {
-            methods.reset(draft.draft_data);
+          if (draft) {
+            const formData: Partial<PropertyWizardForm> = draft.draft_data || {
+              purpose: draft.purpose || 'Sale',
+              category: draft.features?.category || '',
+              property_sub_type: draft.features?.property_sub_type || '',
+              title: draft.title || '',
+              description: draft.description || '',
+              price: draft.price ? String(draft.price) : '',
+              rent_amount: draft.rent_amount ? String(draft.rent_amount) : '',
+              security_deposit: draft.security_deposit ? String(draft.security_deposit) : '',
+              maintenance: draft.features?.maintenance ? String(draft.features.maintenance) : '',
+              negotiable: draft.features?.negotiable !== false,
+              address: draft.address || '',
+              city_name: draft.features?.city_name || '',
+              locality_name: draft.features?.locality_name || '',
+              state_name: draft.state || '',
+              pincode: draft.pincode || '',
+              latitude: draft.latitude ? String(draft.latitude) : '',
+              longitude: draft.longitude ? String(draft.longitude) : '',
+              place_id: draft.place_id || '',
+              carpet_area: draft.carpet_area ? String(draft.carpet_area) : '',
+              super_area: draft.built_up_area ? String(draft.built_up_area) : '',
+              plot_area: draft.plot_area ? String(draft.plot_area) : '',
+              floor_number: draft.floor_number ? String(draft.floor_number) : '',
+              total_floors: draft.total_floors ? String(draft.total_floors) : '',
+              facing: draft.facing || '',
+              age_of_property: draft.age_of_property ? String(draft.age_of_property) : '',
+              parking_indoor: draft.features?.parking_indoor ? String(draft.features.parking_indoor) : '',
+              parking_outdoor: draft.features?.parking_outdoor ? String(draft.features.parking_outdoor) : '',
+              ownership_type: draft.ownership_type || '',
+              ownership_role: draft.features?.ownership_role || '',
+              rera_number: draft.features?.rera_number || '',
+            };
+            methods.reset(formData);
+            setDraftId(draftIdParam);
             setActiveStep(draft.current_step || 0);
             setCompletedSteps(draft.completed_steps || []);
             setBedrooms(draft.bedrooms || 2);

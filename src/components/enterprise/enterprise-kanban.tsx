@@ -204,170 +204,174 @@ export function EnterpriseKanban({ initialLeads, onLeadStageChange, onLeadClick,
 
       {/* LEAD DETAILS MODAL OVERLAY */}
       {selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 overflow-y-auto max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[85vh] sm:max-h-[90vh] overflow-hidden">
+            {/* Fixed Modal Header */}
+            <div className="flex items-start justify-between p-5 sm:p-6 border-b border-slate-100 bg-white shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-bold text-lg">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-bold text-base sm:text-lg shrink-0">
                   {selectedLead.customerName.charAt(0)}
                 </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-black leading-tight">
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-extrabold text-black leading-tight truncate">
                     {selectedLead.customerName}
                   </h3>
-                  <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                  <p className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
                     {selectedLead.title}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedLead(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-black hover:bg-slate-100 transition-colors"
+                className="p-2 rounded-xl text-slate-400 hover:text-black hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                title="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Quick Contact Action Bar */}
-            <div className="grid grid-cols-3 gap-3 my-4">
-              <a
-                href={`tel:${selectedLead.phone}`}
-                className="flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl border border-emerald-200 transition-colors"
-              >
-                <Phone className="w-4 h-4 text-emerald-600" />
-                <span>Call Customer</span>
-              </a>
-              <a
-                href={`https://wa.me/${selectedLead.phone.replace(/[^\d]/g, '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 py-2.5 px-3 bg-green-50 hover:bg-green-100 text-green-700 font-bold text-xs rounded-xl border border-green-200 transition-colors"
-              >
-                <MessageSquare className="w-4 h-4 text-green-600" />
-                <span>WhatsApp</span>
-              </a>
-              <a
-                href={`mailto:${selectedLead.email}`}
-                className="flex items-center justify-center gap-2 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl border border-blue-200 transition-colors"
-              >
-                <Mail className="w-4 h-4 text-blue-600" />
-                <span>Email</span>
-              </a>
+            {/* Scrollable Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+              {/* Quick Contact Action Bar */}
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                <a
+                  href={`tel:${selectedLead.phone}`}
+                  className="flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl border border-emerald-200 transition-colors cursor-pointer"
+                >
+                  <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="truncate">Call Customer</span>
+                </a>
+                <a
+                  href={`https://wa.me/${selectedLead.phone.replace(/[^\d]/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-2.5 px-3 bg-green-50 hover:bg-green-100 text-green-700 font-bold text-xs rounded-xl border border-green-200 transition-colors cursor-pointer"
+                >
+                  <MessageSquare className="w-4 h-4 text-green-600 shrink-0" />
+                  <span className="truncate">WhatsApp</span>
+                </a>
+                <a
+                  href={`mailto:${selectedLead.email}`}
+                  className="flex items-center justify-center gap-2 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl border border-blue-200 transition-colors cursor-pointer"
+                >
+                  <Mail className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="truncate">Email</span>
+                </a>
+              </div>
+
+              {/* Lead Meta Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-0.5">Phone</span>
+                  <span className="font-bold text-black">{selectedLead.phone}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-0.5">Email</span>
+                  <span className="font-bold text-black break-all">{selectedLead.email}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-0.5">Budget / Value</span>
+                  <span className="font-extrabold text-emerald-600">₹ {selectedLead.budget}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-0.5">Locality / City</span>
+                  <span className="font-bold text-black">{selectedLead.locality || 'Hyderabad'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-0.5">Assigned Agent</span>
+                  <span className="font-bold text-black">{selectedLead.assignedAgent || 'Main Admin'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-0.5">Inquiry Date</span>
+                  <span className="font-bold text-black">{selectedLead.createdAt}</span>
+                </div>
+              </div>
+
+              {/* Priority Selector */}
+              <div>
+                <label className="block text-xs font-bold text-black mb-1.5 uppercase tracking-wider">
+                  Priority Status
+                </label>
+                <div className="flex gap-2">
+                  {(['High', 'Medium', 'Low'] as const).map((prio) => (
+                    <button
+                      key={prio}
+                      type="button"
+                      onClick={() => setSelectedLead((prev) => (prev ? { ...prev, priority: prio } : null))}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        selectedLead.priority === prio
+                          ? prio === 'High'
+                            ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                            : prio === 'Medium'
+                              ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                              : 'bg-slate-700 text-white border-slate-700 shadow-sm'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {prio} Priority
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pipeline Stage Selector */}
+              <div>
+                <label className="block text-xs font-bold text-black mb-1.5 uppercase tracking-wider">
+                  Pipeline Stage
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {STAGES.map((stg) => (
+                    <button
+                      key={stg.key}
+                      type="button"
+                      onClick={() => setSelectedLead((prev) => (prev ? { ...prev, stage: stg.key } : null))}
+                      className={`p-2 rounded-xl text-xs font-bold text-left transition-all border cursor-pointer ${
+                        selectedLead.stage === stg.key
+                          ? 'bg-black text-white border-black shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {stg.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes / Call Log Textarea */}
+              <div>
+                <label className="block text-xs font-bold text-black mb-1.5 uppercase tracking-wider">
+                  CRM Notes & Requirements
+                </label>
+                <textarea
+                  rows={3}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Add customer requirements, site visit notes, or call logs here..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-all"
+                />
+              </div>
+
+              {saveSuccess && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Lead details saved successfully!</span>
+                </div>
+              )}
             </div>
 
-            {/* Lead Meta Details Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs my-4">
-              <div>
-                <span className="text-slate-400 font-semibold block mb-0.5">Phone</span>
-                <span className="font-bold text-black">{selectedLead.phone}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block mb-0.5">Email</span>
-                <span className="font-bold text-black">{selectedLead.email}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block mb-0.5">Budget / Value</span>
-                <span className="font-extrabold text-emerald-600">₹ {selectedLead.budget}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block mb-0.5">Locality / City</span>
-                <span className="font-bold text-black">{selectedLead.locality || 'Hyderabad'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block mb-0.5">Assigned Agent</span>
-                <span className="font-bold text-black">{selectedLead.assignedAgent || 'Main Admin'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block mb-0.5">Inquiry Date</span>
-                <span className="font-bold text-black">{selectedLead.createdAt}</span>
-              </div>
-            </div>
-
-            {/* Priority Selector */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-black mb-1.5 uppercase tracking-wider">
-                Priority Status
-              </label>
-              <div className="flex gap-2">
-                {(['High', 'Medium', 'Low'] as const).map((prio) => (
-                  <button
-                    key={prio}
-                    type="button"
-                    onClick={() => setSelectedLead((prev) => (prev ? { ...prev, priority: prio } : null))}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                      selectedLead.priority === prio
-                        ? prio === 'High'
-                          ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                          : prio === 'Medium'
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                            : 'bg-slate-700 text-white border-slate-700 shadow-sm'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {prio} Priority
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Pipeline Stage Selector */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-black mb-1.5 uppercase tracking-wider">
-                Pipeline Stage
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {STAGES.map((stg) => (
-                  <button
-                    key={stg.key}
-                    type="button"
-                    onClick={() => setSelectedLead((prev) => (prev ? { ...prev, stage: stg.key } : null))}
-                    className={`p-2 rounded-xl text-xs font-bold text-left transition-all border ${
-                      selectedLead.stage === stg.key
-                        ? 'bg-black text-white border-black shadow-sm'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {stg.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Notes / Call Log Textarea */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-black mb-1.5 uppercase tracking-wider">
-                CRM Notes & Requirements
-              </label>
-              <textarea
-                rows={3}
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-                placeholder="Add customer requirements, site visit notes, or call logs here..."
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-all"
-              />
-            </div>
-
-            {saveSuccess && (
-              <div className="mb-4 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Lead details saved successfully!</span>
-              </div>
-            )}
-
-            {/* Footer Buttons */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+            {/* Fixed Footer: Always pinned inside the modal at the bottom */}
+            <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-200 bg-slate-50/90 shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedLead(null)}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/80 transition-colors cursor-pointer"
               >
                 Close
               </button>
               <button
                 type="button"
                 onClick={handleSaveLead}
-                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs shadow-md shadow-red-600/20 transition-all"
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs shadow-md shadow-red-600/20 transition-all cursor-pointer"
               >
                 Save & Update Lead
               </button>

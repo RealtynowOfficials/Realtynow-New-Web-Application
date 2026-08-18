@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../toast';
@@ -8,10 +8,10 @@ import {
   CheckCircle2, XCircle, Clock, FileText, User,
   Building2, Phone, Mail, MapPin, Award, BadgeCheck, AlertCircle,
   ChevronRight, History, ShieldCheck, Eye, AlertTriangle,
-  CheckSquare, Calendar, Globe, Briefcase,
+  Calendar, Globe, Briefcase, Check,
 } from 'lucide-react';
 import { formatDate } from '../../lib/utils';
-import type { AgentApplication, BuilderApplication, PartnerApplication } from '../../lib/types';
+import type { AgentApplication, BuilderApplication, PartnerApplication, StepVerificationState } from '../../lib/types';
 import { parseStorageUrl, getDocumentSignedUrl } from '../../lib/storage';
 import { validatePartnerDetailsForSubmission } from '../../lib/partner-validation';
 
@@ -207,23 +207,22 @@ export function DocLink({ url, bucket, label }: { url?: string | null; bucket: s
       if (parsed) {
         const { url: newUrl, error } = await getDocumentSignedUrl(parsed.bucket, parsed.path, 600);
         if (error || !newUrl) {
-           setErrorMsg(t('admin.docNoLongerAvailable', 'Document file is no longer available. Please ask the user to re-upload.'));
-           setLoading(false);
-           return;
+          setErrorMsg(t('admin.docNoLongerAvailable', 'Document file is no longer available. Please ask the user to re-upload.'));
+          setLoading(false);
+          return;
         }
         freshUrl = newUrl;
       } else if (!url.startsWith('http')) {
         const { url: newUrl, error } = await getDocumentSignedUrl(bucket, url, 600);
         if (error || !newUrl) {
-           setErrorMsg(t('admin.docNoLongerAvailable', 'Document file is no longer available. Please ask the user to re-upload.'));
-           setLoading(false);
-           return;
+          setErrorMsg(t('admin.docNoLongerAvailable', 'Document file is no longer available. Please ask the user to re-upload.'));
+          setLoading(false);
+          return;
         }
         freshUrl = newUrl;
       }
 
       setPreviewUrl(freshUrl);
-
     } catch (err) {
       console.error(err);
       setErrorMsg(t('admin.docPreviewFailed', 'Document preview failed.'));
@@ -291,10 +290,10 @@ export function DocLink({ url, bucket, label }: { url?: string | null; bucket: s
               {isPdf ? (
                 <iframe src={previewUrl} className="w-full h-[70vh]" title={label} />
               ) : isImage ? (
-                <img 
-                  src={previewUrl} 
-                  alt={label} 
-                  className="max-w-full max-h-[70vh] object-contain" 
+                <img
+                  src={previewUrl}
+                  alt={label}
+                  className="max-w-full max-h-[70vh] object-contain"
                   onError={() => {
                     if (retryCount === 0) {
                       setRetryCount(1);
@@ -321,16 +320,111 @@ export function DocLink({ url, bucket, label }: { url?: string | null; bucket: s
   );
 }
 
+// ─── Interactive Checkbox Component ───────────────────────────────────────────
+function CheckboxItem({
+  id,
+  label,
+  checked,
+  onChange,
+  disabled = false,
+  isError = false,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  isError?: boolean;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className={cn(
+        'flex items-center gap-3 p-3 rounded-xl border transition-all select-none',
+        disabled ? 'cursor-default' : 'cursor-pointer',
+        checked
+          ? 'bg-success-50/70 border-success-300 text-navy-900 shadow-sm'
+          : isError
+            ? 'bg-red-50/80 border-red-400 ring-2 ring-red-200 text-red-900'
+            : 'bg-white border-navy-200/80 text-navy-700 hover:bg-navy-50/60 hover:border-navy-300',
+        disabled && 'opacity-75',
+      )}
+    >
+      <div className="relative flex items-center justify-center shrink-0">
+        <input
+          type="checkbox"
+          id={id}
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-4 w-4 rounded border-navy-300 text-navy-800 focus:ring-navy-500 cursor-pointer accent-navy-800 shrink-0 disabled:cursor-not-allowed"
+        />
+      </div>
+      <span className={cn('text-sm font-medium leading-snug flex-1', isError && !checked ? 'text-red-700 font-semibold' : 'text-navy-800')}>
+        {label}
+      </span>
+      {checked ? (
+        <CheckCircle2 className="h-4 w-4 text-success-600 shrink-0" />
+      ) : isError ? (
+        <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+      ) : null}
+    </label>
+  );
+}
+
+// ─── Step Status Helper ───────────────────────────────────────────────────────
+export function isStepCompleted(
+  stage: string,
+  idx: number,
+  currentIdx: number,
+  verificationState: Record<string, StepVerificationState>
+): boolean {
+  if (stage === 'approved') return false;
+  return verificationState[stage]?.status === 'completed' || idx < currentIdx;
+}
+
+export function getStepStatus(
+  stage: string,
+  idx: number,
+  currentIdx: number,
+  currentStatus: string,
+  isRejected: boolean,
+  verificationState: Record<string, StepVerificationState>
+): 'completed' | 'current' | 'pending' | 'rejected' {
+  if (isRejected && stage === currentStatus) {
+    return 'rejected';
+  }
+  if (stage === 'approved') {
+    return currentStatus === 'approved' ? 'completed' : 'pending';
+  }
+
+  const completed = isStepCompleted(stage, idx, currentIdx, verificationState);
+  if (completed) {
+    if (stage === currentStatus && !isRejected && verificationState[stage]?.status !== 'completed') {
+      return 'current';
+    }
+    return 'completed';
+  }
+
+  if (stage === currentStatus && !isRejected) {
+    return 'current';
+  }
+
+  return 'pending';
+}
+
 // ─── Vertical Stepper ─────────────────────────────────────────────────────────
 function VerificationStepper({
   stages,
   currentStatus,
   selectedStep,
+  verificationState,
   onSelectStep,
 }: {
   stages: readonly string[];
   currentStatus: string;
   selectedStep: string;
+  verificationState: Record<string, StepVerificationState>;
   onSelectStep: (stage: string) => void;
 }) {
   const { t } = useLanguageContext();
@@ -343,60 +437,76 @@ function VerificationStepper({
         {t('admin.verificationProgress', 'Verification Progress')}
       </h3>
       <div className="relative">
-        <div className="absolute left-3.5 top-4 bottom-4 w-0.5 bg-navy-100" />
         <div className="space-y-1.5 relative">
           {stages.map((stage, idx) => {
-            const isPast    = idx < currentIdx;
-            const isCurrent = stage === currentStatus && !isRejected;
-            const isUpcoming = idx > currentIdx && !isRejected;
+            const isLast = idx === stages.length - 1;
+            const status = getStepStatus(stage, idx, currentIdx, currentStatus, isRejected, verificationState);
+            const isCompleted = status === 'completed';
+            const isCurrent = status === 'current';
             const isSelected = stage === selectedStep;
+            const isClickable = isCompleted || isCurrent || idx <= currentIdx;
 
-            let dotClass = 'bg-white border-2 border-navy-200';
-            let dotContent = null;
-            let textClass = 'text-navy-400';
-            const isClickable = true;
+            let dotClass = 'bg-white border-2 border-navy-200 text-navy-400';
+            let dotContent = <span className="text-[10px] font-bold text-navy-400">{idx + 1}</span>;
+            let textClass = 'text-navy-400 font-normal';
 
-            if (isPast) {
-              dotClass = 'bg-success-500 border-success-500';
-              dotContent = <CheckCircle2 className="h-3.5 w-3.5 text-white" />;
-              textClass = 'text-navy-600';
+            if (isCompleted) {
+              dotClass = 'bg-emerald-600 border-emerald-600 text-white shadow-sm';
+              dotContent = <Check className="h-3.5 w-3.5 text-white stroke-[3]" />;
+              textClass = 'text-emerald-950 font-semibold';
             } else if (isCurrent) {
-              dotClass = 'bg-red-600 border-red-600 shadow-[0_0_0_3px_rgba(220,38,38,0.2)]';
+              dotClass = 'bg-red-600 border-red-600 shadow-[0_0_0_3px_rgba(220,38,38,0.2)] text-white';
               dotContent = <div className="h-2 w-2 rounded-full bg-white" />;
-              textClass = 'text-navy-900 font-semibold';
+              textClass = 'text-navy-900 font-bold';
             }
 
             return (
-              <button
-                key={stage}
-                type="button"
-                disabled={stage === 'approved' && currentStatus !== 'approved'}
-                onClick={() => isClickable && onSelectStep(stage)}
-                className={cn(
-                  'flex items-center gap-2.5 w-full text-left px-1 py-1.5 rounded-lg transition-colors',
-                  isSelected && 'bg-navy-50',
-                  isClickable && !isSelected && 'hover:bg-navy-50',
-                  stage === 'approved' && currentStatus !== 'approved' && 'opacity-40 cursor-not-allowed',
+              <div key={stage} className="relative">
+                {/* Segmented connector line to next step */}
+                {!isLast && (
+                  <div
+                    className={cn(
+                      'absolute left-[17px] top-6 bottom-[-6px] w-0.5 z-0 transition-colors duration-200',
+                      isCompleted ? 'bg-emerald-500' : 'bg-navy-100',
+                    )}
+                  />
                 )}
-              >
-                <div className={cn('z-10 h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-all', dotClass)}>
-                  {dotContent ?? <span className="text-[10px] font-bold text-navy-300">{idx + 1}</span>}
-                </div>
-                <span className={cn('text-xs transition-colors leading-snug', textClass, isSelected && 'text-navy-900 font-semibold')}>
-                  {stageLabel(stage, t)}
-                </span>
-                {isCurrent && (
-                  <span className="ml-auto text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-100 shrink-0">
-                    {t('admin.now', 'Now')}
+
+                <button
+                  type="button"
+                  disabled={!isClickable}
+                  onClick={() => isClickable && onSelectStep(stage)}
+                  className={cn(
+                    'flex items-center gap-2.5 w-full text-left px-1.5 py-1.5 rounded-lg transition-all relative z-10',
+                    isSelected && 'bg-navy-100/80 shadow-xs font-semibold',
+                    isClickable && !isSelected && 'hover:bg-navy-50/80',
+                    !isClickable && 'opacity-40 cursor-not-allowed',
+                  )}
+                >
+                  <div className={cn('z-10 h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-all shadow-xs', dotClass)}>
+                    {dotContent}
+                  </div>
+                  <span className={cn('text-xs transition-colors leading-snug truncate flex-1', textClass, isSelected && 'text-navy-900 font-bold')}>
+                    {stageLabel(stage, t)}
                   </span>
-                )}
-              </button>
+                  {isCurrent && (
+                    <span className="ml-auto text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-100 shrink-0">
+                      {t('admin.now', 'Now')}
+                    </span>
+                  )}
+                  {isCompleted && !isCurrent && (
+                    <span className="ml-auto text-[11px] text-emerald-600 font-bold shrink-0">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              </div>
             );
           })}
 
           {isRejected && (
-            <div className="flex items-center gap-2.5 px-1 py-1.5">
-              <div className="z-10 h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-red-500">
+            <div className="flex items-center gap-2.5 px-1.5 py-1.5 mt-1">
+              <div className="z-10 h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-red-500 shadow-sm">
                 <XCircle className="h-3.5 w-3.5 text-white" />
               </div>
               <span className="text-xs text-red-600 font-semibold">{stageLabel('rejected', t)}</span>
@@ -442,9 +552,240 @@ function VerificationHistory({ applicationId }: { applicationId: string }) {
   );
 }
 
+// ─── Step Validation Engine ───────────────────────────────────────────────────
+function validateStep(
+  stage: string,
+  type: 'agent' | 'builder' | 'partner',
+  app: AgentApplication | BuilderApplication | PartnerApplication,
+  checks: Record<string, boolean>,
+  t: (key: string, fallback?: string) => string,
+): { valid: boolean; errors: string[]; message?: string } {
+  if (stage === 'submitted') {
+    return { valid: true, errors: [] };
+  }
+
+  if (type === 'builder') {
+    const builderApp = app as BuilderApplication;
+
+    switch (stage) {
+      case 'pending_review': {
+        const required = ['info_reviewed'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompletePendingReview', 'Please review the application details before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'document_verification': {
+        const required = ['docs_inspected'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteDocumentChecks', 'Please complete Document Verification before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'company_verification': {
+        const required = ['company_mca_gst', 'gst_active', 'track_record', 'address_verified'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteCompanyChecks', 'Please complete all Company Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'rera_verification': {
+        const required = builderApp.rera_number
+          ? ['rera_portal', 'rera_name_match', 'rera_no_complaints']
+          : ['rera_exemption'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteReraChecks', 'Please complete all RERA Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'project_verification': {
+        const required = [
+          'checkBuilderCredentials',
+          'checkCompanyNameMatchesRera',
+          'checkProjectLocations',
+          'checkNoPendingLegalDisputes',
+        ];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteProjectChecks', 'Please complete all Project Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'background_verification': {
+        const required = [
+          'checkCompanyCriminalRecord',
+          'checkDirectorBackground',
+          'checkFinancialHealth',
+          'checkNoActiveLegalDisputes',
+          'checkNoReraBlacklist',
+        ];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteBackgroundChecks', 'Please complete all Background Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      default:
+        return { valid: true, errors: [] };
+    }
+  }
+
+  if (type === 'agent') {
+    const agentApp = app as AgentApplication;
+
+    switch (stage) {
+      case 'pending_review': {
+        const required = ['info_reviewed'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompletePendingReview', 'Please review the application details before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'document_verification': {
+        const required = ['docs_inspected'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteDocumentChecks', 'Please complete Document Verification before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'identity_verification': {
+        const required = ['identity_match', 'contact_verified'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteChecks', 'Please complete all Identity Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'rera_verification': {
+        const required = agentApp.license_number
+          ? ['rera_portal_verified', 'rera_license_match']
+          : ['rera_not_applicable'];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteReraChecks', 'Please complete all RERA Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      case 'background_verification': {
+        const required = [
+          'checkCriminalRecord',
+          'checkEmploymentHistory',
+          'checkProfessionalReferences',
+          'checkNoAdverseFindings',
+        ];
+        const missing = required.filter((c) => !checks[c]);
+        if (missing.length > 0) {
+          return {
+            valid: false,
+            errors: missing,
+            message: t('admin.pleaseCompleteBackgroundChecks', 'Please complete all Background Verification checks before continuing.'),
+          };
+        }
+        return { valid: true, errors: [] };
+      }
+
+      default:
+        return { valid: true, errors: [] };
+    }
+  }
+
+  // Partner type
+  if (stage === 'pending_review' || stage === 'document_verification') {
+    const required = [stage === 'pending_review' ? 'info_reviewed' : 'docs_inspected'];
+    const missing = required.filter((c) => !checks[c]);
+    if (missing.length > 0) {
+      return {
+        valid: false,
+        errors: missing,
+        message: t('admin.pleaseCompleteChecks', 'Please complete the verification checks for this step before continuing.'),
+      };
+    }
+  }
+
+  return { valid: true, errors: [] };
+}
+
 // ─── Agent step panels ────────────────────────────────────────────────────────
-function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication }) {
+function AgentStepContent({
+  stage,
+  app,
+  checks,
+  onCheckChange,
+  validationErrors,
+  isCompleted,
+  readOnly,
+  verificationState,
+  currentIdx,
+}: {
+  stage: string;
+  app: AgentApplication;
+  checks: Record<string, boolean>;
+  onCheckChange: (key: string, checked: boolean) => void;
+  validationErrors: string[];
+  isCompleted: boolean;
+  readOnly: boolean;
+  verificationState: Record<string, StepVerificationState>;
+  currentIdx: number;
+}) {
   const { t } = useLanguageContext();
+  const disabled = readOnly || isCompleted;
+
   switch (stage) {
     case 'submitted':
       return (
@@ -471,8 +812,10 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
 
     case 'pending_review':
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><User className="h-4 w-4 text-navy-400" /> {t('admin.generalInformation', 'General Information')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <User className="h-4 w-4 text-navy-400" /> {t('admin.generalInformation', 'General Information')}
+          </h4>
           <div className="grid grid-cols-2 gap-3">
             <InfoBox icon={Mail} label={t('admin.emailLabel', 'Email')} value={app.email} />
             <InfoBox icon={Phone} label={t('admin.phoneLabel', 'Phone')} value={app.phone} />
@@ -487,13 +830,26 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
               </div>
             )}
           </div>
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="info_reviewed"
+              label={t('admin.checkApplicantContactVerified', 'Applicant details and contact info reviewed and verified')}
+              checked={!!checks.info_reviewed}
+              onChange={(c) => onCheckChange('info_reviewed', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('info_reviewed')}
+            />
+          </div>
         </div>
       );
 
     case 'document_verification':
       return (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><FileText className="h-4 w-4 text-navy-400" /> {t('admin.submittedDocuments', 'Submitted Documents')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-navy-400" /> {t('admin.submittedDocuments', 'Submitted Documents')}
+          </h4>
           {!app.id_doc_url && !app.license_doc_url ? (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
@@ -505,13 +861,26 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
               {app.license_doc_url && <div className="p-3 bg-white border border-navy-100 rounded-xl"><DocLink url={app.license_doc_url} bucket="agent-documents" label={t('admin.docLicenseReraCertificate', 'License / RERA Certificate')} /></div>}
             </div>
           )}
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="docs_inspected"
+              label={t('admin.checkDocsClear', 'All uploaded documents inspected and verified')}
+              checked={!!checks.docs_inspected}
+              onChange={(c) => onCheckChange('docs_inspected', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('docs_inspected')}
+            />
+          </div>
         </div>
       );
 
     case 'identity_verification':
       return (
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-navy-400" /> {t('admin.identityVerificationHeading', 'Identity Verification')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-navy-400" /> {t('admin.identityVerificationHeading', 'Identity Verification')}
+          </h4>
           <p className="text-xs text-navy-500">{t('admin.verifyIdentityMatch', "Verify the applicant's identity matches the submitted documents.")}</p>
           <div className="grid grid-cols-2 gap-3">
             <InfoBox icon={User} label={t('admin.fullNameLabel', 'Full Name')} value={`${app.first_name} ${app.last_name}`} />
@@ -520,8 +889,24 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
             <InfoBox icon={BadgeCheck} label={t('admin.licenseReraNoLabel', 'License / RERA No.')} value={app.license_number} />
           </div>
           {app.id_doc_url && <div className="p-3 bg-white border border-navy-100 rounded-xl"><DocLink url={app.id_doc_url} bucket="agent-documents" label={t('admin.viewGovernmentId', 'View Government ID')} /></div>}
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
-            {t('admin.confirmIdMatchNote', '✓ Confirm name, phone, email match the submitted ID document before proceeding.')}
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="identity_match"
+              label={t('admin.checkApplicantIdentityMatch', 'Identity matches submitted documents')}
+              checked={!!checks.identity_match}
+              onChange={(c) => onCheckChange('identity_match', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('identity_match')}
+            />
+            <CheckboxItem
+              id="contact_verified"
+              label={t('admin.checkApplicantContactVerified', 'Contact details and phone verified')}
+              checked={!!checks.contact_verified}
+              onChange={(c) => onCheckChange('contact_verified', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('contact_verified')}
+            />
           </div>
         </div>
       );
@@ -530,22 +915,50 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
       const hasRera = !!app.license_number;
       return (
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><BadgeCheck className="h-4 w-4 text-navy-400" /> {t('admin.reraVerificationHeading', 'RERA Verification')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <BadgeCheck className="h-4 w-4 text-navy-400" /> {t('admin.reraVerificationHeading', 'RERA Verification')}
+          </h4>
           {hasRera ? (
             <>
               <InfoBox icon={BadgeCheck} label={t('admin.reraLicenseNumberLabel', 'RERA / License Number')} value={app.license_number} />
               {app.license_doc_url && <div className="p-3 bg-white border border-navy-100 rounded-xl"><DocLink url={app.license_doc_url} bucket="agent-documents" label={t('admin.viewReraCertificate', 'View RERA Certificate')} /></div>}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
-                {t('admin.crossCheckReraNote', '✓ Cross-check the RERA number with the official RERA portal before marking as verified.')}
+              <div className="space-y-2 pt-2 border-t border-navy-100">
+                <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+                <CheckboxItem
+                  id="rera_portal_verified"
+                  label={t('admin.checkReraRegistration', 'RERA registration active and valid on state portal')}
+                  checked={!!checks.rera_portal_verified}
+                  onChange={(c) => onCheckChange('rera_portal_verified', c)}
+                  disabled={disabled}
+                  isError={validationErrors.includes('rera_portal_verified')}
+                />
+                <CheckboxItem
+                  id="rera_license_match"
+                  label={t('admin.checkReraNameMatch', 'Agent name matches RERA certificate')}
+                  checked={!!checks.rera_license_match}
+                  onChange={(c) => onCheckChange('rera_license_match', c)}
+                  disabled={disabled}
+                  isError={validationErrors.includes('rera_license_match')}
+                />
               </div>
             </>
           ) : (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-amber-800">{t('admin.noReraInfoProvided', 'No RERA Information Provided')}</p>
-                <p className="text-xs text-amber-600">{t('admin.applicantNoReraNote', 'Applicant has not submitted a RERA license number. Determine if RERA is applicable.')}</p>
+            <div className="space-y-3">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">{t('admin.noReraInfoProvided', 'No RERA Information Provided')}</p>
+                  <p className="text-xs text-amber-600">{t('admin.applicantNoReraNote', 'Applicant has not submitted a RERA license number. Determine if RERA is applicable.')}</p>
+                </div>
               </div>
+              <CheckboxItem
+                id="rera_not_applicable"
+                label={t('admin.checkReraExemptionConfirmed', 'RERA exemption or non-applicability confirmed')}
+                checked={!!checks.rera_not_applicable}
+                onChange={(c) => onCheckChange('rera_not_applicable', c)}
+                disabled={disabled}
+                isError={validationErrors.includes('rera_not_applicable')}
+              />
             </div>
           )}
         </div>
@@ -555,19 +968,26 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
     case 'background_verification':
       return (
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-navy-400" /> {t('admin.backgroundVerificationHeading', 'Background Verification')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-navy-400" /> {t('admin.backgroundVerificationHeading', 'Background Verification')}
+          </h4>
           <p className="text-xs text-navy-500">{t('admin.completeBackgroundChecksNote', 'Complete all background checks before proceeding.')}</p>
           <div className="space-y-2">
             {[
-              t('admin.checkCriminalRecord', 'Criminal record check completed'),
-              t('admin.checkEmploymentHistory', 'Employment history verified'),
-              t('admin.checkProfessionalReferences', 'Professional references checked'),
-              t('admin.checkNoAdverseFindings', 'No adverse findings'),
-            ].map((c) => (
-              <div key={c} className="flex items-center gap-2 p-2.5 bg-navy-50 rounded-lg border border-navy-100">
-                <CheckSquare className="h-4 w-4 text-navy-400 shrink-0" />
-                <span className="text-sm text-navy-700">{c}</span>
-              </div>
+              { id: 'checkCriminalRecord', label: t('admin.checkCriminalRecord', 'Criminal record check completed') },
+              { id: 'checkEmploymentHistory', label: t('admin.checkEmploymentHistory', 'Employment history verified') },
+              { id: 'checkProfessionalReferences', label: t('admin.checkProfessionalReferences', 'Professional references checked') },
+              { id: 'checkNoAdverseFindings', label: t('admin.checkNoAdverseFindings', 'No adverse findings') },
+            ].map(({ id, label }) => (
+              <CheckboxItem
+                key={id}
+                id={id}
+                label={label}
+                checked={!!checks[id]}
+                onChange={(c) => onCheckChange(id, c)}
+                disabled={disabled}
+                isError={validationErrors.includes(id)}
+              />
             ))}
           </div>
         </div>
@@ -577,15 +997,37 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
       const allStages = AGENT_STAGES.slice(1, -1);
       return (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success-500" /> {t('admin.finalReviewSummary', 'Final Review Summary')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t('admin.finalReviewSummary', 'Final Review Summary')}
+          </h4>
           <div className="space-y-2">
-            {allStages.map((s) => (
-              <div key={s} className="flex items-center gap-3 p-3 bg-success-50 border border-success-200 rounded-xl">
-                <CheckCircle2 className="h-4 w-4 text-success-600 shrink-0" />
-                <span className="text-sm font-medium text-success-800">{stageLabel(s, t)}</span>
-                <span className="ml-auto text-xs text-success-600 font-semibold">{t('admin.verifiedCheckmark', '✓ Verified')}</span>
-              </div>
-            ))}
+            {allStages.map((s) => {
+              const sIdx = AGENT_STAGES.indexOf(s as any);
+              const isStepDone = isStepCompleted(s, sIdx, currentIdx, verificationState);
+              return (
+                <div
+                  key={s}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-xl border transition-all',
+                    isStepDone
+                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                      : 'bg-navy-50/50 border-navy-100 text-navy-600',
+                  )}
+                >
+                  {isStepDone ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                  )}
+                  <span className={cn('text-sm font-medium', isStepDone ? 'text-emerald-950 font-semibold' : 'text-navy-700')}>
+                    {stageLabel(s, t)}
+                  </span>
+                  <span className={cn('ml-auto text-xs font-semibold', isStepDone ? 'text-emerald-700' : 'text-amber-600')}>
+                    {isStepDone ? t('admin.verifiedCheckmark', '✓ Verified') : t('admin.stepPending', 'Pending')}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2 border-t border-navy-100">
             <InfoBox icon={User} label={t('admin.applicantLabel', 'Applicant')} value={`${app.first_name} ${app.last_name}`} />
@@ -624,8 +1066,30 @@ function AgentStepContent({ stage, app }: { stage: string; app: AgentApplication
 }
 
 // ─── Builder step panels ──────────────────────────────────────────────────────
-function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplication }) {
+function BuilderStepContent({
+  stage,
+  app,
+  checks,
+  onCheckChange,
+  validationErrors,
+  isCompleted,
+  readOnly,
+  verificationState,
+  currentIdx,
+}: {
+  stage: string;
+  app: BuilderApplication;
+  checks: Record<string, boolean>;
+  onCheckChange: (key: string, checked: boolean) => void;
+  validationErrors: string[];
+  isCompleted: boolean;
+  readOnly: boolean;
+  verificationState: Record<string, StepVerificationState>;
+  currentIdx: number;
+}) {
   const { t } = useLanguageContext();
+  const disabled = readOnly || isCompleted;
+
   switch (stage) {
     case 'submitted':
       return (
@@ -654,8 +1118,10 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
 
     case 'pending_review':
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><Building2 className="h-4 w-4 text-navy-400" /> {t('admin.builderInformation', 'Builder Information')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-navy-400" /> {t('admin.builderInformation', 'Builder Information')}
+          </h4>
           <div className="grid grid-cols-2 gap-3">
             <InfoBox icon={Building2} label={t('admin.companyNameLabel', 'Company Name')} value={app.company_name} />
             <InfoBox icon={User} label={t('admin.contactPersonLabel', 'Contact Person')} value={app.contact_name} />
@@ -673,6 +1139,17 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
               </div>
             )}
           </div>
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="info_reviewed"
+              label={t('admin.checkApplicantContactVerified', 'Builder information and contact details reviewed and verified')}
+              checked={!!checks.info_reviewed}
+              onChange={(c) => onCheckChange('info_reviewed', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('info_reviewed')}
+            />
+          </div>
         </div>
       );
 
@@ -684,7 +1161,9 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
       ].filter((d) => d.url);
       return (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><FileText className="h-4 w-4 text-navy-400" /> {t('admin.builderDocuments', 'Builder Documents')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-navy-400" /> {t('admin.builderDocuments', 'Builder Documents')}
+          </h4>
           {docs.length === 0 ? (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
@@ -699,14 +1178,27 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
               ))}
             </div>
           )}
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="docs_inspected"
+              label={t('admin.checkDocsClear', 'All uploaded documents inspected and verified')}
+              checked={!!checks.docs_inspected}
+              onChange={(c) => onCheckChange('docs_inspected', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('docs_inspected')}
+            />
+          </div>
         </div>
       );
     }
 
     case 'company_verification':
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><Briefcase className="h-4 w-4 text-navy-400" /> {t('admin.companyBusinessVerification', 'Company / Business Verification')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <Briefcase className="h-4 w-4 text-navy-400" /> {t('admin.companyBusinessVerification', 'Company / Business Verification')}
+          </h4>
           <p className="text-xs text-navy-500">{t('admin.verifyCompanyIdentityNote', 'Verify that the company identity, registration, and business information is valid.')}</p>
           <div className="grid grid-cols-2 gap-3">
             <InfoBox icon={Building2} label={t('admin.companyNameLabel', 'Company Name')} value={app.company_name} />
@@ -722,8 +1214,40 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
               <DocLink url={app.gst_doc_url} bucket="builder-documents" label={t('admin.viewGstCertificate', 'View GST Certificate')} />
             </div>
           )}
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
-            {t('admin.verifyCompanyMcaGstNote', '✓ Verify the company name on official MCA/GST portal before proceeding.')}
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="company_mca_gst"
+              label={t('admin.checkCompanyMca', 'Company name verified on MCA / GST portal')}
+              checked={!!checks.company_mca_gst}
+              onChange={(c) => onCheckChange('company_mca_gst', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('company_mca_gst')}
+            />
+            <CheckboxItem
+              id="gst_active"
+              label={t('admin.checkGstValid', 'GST number active and verified')}
+              checked={!!checks.gst_active}
+              onChange={(c) => onCheckChange('gst_active', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('gst_active')}
+            />
+            <CheckboxItem
+              id="track_record"
+              label={t('admin.checkEstablishedYear', 'Established year and business track record confirmed')}
+              checked={!!checks.track_record}
+              onChange={(c) => onCheckChange('track_record', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('track_record')}
+            />
+            <CheckboxItem
+              id="address_verified"
+              label={t('admin.checkBusinessAddress', 'Business address and city verified')}
+              checked={!!checks.address_verified}
+              onChange={(c) => onCheckChange('address_verified', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('address_verified')}
+            />
           </div>
         </div>
       );
@@ -731,8 +1255,10 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
     case 'rera_verification': {
       const hasRera = !!app.rera_number;
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><BadgeCheck className="h-4 w-4 text-navy-400" /> {t('admin.reraVerificationHeading', 'RERA Verification')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <BadgeCheck className="h-4 w-4 text-navy-400" /> {t('admin.reraVerificationHeading', 'RERA Verification')}
+          </h4>
           {hasRera ? (
             <>
               <InfoBox icon={BadgeCheck} label={t('admin.reraNumberLabel', 'RERA Number')} value={app.rera_number} />
@@ -741,17 +1267,51 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
                   <DocLink url={app.rera_doc_url} bucket="builder-documents" label={t('admin.viewReraCertificate', 'View RERA Certificate')} />
                 </div>
               )}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
-                {t('admin.crossCheckReraStateNote', '✓ Cross-check RERA registration with the state RERA portal before approving.')}
+              <div className="space-y-2 pt-2 border-t border-navy-100">
+                <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+                <CheckboxItem
+                  id="rera_portal"
+                  label={t('admin.checkReraRegistration', 'RERA registration active and valid on state portal')}
+                  checked={!!checks.rera_portal}
+                  onChange={(c) => onCheckChange('rera_portal', c)}
+                  disabled={disabled}
+                  isError={validationErrors.includes('rera_portal')}
+                />
+                <CheckboxItem
+                  id="rera_name_match"
+                  label={t('admin.checkReraNameMatch', 'Company / entity name matches RERA certificate')}
+                  checked={!!checks.rera_name_match}
+                  onChange={(c) => onCheckChange('rera_name_match', c)}
+                  disabled={disabled}
+                  isError={validationErrors.includes('rera_name_match')}
+                />
+                <CheckboxItem
+                  id="rera_no_complaints"
+                  label={t('admin.checkReraNotBlacklisted', 'No RERA complaints or blacklist entries')}
+                  checked={!!checks.rera_no_complaints}
+                  onChange={(c) => onCheckChange('rera_no_complaints', c)}
+                  disabled={disabled}
+                  isError={validationErrors.includes('rera_no_complaints')}
+                />
               </div>
             </>
           ) : (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-amber-800">{t('admin.noReraNumberProvided', 'No RERA Number Provided')}</p>
-                <p className="text-xs text-amber-600">{t('admin.determineReraMandatoryNote', 'Determine if RERA registration is mandatory for this builder. If not applicable, note the reason.')}</p>
+            <div className="space-y-3">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">{t('admin.noReraNumberProvided', 'No RERA Number Provided')}</p>
+                  <p className="text-xs text-amber-600">{t('admin.determineReraMandatoryNote', 'Determine if RERA registration is mandatory for this builder. If not applicable, note the reason.')}</p>
+                </div>
               </div>
+              <CheckboxItem
+                id="rera_exemption"
+                label={t('admin.checkReraExemptionConfirmed', 'RERA exemption or non-applicability confirmed')}
+                checked={!!checks.rera_exemption}
+                onChange={(c) => onCheckChange('rera_exemption', c)}
+                disabled={disabled}
+                isError={validationErrors.includes('rera_exemption')}
+              />
             </div>
           )}
         </div>
@@ -760,46 +1320,58 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
 
     case 'project_verification':
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><Building2 className="h-4 w-4 text-navy-400" /> {t('admin.projectBuilderVerification', 'Project / Builder Verification')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-navy-400" /> {t('admin.projectBuilderVerification', 'Project / Builder Verification')}
+          </h4>
           <p className="text-xs text-navy-500">{t('admin.verifyProjectsPortfolioNote', "Verify the builder's listed projects and portfolio information.")}</p>
-          <div className="p-4 bg-navy-50 border border-navy-100 rounded-xl space-y-2">
-            <p className="text-sm font-medium text-navy-700">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
             {[
-              t('admin.checkBuilderCredentials', 'Builder credentials verified'),
-              t('admin.checkCompanyNameMatchesRera', 'Company name matches RERA records'),
-              t('admin.checkProjectLocations', 'Project locations verified'),
-              t('admin.checkNoPendingLegalDisputes', 'No pending legal disputes found'),
-            ].map((c) => (
-              <div key={c} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-navy-100">
-                <CheckSquare className="h-4 w-4 text-navy-400 shrink-0" />
-                <span className="text-sm text-navy-700">{c}</span>
-              </div>
+              { id: 'checkBuilderCredentials', label: t('admin.checkBuilderCredentials', 'Builder credentials verified') },
+              { id: 'checkCompanyNameMatchesRera', label: t('admin.checkCompanyNameMatchesRera', 'Company name matches RERA records') },
+              { id: 'checkProjectLocations', label: t('admin.checkProjectLocations', 'Project locations verified') },
+              { id: 'checkNoPendingLegalDisputes', label: t('admin.checkNoPendingLegalDisputes', 'No pending legal disputes found') },
+            ].map(({ id, label }) => (
+              <CheckboxItem
+                key={id}
+                id={id}
+                label={label}
+                checked={!!checks[id]}
+                onChange={(c) => onCheckChange(id, c)}
+                disabled={disabled}
+                isError={validationErrors.includes(id)}
+              />
             ))}
-          </div>
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
-            {t('admin.checkBuilderProjectHistoryNote', "✓ Check builder's project history and ensure listed projects are legitimate before proceeding.")}
           </div>
         </div>
       );
 
     case 'background_verification':
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-navy-400" /> {t('admin.backgroundVerificationHeading', 'Background Verification')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-navy-400" /> {t('admin.backgroundVerificationHeading', 'Background Verification')}
+          </h4>
           <p className="text-xs text-navy-500">{t('admin.completeBackgroundChecksBuilderNote', 'Complete all background checks for the builder and company.')}</p>
           <div className="space-y-2">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
             {[
-              t('admin.checkCompanyCriminalRecord', 'Company criminal/legal record check'),
-              t('admin.checkDirectorBackground', 'Director/promoter background verified'),
-              t('admin.checkFinancialHealth', 'Financial health check completed'),
-              t('admin.checkNoActiveLegalDisputes', 'No active legal disputes'),
-              t('admin.checkNoReraBlacklist', 'No RERA blacklist matches'),
-            ].map((c) => (
-              <div key={c} className="flex items-center gap-2 p-2.5 bg-navy-50 rounded-lg border border-navy-100">
-                <CheckSquare className="h-4 w-4 text-navy-400 shrink-0" />
-                <span className="text-sm text-navy-700">{c}</span>
-              </div>
+              { id: 'checkCompanyCriminalRecord', label: t('admin.checkCompanyCriminalRecord', 'Company criminal/legal record check') },
+              { id: 'checkDirectorBackground', label: t('admin.checkDirectorBackground', 'Director/promoter background verified') },
+              { id: 'checkFinancialHealth', label: t('admin.checkFinancialHealth', 'Financial health check completed') },
+              { id: 'checkNoActiveLegalDisputes', label: t('admin.checkNoActiveLegalDisputes', 'No active legal disputes') },
+              { id: 'checkNoReraBlacklist', label: t('admin.checkNoReraBlacklist', 'No RERA blacklist matches') },
+            ].map(({ id, label }) => (
+              <CheckboxItem
+                key={id}
+                id={id}
+                label={label}
+                checked={!!checks[id]}
+                onChange={(c) => onCheckChange(id, c)}
+                disabled={disabled}
+                isError={validationErrors.includes(id)}
+              />
             ))}
           </div>
         </div>
@@ -809,15 +1381,37 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
       const allStages = BUILDER_STAGES.slice(1, -1);
       return (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success-500" /> {t('admin.finalReviewSummary', 'Final Review Summary')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t('admin.finalReviewSummary', 'Final Review Summary')}
+          </h4>
           <div className="space-y-2">
-            {allStages.map((s) => (
-              <div key={s} className="flex items-center gap-3 p-3 bg-success-50 border border-success-200 rounded-xl">
-                <CheckCircle2 className="h-4 w-4 text-success-600 shrink-0" />
-                <span className="text-sm font-medium text-success-800">{stageLabel(s, t)}</span>
-                <span className="ml-auto text-xs text-success-600 font-semibold">{t('admin.verifiedCheckmark', '✓ Verified')}</span>
-              </div>
-            ))}
+            {allStages.map((s) => {
+              const sIdx = BUILDER_STAGES.indexOf(s as any);
+              const isStepDone = isStepCompleted(s, sIdx, currentIdx, verificationState);
+              return (
+                <div
+                  key={s}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-xl border transition-all',
+                    isStepDone
+                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                      : 'bg-navy-50/50 border-navy-100 text-navy-600',
+                  )}
+                >
+                  {isStepDone ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                  )}
+                  <span className={cn('text-sm font-medium', isStepDone ? 'text-emerald-950 font-semibold' : 'text-navy-700')}>
+                    {stageLabel(s, t)}
+                  </span>
+                  <span className={cn('ml-auto text-xs font-semibold', isStepDone ? 'text-emerald-700' : 'text-amber-600')}>
+                    {isStepDone ? t('admin.verifiedCheckmark', '✓ Verified') : t('admin.stepPending', 'Pending')}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2 border-t border-navy-100">
             <InfoBox icon={Building2} label={t('admin.companyNameLabel', 'Company Name')} value={app.company_name} />
@@ -856,8 +1450,30 @@ function BuilderStepContent({ stage, app }: { stage: string; app: BuilderApplica
 }
 
 // ─── Partner step panels ───────────────────────────────────────────────────────
-function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplication }) {
+function PartnerStepContent({
+  stage,
+  app,
+  checks,
+  onCheckChange,
+  validationErrors,
+  isCompleted,
+  readOnly,
+  verificationState,
+  currentIdx,
+}: {
+  stage: string;
+  app: PartnerApplication;
+  checks: Record<string, boolean>;
+  onCheckChange: (key: string, checked: boolean) => void;
+  validationErrors: string[];
+  isCompleted: boolean;
+  readOnly: boolean;
+  verificationState: Record<string, StepVerificationState>;
+  currentIdx: number;
+}) {
   const { t } = useLanguageContext();
+  const disabled = readOnly || isCompleted;
+
   switch (stage) {
     case 'submitted':
       return (
@@ -887,8 +1503,10 @@ function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplica
 
     case 'pending_review':
       return (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><User className="h-4 w-4 text-navy-400" /> {t('admin.partnerInformation', 'Partner Information')}</h4>
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <User className="h-4 w-4 text-navy-400" /> {t('admin.partnerInformation', 'Partner Information')}
+          </h4>
           <div className="grid grid-cols-2 gap-3">
             <InfoBox icon={Mail} label={t('admin.emailLabel', 'Email')} value={app.email} />
             <InfoBox icon={Phone} label={t('admin.mobileLabel', 'Mobile')} value={app.mobile_number} />
@@ -907,6 +1525,17 @@ function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplica
               </div>
             )}
           </div>
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="info_reviewed"
+              label={t('admin.checkApplicantContactVerified', 'Partner information and contact details reviewed and verified')}
+              checked={!!checks.info_reviewed}
+              onChange={(c) => onCheckChange('info_reviewed', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('info_reviewed')}
+            />
+          </div>
         </div>
       );
 
@@ -920,7 +1549,9 @@ function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplica
       ].filter((d) => d.url);
       return (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><FileText className="h-4 w-4 text-navy-400" /> {t('admin.submittedDocuments', 'Submitted Documents')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-navy-400" /> {t('admin.submittedDocuments', 'Submitted Documents')}
+          </h4>
           {docs.length === 0 ? (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
@@ -935,6 +1566,17 @@ function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplica
               ))}
             </div>
           )}
+          <div className="space-y-2 pt-2 border-t border-navy-100">
+            <p className="text-xs font-semibold text-navy-600 uppercase tracking-wider">{t('admin.verificationChecklist', 'Verification Checklist')}</p>
+            <CheckboxItem
+              id="docs_inspected"
+              label={t('admin.checkDocsClear', 'All uploaded documents inspected and verified')}
+              checked={!!checks.docs_inspected}
+              onChange={(c) => onCheckChange('docs_inspected', c)}
+              disabled={disabled}
+              isError={validationErrors.includes('docs_inspected')}
+            />
+          </div>
         </div>
       );
     }
@@ -943,15 +1585,37 @@ function PartnerStepContent({ stage, app }: { stage: string; app: PartnerApplica
       const allStages = PARTNER_STAGES.slice(1, -1);
       return (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success-500" /> {t('admin.finalReviewSummary', 'Final Review Summary')}</h4>
+          <h4 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t('admin.finalReviewSummary', 'Final Review Summary')}
+          </h4>
           <div className="space-y-2">
-            {allStages.map((s) => (
-              <div key={s} className="flex items-center gap-3 p-3 bg-success-50 border border-success-200 rounded-xl">
-                <CheckCircle2 className="h-4 w-4 text-success-600 shrink-0" />
-                <span className="text-sm font-medium text-success-800">{stageLabel(s, t)}</span>
-                <span className="ml-auto text-xs text-success-600 font-semibold">{t('admin.verifiedCheckmark', '✓ Verified')}</span>
-              </div>
-            ))}
+            {allStages.map((s) => {
+              const sIdx = PARTNER_STAGES.indexOf(s as any);
+              const isStepDone = isStepCompleted(s, sIdx, currentIdx, verificationState);
+              return (
+                <div
+                  key={s}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-xl border transition-all',
+                    isStepDone
+                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                      : 'bg-navy-50/50 border-navy-100 text-navy-600',
+                  )}
+                >
+                  {isStepDone ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                  )}
+                  <span className={cn('text-sm font-medium', isStepDone ? 'text-emerald-950 font-semibold' : 'text-navy-700')}>
+                    {stageLabel(s, t)}
+                  </span>
+                  <span className={cn('ml-auto text-xs font-semibold', isStepDone ? 'text-emerald-700' : 'text-amber-600')}>
+                    {isStepDone ? t('admin.verifiedCheckmark', '✓ Verified') : t('admin.stepPending', 'Pending')}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2 border-t border-navy-100">
             <InfoBox icon={User} label={t('admin.partnerLabel', 'Partner')} value={app.full_name} />
@@ -1015,22 +1679,111 @@ export function ApplicationReviewDrawer({
   const [rejectReason, setRejectReason] = useState('');
   const [notes, setNotes] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
+  // State: verificationState dictionary per step
+  const [verificationState, setVerificationState] = useState<Record<string, StepVerificationState>>(() => {
+    return (application?.verification_state as Record<string, StepVerificationState>) || {};
+  });
+
+  // State: active checks per stage
+  const [checksByStage, setChecksByStage] = useState<Record<string, Record<string, boolean>>>({});
+
+  // Reset or load state when drawer opens or application changes
   useEffect(() => {
     if (open && application) {
+      const initialVerificationState: Record<string, StepVerificationState> = {
+        ...(application.verification_state as Record<string, StepVerificationState> || {}),
+      };
+
+      // Backfill completed steps if status is further along
+      const appStageIdx = getStageIndex(stages, application.status || 'pending_review');
+      stages.forEach((stg, i) => {
+        if (i < appStageIdx && !initialVerificationState[stg]) {
+          initialVerificationState[stg] = {
+            status: 'completed',
+            completed_at: application.created_at || new Date().toISOString(),
+          };
+        }
+      });
+
+      setVerificationState(initialVerificationState);
       setSelectedStep(application.status || 'pending_review');
       setShowReject(false);
       setRejectReason('');
       setNotes('');
       setShowHistory(false);
+      setValidationErrors([]);
+      setIsSaving(false);
+
+      // Populate checks from verificationState
+      const initialChecks: Record<string, Record<string, boolean>> = {};
+      stages.forEach((stg) => {
+        if (initialVerificationState[stg]?.checks) {
+          initialChecks[stg] = { ...initialVerificationState[stg].checks };
+        } else if (initialVerificationState[stg]?.status === 'completed') {
+          // Default all true for already completed steps
+          initialChecks[stg] = {
+            info_reviewed: true,
+            docs_inspected: true,
+            company_mca_gst: true,
+            gst_active: true,
+            track_record: true,
+            address_verified: true,
+            rera_portal: true,
+            rera_name_match: true,
+            rera_no_complaints: true,
+            rera_exemption: true,
+            checkBuilderCredentials: true,
+            checkCompanyNameMatchesRera: true,
+            checkProjectLocations: true,
+            checkNoPendingLegalDisputes: true,
+            checkCompanyCriminalRecord: true,
+            checkDirectorBackground: true,
+            checkFinancialHealth: true,
+            checkNoActiveLegalDisputes: true,
+            checkNoReraBlacklist: true,
+            checkCriminalRecord: true,
+            checkEmploymentHistory: true,
+            checkProfessionalReferences: true,
+            checkNoAdverseFindings: true,
+            identity_match: true,
+            contact_verified: true,
+            rera_portal_verified: true,
+            rera_license_match: true,
+            rera_not_applicable: true,
+          };
+        }
+      });
+      setChecksByStage(initialChecks);
     }
-  }, [open, application?.id]);
+  }, [open, application?.id, application?.status]);
+
+  const currentChecks = useMemo(() => {
+    return checksByStage[selectedStep] || {};
+  }, [checksByStage, selectedStep]);
+
+  const handleCheckChange = (checkKey: string, checked: boolean) => {
+    setChecksByStage((prev) => ({
+      ...prev,
+      [selectedStep]: {
+        ...(prev[selectedStep] || {}),
+        [checkKey]: checked,
+      },
+    }));
+    // Remove from validation errors if checked
+    if (checked) {
+      setValidationErrors((prev) => prev.filter((k) => k !== checkKey));
+    }
+  };
 
   // ── Mutation ────────────────────────────────────────────────────────────────
   const actionMutation = useMutation({
     mutationFn: async (payload: {
-      action: 'approve' | 'reject' | 'stage_change';
+      action: 'approve' | 'reject' | 'stage_change' | 'save_verification';
       new_stage?: string;
+      verification_state?: Record<string, StepVerificationState>;
       remarks?: string;
     }) => {
       if (!application) return;
@@ -1047,7 +1800,7 @@ export function ApplicationReviewDrawer({
         } catch (e) {
           console.error('Unable to parse Edge Function error:', e);
         }
-        
+
         const msg = errorBody?.error || errorBody?.message || error.message || '';
         if (msg.toLowerCase().includes('failed to send') || msg.toLowerCase().includes('fetch')) {
           throw new Error(t('admin.unableToConnectVerification', 'Unable to connect to the verification service. Please check your connection.'));
@@ -1060,6 +1813,7 @@ export function ApplicationReviewDrawer({
     onSuccess: (_, payload) => {
       queryClient.invalidateQueries({ queryKey: [`admin-${type}-applications`] });
       queryClient.invalidateQueries({ queryKey: ['app-activity-logs', application?.id] });
+
       if (payload.action === 'approve') {
         const who = isAgent ? t('admin.agentLabel', 'Agent') : isBuilder ? t('admin.builderLabel', 'Builder') : t('admin.partnerLabel', 'Partner');
         addToast('success', t('admin.applicationApprovedProvisioned', '{{who}} application approved. Portal access provisioned.').replace('{{who}}', who));
@@ -1072,11 +1826,15 @@ export function ApplicationReviewDrawer({
         addToast('success', t('admin.verificationCompletedMovedTo', 'Verification completed. Moved to {{stage}}.').replace('{{stage}}', label));
         setSelectedStep(payload.new_stage);
         setNotes('');
+        setValidationErrors([]);
       }
     },
     onError: (e: any) => {
       console.error('Application action error:', e);
-      addToast('error', e.message || t('admin.verificationFailedRetry', 'Verification failed. Please try again.'));
+      addToast('error', e.message || t('admin.unableToSaveStep', 'Unable to save this verification step. Please try again.'));
+    },
+    onSettled: () => {
+      setIsSaving(false);
     },
   });
 
@@ -1088,15 +1846,37 @@ export function ApplicationReviewDrawer({
       ? (application as BuilderApplication).company_name
       : (application as PartnerApplication).full_name;
 
-  const handleNextStage = () => {
-    const nextIdx = currentIdx + 1;
-    if (nextIdx >= stages.length) return;
-    const nextStage = stages[nextIdx];
-    if (nextStage === 'approved') {
-      // ── Partner approval guard ─────────────────────────────────────────────
-      // Before approving a partner application, re-validate the stored field
-      // values using the same rules as the registration form. This prevents
-      // approving applications that somehow bypassed frontend validation.
+  const selectedIdx = stages.indexOf(selectedStep as any);
+  const isSelectedStepCompleted = verificationState[selectedStep]?.status === 'completed' || selectedIdx < currentIdx;
+
+  // ── Next Button Handler (Validate → Save → Complete → Progress → Navigate) ─
+  const handleNext = async () => {
+    if (isSaving || actionMutation.isPending) return;
+
+    // If viewing an already completed step earlier in the pipeline, simply navigate forward
+    if (selectedStep !== currentStatus && isSelectedStepCompleted) {
+      const nextIdx = selectedIdx + 1;
+      if (nextIdx < stages.length) {
+        setSelectedStep(stages[nextIdx]);
+      }
+      return;
+    }
+
+    // 1. If currently on final_review: handle Final Approval
+    if (selectedStep === 'final_review') {
+      const requiredStages = stages.slice(1, -2); // all verification stages before final_review & approved
+      const incompleteStages = requiredStages.filter((s) => verificationState[s]?.status !== 'completed');
+
+      if (incompleteStages.length > 0) {
+        const incompleteLabels = incompleteStages.map((s) => stageLabel(s, t)).join(', ');
+        addToast(
+          'error',
+          `${t('admin.cannotApproveIncompleteSteps', 'Cannot approve: Please complete all required verification steps first.')} (${incompleteLabels})`,
+        );
+        return;
+      }
+
+      // Partner approval guard validation
       if (isPartner) {
         const partnerApp = application as PartnerApplication;
         const validationErrs = validatePartnerDetailsForSubmission({
@@ -1115,24 +1895,75 @@ export function ApplicationReviewDrawer({
           const errorFields = Object.keys(validationErrs).join(', ');
           addToast(
             'error',
-            t('admin.cannotApproveInvalidFields', 'Cannot approve: Partner application has invalid field values ({{fields}}). Ask the applicant to resubmit with corrected details.').replace('{{fields}}', errorFields)
+            t('admin.cannotApproveInvalidFields', 'Cannot approve: Partner application has invalid field values ({{fields}}). Ask the applicant to resubmit with corrected details.').replace('{{fields}}', errorFields),
           );
           return;
         }
       }
-      actionMutation.mutate({ action: 'approve', remarks: notes || t('admin.approvedAfterFinalReview', 'Approved after final review.') });
-    } else {
-      actionMutation.mutate({ action: 'stage_change', new_stage: nextStage, remarks: notes || t('admin.advancedToStage', 'Advanced to {{stage}}').replace('{{stage}}', stageLabel(nextStage, t)) });
+
+      setIsSaving(true);
+      actionMutation.mutate({
+        action: 'approve',
+        remarks: notes || t('admin.approvedAfterFinalReview', 'Approved after final review.'),
+      });
+      return;
+    }
+
+    // 2. Validate current step
+    const validation = validateStep(selectedStep, type, application, currentChecks, t);
+    if (!validation.valid) {
+      setValidationErrors(validation.errors);
+      addToast('error', validation.message || t('admin.pleaseCompleteChecks', 'Please complete all required verification checks before continuing.'));
+      return;
+    }
+
+    // 3. Validation passed: Prepare updated verification state
+    const nextIdx = currentIdx + 1;
+    if (nextIdx >= stages.length) return;
+    const nextStage = stages[nextIdx];
+
+    const updatedVerificationState: Record<string, StepVerificationState> = {
+      ...(application.verification_state as Record<string, StepVerificationState> || {}),
+      ...verificationState,
+      [selectedStep]: {
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        checks: currentChecks,
+        notes: notes.trim() || undefined,
+      },
+    };
+
+    // Update local state immediately for fast response
+    setVerificationState(updatedVerificationState);
+    setIsSaving(true);
+
+    // 4. Save and advance stage in database via edge function
+    actionMutation.mutate({
+      action: 'stage_change',
+      new_stage: nextStage,
+      verification_state: updatedVerificationState,
+      remarks: notes || t('admin.advancedToStage', 'Advanced to {{stage}}').replace('{{stage}}', stageLabel(nextStage, t)),
+    });
+  };
+
+  // ── Previous Button Handler ────────────────────────────────────────────────
+  const handlePrevious = () => {
+    if (isSaving || actionMutation.isPending) return;
+    const prevIdx = stages.indexOf(selectedStep as any) - 1;
+    if (prevIdx >= 0) {
+      setSelectedStep(stages[prevIdx]);
+      setValidationErrors([]);
     }
   };
 
+  // ── Reject Button Handler ──────────────────────────────────────────────────
   const handleReject = () => {
-    if (!rejectReason.trim()) { addToast('error', t('admin.rejectionReasonRequired', 'Rejection reason is required.')); return; }
+    if (!rejectReason.trim()) {
+      addToast('error', t('admin.rejectionReasonRequired', 'Rejection reason is required.'));
+      return;
+    }
     actionMutation.mutate({ action: 'reject', remarks: rejectReason });
   };
-
-  const isViewingCurrentStep = selectedStep === currentStatus;
-  const canAdvance = !isTerminal && isViewingCurrentStep && currentIdx < stages.length - 1;
 
   const renderStepContent = () => {
     if (currentStatus === 'rejected') {
@@ -1146,13 +1977,50 @@ export function ApplicationReviewDrawer({
         </div>
       );
     }
+
     if (isAgent) {
-      return <AgentStepContent stage={selectedStep} app={application as AgentApplication} />;
+      return (
+        <AgentStepContent
+          stage={selectedStep}
+          app={application as AgentApplication}
+          checks={currentChecks}
+          onCheckChange={handleCheckChange}
+          validationErrors={validationErrors}
+          isCompleted={isSelectedStepCompleted}
+          readOnly={isTerminal}
+          verificationState={verificationState}
+          currentIdx={currentIdx}
+        />
+      );
     }
     if (isBuilder) {
-      return <BuilderStepContent stage={selectedStep} app={application as BuilderApplication} />;
+      return (
+        <BuilderStepContent
+          stage={selectedStep}
+          app={application as BuilderApplication}
+          checks={currentChecks}
+          onCheckChange={handleCheckChange}
+          validationErrors={validationErrors}
+          isCompleted={isSelectedStepCompleted}
+          readOnly={isTerminal}
+          verificationState={verificationState}
+          currentIdx={currentIdx}
+        />
+      );
     }
-    return <PartnerStepContent stage={selectedStep} app={application as PartnerApplication} />;
+    return (
+      <PartnerStepContent
+        stage={selectedStep}
+        app={application as PartnerApplication}
+        checks={currentChecks}
+        onCheckChange={handleCheckChange}
+        validationErrors={validationErrors}
+        isCompleted={isSelectedStepCompleted}
+        readOnly={isTerminal}
+        verificationState={verificationState}
+        currentIdx={currentIdx}
+      />
+    );
   };
 
   const renderFooter = () => {
@@ -1172,11 +2040,17 @@ export function ApplicationReviewDrawer({
               rows={2}
             />
             <div className="flex gap-2">
-              <Button size="sm" variant="danger" onClick={handleReject}
-                loading={actionMutation.isPending && actionMutation.variables?.action === 'reject'}>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={handleReject}
+                loading={actionMutation.isPending && actionMutation.variables?.action === 'reject'}
+              >
                 {t('admin.confirmRejection', 'Confirm Rejection')}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowReject(false)}>{t('admin.cancel', 'Cancel')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowReject(false)}>
+                {t('admin.cancel', 'Cancel')}
+              </Button>
             </div>
           </div>
         )}
@@ -1185,9 +2059,13 @@ export function ApplicationReviewDrawer({
         {!isTerminal && (
           <div className="flex flex-wrap items-center gap-2 w-full">
             {!showReject && (
-              <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50"
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-red-600 hover:bg-red-50"
                 icon={<XCircle className="h-3.5 w-3.5" />}
-                onClick={() => setShowReject(true)}>
+                onClick={() => setShowReject(true)}
+              >
                 {t('admin.reject', 'Reject')}
               </Button>
             )}
@@ -1199,42 +2077,52 @@ export function ApplicationReviewDrawer({
               </div>
             )}
 
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex items-center gap-2">
+              {/* Previous button */}
               {selectedStep !== stages[0] && (
-                <Button size="sm" variant="secondary"
-                  onClick={() => {
-                    const prevIdx = stages.indexOf(selectedStep as any) - 1;
-                    if (prevIdx >= 0) setSelectedStep(stages[prevIdx]);
-                  }}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handlePrevious}
+                  disabled={isSaving || actionMutation.isPending}
+                >
                   {t('admin.previousStep', '← Previous')}
                 </Button>
               )}
-              {stages.indexOf(selectedStep as any) < stages.length - 2 && (
-                <Button size="sm" variant="secondary"
-                  onClick={() => {
-                    const nextIdx = stages.indexOf(selectedStep as any) + 1;
-                    if (nextIdx < stages.length) setSelectedStep(stages[nextIdx]);
-                  }}>
-                  {t('admin.nextStep', 'Next →')}
-                </Button>
-              )}
-              {canAdvance && (
-                <Button
-                  onClick={handleNextStage}
-                  loading={actionMutation.isPending}
-                  icon={<ChevronRight className="h-4 w-4" />}
-                  className={isProvisioningFailed ? "bg-red-600 text-white hover:bg-red-700" : "bg-navy-700 text-white hover:bg-navy-800"}
-                >
-                  {isProvisioningFailed
+
+              {/* Primary Next / Save / Approve button */}
+              <Button
+                onClick={handleNext}
+                loading={isSaving || actionMutation.isPending}
+                disabled={isSaving || actionMutation.isPending}
+                icon={<ChevronRight className="h-4 w-4" />}
+                className={
+                  isProvisioningFailed
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : selectedStep === 'final_review'
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md font-semibold'
+                      : 'bg-navy-800 text-white hover:bg-navy-900 font-semibold'
+                }
+              >
+                {isSaving || actionMutation.isPending
+                  ? t('admin.savingStep', 'Saving...')
+                  : isProvisioningFailed
                     ? t('admin.retryProvisioning', 'Retry Provisioning')
-                    : nextButtonLabel(
-                        currentStatus,
-                        isAgent ? AGENT_NEXT_BUTTON : isBuilder ? BUILDER_NEXT_BUTTON : PARTNER_NEXT_BUTTON,
-                        isAgent ? AGENT_NEXT_BUTTON_KEYS : isBuilder ? BUILDER_NEXT_BUTTON_KEYS : PARTNER_NEXT_BUTTON_KEYS,
-                        t,
-                      )}
-                </Button>
-              )}
+                    : selectedStep === 'final_review'
+                      ? isBuilder
+                        ? t('admin.builderBtnApprove', 'Approve Builder')
+                        : isAgent
+                          ? t('admin.agentBtnApproveApplication', 'Approve Application')
+                          : t('admin.partnerBtnApprove', 'Approve Partner')
+                      : selectedStep !== currentStatus && isSelectedStepCompleted
+                        ? t('admin.nextStep', 'Next →')
+                        : nextButtonLabel(
+                            currentStatus,
+                            isAgent ? AGENT_NEXT_BUTTON : isBuilder ? BUILDER_NEXT_BUTTON : PARTNER_NEXT_BUTTON,
+                            isAgent ? AGENT_NEXT_BUTTON_KEYS : isBuilder ? BUILDER_NEXT_BUTTON_KEYS : PARTNER_NEXT_BUTTON_KEYS,
+                            t,
+                          )}
+              </Button>
             </div>
           </div>
         )}
@@ -1250,24 +2138,35 @@ export function ApplicationReviewDrawer({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`${t('admin.reviewColon', 'Review:')} ${title}`} size="xl" footer={renderFooter()}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`${t('admin.reviewColon', 'Review:')} ${title}`}
+      size="xl"
+      footer={renderFooter()}
+    >
       <div className="flex flex-col lg:flex-row gap-6 min-h-[520px]">
-
         {/* ── LEFT: Step workspace ──────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Step header */}
           <div className="flex items-center justify-between mb-4">
             <div>
-              <span className="text-[10px] text-navy-400 uppercase tracking-wider">
+              <span className="text-[10px] text-navy-400 uppercase tracking-wider font-semibold">
                 {`${isAgent ? t('admin.agentLabel', 'Agent') : isBuilder ? t('admin.builderLabel', 'Builder') : t('admin.partnerLabel', 'Partner')} ${t('admin.applicationCurrentStep', 'Application — Current Step')}`}
               </span>
-              <h3 className="font-bold text-navy-900 text-base leading-tight">
+              <h3 className="font-bold text-navy-900 text-lg leading-tight flex items-center gap-2">
                 {stageLabel(selectedStep, t)}
+                {isSelectedStepCompleted && selectedStep !== 'approved' && (
+                  <span className="text-xs bg-success-50 text-success-700 font-semibold px-2 py-0.5 rounded-full border border-success-200">
+                    {t('admin.stepCompleted', 'Verified')}
+                  </span>
+                )}
               </h3>
             </div>
             <button
+              type="button"
               onClick={() => setShowHistory((v) => !v)}
-              className="flex items-center gap-1.5 text-xs text-navy-500 hover:text-navy-900 transition-colors px-2 py-1.5 rounded-lg hover:bg-navy-50 border border-transparent hover:border-navy-100"
+              className="flex items-center gap-1.5 text-xs text-navy-500 hover:text-navy-900 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-navy-50 border border-navy-100"
             >
               <History className="h-3.5 w-3.5" />
               {t('admin.historyLabel', 'History')}
@@ -1287,7 +2186,7 @@ export function ApplicationReviewDrawer({
           <div className="flex-1">{renderStepContent()}</div>
 
           {/* Notes */}
-          {canAdvance && currentStatus !== 'submitted' && (
+          {!isTerminal && selectedStep !== 'submitted' && selectedStep !== 'approved' && (
             <div className="mt-4 pt-4 border-t border-navy-100">
               <Textarea
                 label={t('admin.verificationNotesOptional', 'Verification Notes (optional)')}
@@ -1295,18 +2194,24 @@ export function ApplicationReviewDrawer({
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder={t('admin.addNotesPlaceholder', 'Add notes for this verification step...')}
                 rows={2}
+                disabled={isSaving}
               />
             </div>
           )}
         </div>
 
         {/* ── RIGHT: Stepper ──────────────────────────────────────────────── */}
-        <div className="lg:w-52 shrink-0 border-t lg:border-t-0 lg:border-l border-navy-100 lg:pl-5 pt-4 lg:pt-0">
+        <div className="lg:w-56 shrink-0 border-t lg:border-t-0 lg:border-l border-navy-100 lg:pl-5 pt-4 lg:pt-0">
           <VerificationStepper
             stages={stages}
             currentStatus={currentStatus}
             selectedStep={selectedStep}
-            onSelectStep={(stage) => { setSelectedStep(stage); setShowReject(false); }}
+            verificationState={verificationState}
+            onSelectStep={(stage) => {
+              setSelectedStep(stage);
+              setShowReject(false);
+              setValidationErrors([]);
+            }}
           />
         </div>
       </div>

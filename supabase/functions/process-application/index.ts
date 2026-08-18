@@ -26,7 +26,7 @@ serve(async (req) => {
 
     // Parse the request body ONCE
     const body = await req.json();
-    const { application_id, type, action, remarks, new_stage } = body;
+    const { application_id, type, action, remarks, new_stage, verification_state } = body;
 
     // Validate required fields early
     if (!application_id) throw new Error('application_id is required');
@@ -330,8 +330,13 @@ serve(async (req) => {
         throw new Error(`Invalid stage: ${new_stage}`);
       }
 
+      const updatePayload: Record<string, any> = { status: new_stage };
+      if (verification_state !== undefined) {
+        updatePayload.verification_state = verification_state;
+      }
+
       const { error: updateErr } = await supabaseAdmin.from(table)
-        .update({ status: new_stage })
+        .update(updatePayload)
         .eq('id', application_id);
       if (updateErr) throw new Error('Failed to update stage: ' + updateErr.message);
 
@@ -341,6 +346,23 @@ serve(async (req) => {
       );
 
       return new Response(JSON.stringify({ success: true, new_stage }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+
+    // ─── SAVE VERIFICATION STATE ONLY ─────────────────────────────────────────
+    } else if (action === 'save_verification') {
+      if (verification_state === undefined) throw new Error('verification_state is required for save_verification action');
+
+      const { error: updateErr } = await supabaseAdmin.from(table)
+        .update({ verification_state })
+        .eq('id', application_id);
+      if (updateErr) throw new Error('Failed to save verification state: ' + updateErr.message);
+
+      if (remarks) {
+        await logActivity(remarks, null);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
 

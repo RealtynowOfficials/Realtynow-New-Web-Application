@@ -49,6 +49,8 @@ interface FormData {
   last_name: string;
   email: string;
   phone: string;
+  whatsapp_number: string;
+  whatsapp_same_as_phone: boolean;
   company: string;
   bio: string;
   license_number: string;
@@ -65,6 +67,8 @@ const INITIAL: FormData = {
   last_name: '',
   email: '',
   phone: '',
+  whatsapp_number: '',
+  whatsapp_same_as_phone: true,
   company: '',
   bio: '',
   license_number: '',
@@ -182,7 +186,7 @@ export function AgentRegisterPage() {
   // storage's unique (bucket_id, name) constraint.
   const submittingRef = useRef(false);
 
-  const set = (key: keyof FormData, val: string | File | null) => setForm((f) => ({ ...f, [key]: val }));
+  const set = (key: keyof FormData, val: string | File | null | boolean) => setForm((f) => ({ ...f, [key]: val }));
 
   const validateStep = () => {
     const errs: Partial<Record<keyof FormData, string>> = {};
@@ -253,6 +257,9 @@ export function AgentRegisterPage() {
         last_name: form.last_name.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
+        phone_number: form.phone.trim(),
+        whatsapp_number: form.whatsapp_same_as_phone ? form.phone.trim() : (form.whatsapp_number.trim() || form.phone.trim()),
+        whatsapp_same_as_phone: form.whatsapp_same_as_phone,
         company: form.company.trim() || null,
         bio: form.bio.trim() || null,
         license_number: form.license_number.trim() || null,
@@ -456,11 +463,51 @@ export function AgentRegisterPage() {
                         <input
                           type="tel"
                           value={form.phone}
-                          onChange={(e) => set('phone', e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            set('phone', val);
+                            if (form.whatsapp_same_as_phone) {
+                              set('whatsapp_number', val);
+                            }
+                          }}
                           className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
                           placeholder="+91 98000 00000"
                         />
                         {errors.phone && <p className="mt-1 text-xs text-error-600">{errors.phone}</p>}
+
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="whatsapp_same_as_phone"
+                            checked={form.whatsapp_same_as_phone}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              set('whatsapp_same_as_phone', checked);
+                              if (checked) {
+                                set('whatsapp_number', form.phone);
+                              }
+                            }}
+                            className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
+                          />
+                          <label htmlFor="whatsapp_same_as_phone" className="text-xs text-navy-700 font-medium cursor-pointer">
+                            WhatsApp number is same as phone number
+                          </label>
+                        </div>
+
+                        {!form.whatsapp_same_as_phone && (
+                          <div className="mt-3">
+                            <label className="block text-sm font-medium text-navy-600 mb-1.5">
+                              WhatsApp Number
+                            </label>
+                            <input
+                              type="tel"
+                              value={form.whatsapp_number}
+                              onChange={(e) => set('whatsapp_number', e.target.value)}
+                              className="w-full rounded-lg border border-navy-200 bg-white shadow-sm px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-navy-500 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/30"
+                              placeholder="+91 98000 00000"
+                            />
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-navy-600 mb-1.5">

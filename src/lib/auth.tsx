@@ -140,10 +140,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await logAdminLogout();
       clearAdmin2faVerified();
     }
+    // Best-effort: deactivate this device's push subscription before the
+    // session is torn down, so a different user signing in on the same
+    // shared browser doesn't inherit this account's push notifications.
+    if (session?.user?.id) {
+      const { unregisterPushSubscription } = await import('./push');
+      await unregisterPushSubscription(session.user.id);
+    }
     await supabase.auth.signOut();
     setProfile(null);
     setSession(null);
-  }, [profile]);
+  }, [profile, session]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) await loadProfile(session.user.id);

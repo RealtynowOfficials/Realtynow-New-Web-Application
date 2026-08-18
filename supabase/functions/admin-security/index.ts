@@ -9,6 +9,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 import bcrypt from 'npm:bcryptjs@2.4.3';
+import { isAuthorizedAdminMobile } from '../_shared/admin-auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,7 +57,7 @@ async function logEvent(
 }
 
 // Resolves the caller's Supabase Auth user, requires profiles.role IN ('admin','super_admin')
-// (mirrors the is_admin() RLS helper exactly), and self-heals a missing `admins` row (e.g. an
+// (or an authorized admin phone number), and self-heals a missing `admins` row (e.g. an
 // admin profile created before this migration, or by the otp-auth admin-provision path) —
 // defaults new rows to role 'admin', never 'super_admin', so self-healing can never silently
 // grant elevated access.
@@ -74,8 +75,19 @@ async function resolveAdminCaller(
   if (!userId) return { error: 'Authentication required', status: 401 };
 
   const { data: profile } = await supabase.from('profiles').select('role, phone, first_name, last_name, email, status').eq('id', userId).maybeSingle();
-  if (!['admin', 'super_admin'].includes(profile?.role ?? '')) return { error: 'Admin access required', status: 403 };
+  const callerPhone = profile?.phone ? normalizeIndianMobile(profile.phone) : null;
+  const isAuthorized = callerPhone ? isAuthorizedAdminMobile(callerPhone) : false;
+
+  if (!['admin', 'super_admin'].includes(profile?.role ?? '') && !isAuthorized) {
+    return { error: 'Admin access required', status: 403 };
+  }
   if (profile?.status === 'suspended') return { error: 'This account has been suspended.', status: 403 };
+
+  // If profile is authorized by phone but not yet set to admin role, update it
+  if (isAuthorized && !['admin', 'super_admin'].includes(profile?.role ?? '')) {
+    await supabase.from('profiles').update({ role: 'admin', status: 'active' }).eq('id', userId);
+    if (profile) profile.role = 'admin';
+  }
 
   let { data: admin } = await supabase.from('admins').select('*').eq('id', userId).maybeSingle();
   if (!admin) {

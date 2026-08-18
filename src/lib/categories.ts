@@ -342,3 +342,92 @@ export function getCategoryMeta(raw?: string | null): CategoryMeta | null {
   const slug = normalizeCategorySlug(raw);
   return slug ? CANONICAL_CATEGORIES[slug] : null;
 }
+
+/**
+ * Categorizes a property record into one of the 8 canonical CategorySlugs
+ * matching the EXACT filtering logic used by buildPublishedQuery.
+ */
+export function categorizeProperty(property: {
+  property_type_name?: string | null;
+  property_type_category?: string | null;
+  purpose?: string | null;
+}): CategorySlug | null {
+  const name = (property.property_type_name || '').trim();
+  const cat = (property.property_type_category || '').trim();
+  const purp = (property.purpose || '').trim();
+
+  const lowerName = name.toLowerCase();
+  const lowerCat = cat.toLowerCase();
+  const lowerPurp = purp.toLowerCase();
+
+  // 1. Co-working / PG
+  if (
+    lowerPurp === 'pg' ||
+    lowerPurp === 'coliving' ||
+    lowerPurp === 'co-living' ||
+    lowerPurp === 'hostel' ||
+    /co-?working|pg|coliving|hostel|shared\s*office/.test(lowerName)
+  ) {
+    if (!/villa|plot|land|warehouse/.test(lowerName)) {
+      return 'co-working';
+    }
+  }
+
+  // 2. Plots & Land
+  if (
+    lowerCat === 'plot' ||
+    /plot|land/.test(lowerName)
+  ) {
+    if (!/apartment|flat|villa|house|office|shop|warehouse/.test(lowerName)) {
+      return 'plots';
+    }
+  }
+
+  // 3. Warehouse
+  if (/warehouse|godown|industrial\s*shed|cold\s*storage/.test(lowerName)) {
+    if (!/office|shop|apartment|flat|villa|plot|land/.test(lowerName)) {
+      return 'warehouse';
+    }
+  }
+
+  // 4. Retail Shop
+  if (/shop|retail|showroom|commercial\s*shop/.test(lowerName)) {
+    if (!/office|warehouse|apartment|flat|villa|plot|land/.test(lowerName)) {
+      return 'retail-shop';
+    }
+  }
+
+  // 5. Commercial Office
+  if (/office|commercial\s*space|it\s*park|business\s*center|commercial\s*office/.test(lowerName)) {
+    if (!/shop|retail|showroom|warehouse|apartment|flat|villa|plot|land/.test(lowerName)) {
+      return 'commercial-office';
+    }
+  }
+
+  // 6. Independent House
+  if (
+    /independent\s*house|row\s*house|individual\s*house/.test(lowerName) ||
+    (lowerName === 'house' && !/apartment|villa|shop|office/.test(lowerName))
+  ) {
+    if (!/villa|apartment|flat|plot|land|office|shop|warehouse/.test(lowerName)) {
+      return 'independent-house';
+    }
+  }
+
+  // 7. Villa
+  if (/villa|bungalow|duplex/.test(lowerName)) {
+    if (!/apartment|flat|independent\s*house|plot|land|office|shop|warehouse/.test(lowerName)) {
+      return 'villa';
+    }
+  }
+
+  // 8. Apartment
+  if (/apartment|flat|builder\s*floor|studio|penthouse/.test(lowerName)) {
+    if (!/villa|independent\s*house|individual\s*house|plot|land|office|shop|warehouse/.test(lowerName)) {
+      return 'apartment';
+    }
+  }
+
+  // Fallback using normalizer
+  return normalizeCategorySlug(name) || (lowerCat === 'plot' ? 'plots' : lowerCat === 'commercial' ? 'commercial-office' : null);
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useLayoutEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, LogOut, Home, Globe } from 'lucide-react';
@@ -14,6 +14,8 @@ export interface NavSection {
   heading?: string;
   items: { to: string; label: string; icon: React.ComponentType<{ className?: string }>; end?: boolean }[];
 }
+
+let savedSidebarScrollTop = 0;
 
 export function DashboardLayout({
   children,
@@ -32,6 +34,13 @@ export function DashboardLayout({
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [langModalOpen, setLangModalOpen] = useState(false);
+  const desktopNavRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    if (desktopNavRef.current && savedSidebarScrollTop > 0) {
+      desktopNavRef.current.scrollTop = savedSidebarScrollTop;
+    }
+  }, [location.pathname]);
 
   const isActive = (to: string, end?: boolean) => (end ? location.pathname === to : location.pathname.startsWith(to));
 
@@ -42,7 +51,13 @@ export function DashboardLayout({
         <div className="flex h-16 items-center gap-2 border-b border-navy-100 px-5">
           <Logo to="/" size={160} />
         </div>
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <nav
+          ref={desktopNavRef}
+          onScroll={(e) => {
+            savedSidebarScrollTop = e.currentTarget.scrollTop;
+          }}
+          className="flex-1 overflow-y-auto px-3 py-4"
+        >
           {sections.map((section, i) => (
             <div key={i} className="mb-4">
               {section.heading && (
@@ -142,38 +157,42 @@ export function DashboardLayout({
               {badge && <span className="badge bg-gold-100 text-gold-700">{badge}</span>}
             </h1>
           </div>
-          <button
-            onClick={() => setLangModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-red-500 bg-white hover:bg-red-50/50 text-slate-800 font-bold text-xs transition-all shadow-sm cursor-pointer"
-            title={t('common.selectLanguage', 'Select Language')}
-          >
-            <Globe className="h-4 w-4 text-red-600" />
-            <span className="hidden sm:inline">{currentLanguage.nativeName}</span>
-            <span className="sm:hidden uppercase font-mono">{currentLanguage.code}</span>
-          </button>
-          <Link
-            to="/"
-            className="hidden sm:grid place-items-center rounded-lg p-2 text-navy-500 hover:bg-navy-50"
-            aria-label="Home"
-          >
-            <Home className="h-5 w-5" />
-          </Link>
-          <NotificationBell />
-          <Link
-            to={
-              profile?.role === 'admin'
-                ? '/admin/settings'
-                : profile?.role === 'agent'
-                  ? '/agent/settings'
-                  : '/portal/settings'
-            }
-          >
-            <Avatar
-              name={`${profile?.first_name ?? ''} ${profile?.last_name ?? ''}`.trim() || (profile?.email ?? 'U')}
-              src={profile?.avatar_url}
-              size={34}
-            />
-          </Link>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              onClick={() => setLangModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-red-500 bg-white hover:bg-red-50/50 text-slate-800 font-bold text-xs transition-all shadow-xs cursor-pointer"
+              title={t('common.selectLanguage', 'Select Language')}
+            >
+              <Globe className="h-4 w-4 text-red-600" />
+              <span className="hidden sm:inline">{currentLanguage.nativeName}</span>
+              <span className="sm:hidden uppercase font-mono">{currentLanguage.code}</span>
+            </button>
+            <Link
+              to="/"
+              className="hidden sm:grid place-items-center rounded-xl p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 transition-colors"
+              aria-label="Home"
+            >
+              <Home className="h-5 w-5" />
+            </Link>
+            <NotificationBell />
+            <Link
+              to={
+                profile?.role === 'admin'
+                  ? '/admin/settings'
+                  : profile?.role === 'agent'
+                    ? '/agent/settings'
+                    : '/portal/settings'
+              }
+              className="flex items-center justify-center rounded-full p-0.5 ring-2 ring-slate-100 hover:ring-red-300 transition-all ml-0.5"
+              aria-label="Settings & Profile"
+            >
+              <Avatar
+                name={`${profile?.first_name ?? ''} ${profile?.last_name ?? ''}`.trim() || (profile?.email ?? 'U')}
+                src={profile?.avatar_url}
+                size={34}
+              />
+            </Link>
+          </div>
         </header>
 
         <LanguageSelectorModal isOpen={langModalOpen} onClose={() => setLangModalOpen(false)} />

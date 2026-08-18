@@ -32,6 +32,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeIndianMobile } from "../_shared/phone.ts";
+import { isAuthorizedAdminMobile } from "../_shared/admin-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -135,17 +136,62 @@ serve(async (req) => {
     if ("error" in verified) return error(verified.error, verified.status);
     const { mobile } = verified;
 
-    // Find an existing profile by phone (service role — bypasses RLS).
+    // Find an existing profile by phone (check variations: 91XXXXXXXXXX, +91XXXXXXXXXX, XXXXXXXXXX).
+    const phoneVariations = [mobile, `+${mobile}`, mobile.replace(/^91/, '')];
     const { data: existingProfile } = await admin
       .from("profiles")
-      .select("id, role, status")
-      .eq("phone", mobile)
+      .select("id, role, status, phone")
+      .in("phone", phoneVariations)
       .maybeSingle();
 
     let userId = existingProfile?.id as string | undefined;
     let isNewUser = false;
+    const isAuthorizedAdmin = isAuthorizedAdminMobile(mobile);
 
-    if (PROFESSIONAL_INTENTS.includes(intent as ProfessionalIntent)) {
+    if (isAuthorizedAdmin) {
+      // Authorized Admin phone (Manager or Developer):
+      if (!userId) {
+        const tempPassword = randomPassword();
+        const { data: created, error: createErr } = await admin.auth.admin.createUser({
+          phone: mobile,
+          phone_confirm: true,
+          password: tempPassword,
+          user_metadata: { role: "admin" },
+        });
+        if (createErr || !created?.user) {
+          return error(createErr?.message ?? "Could not create admin account", 500);
+        }
+        userId = created.user.id;
+        isNewUser = true;
+      }
+
+      // Ensure profile role is 'admin' and status is 'active'
+      await admin
+        .from("profiles")
+        .update({
+          role: "admin",
+          status: "active",
+          phone: mobile,
+          is_mobile_verified: true,
+          otp_verified_at: new Date().toISOString(),
+          last_login: new Date().toISOString(),
+        })
+        .eq("id", userId);
+
+      // Ensure corresponding row in admins table
+      await admin
+        .from("admins")
+        .upsert(
+          {
+            id: userId,
+            mobile,
+            role: "admin",
+            status: "active",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+    } else if (PROFESSIONAL_INTENTS.includes(intent as ProfessionalIntent)) {
       const professionalIntent = intent as ProfessionalIntent;
       // Agent / Builder / Partner tabs: never auto-create, and the
       // account's actual role must exactly match the selected tab — no more
@@ -298,15 +344,20 @@ serve(async (req) => {
     const mobile = rawMobile ? normalizeIndianMobile(rawMobile) : null;
     if (!mobile) return json({ authorized: false });
 
+    // 1. Check centralized list (Manager + Developer 9963509329 + env vars)
+    const isAuthorized = isAuthorizedAdminMobile(mobile);
+
+    // 2. Check if an active admin profile already exists in DB
+    const phoneVariations = [mobile, `+${mobile}`, mobile.replace(/^91/, '')];
     const { data: adminProfile } = await admin
       .from("profiles")
       .select("id")
-      .eq("phone", mobile)
+      .in("phone", phoneVariations)
       .in("role", ["admin", "super_admin"])
       .eq("status", "active")
       .maybeSingle();
 
-    return json({ authorized: !!adminProfile });
+    return json({ authorized: isAuthorized || !!adminProfile });
   }
 
   // ─── ACTION: request-agent-access ──────────────────────────────

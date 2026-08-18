@@ -386,7 +386,7 @@ export function ProfileSetupPage() {
                     id="skip-kyc"
                     checked={skipKyc}
                     onChange={(e) => setSkipKyc(e.target.checked)}
-                    className="h-4 w-4 rounded border-navy-300 text-gold-500 focus:ring-gold-400"
+                    className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                   />
                   <label htmlFor="skip-kyc" className="text-sm text-navy-700 cursor-pointer">
                     Skip KYC for now — I'll do this later from my profile settings

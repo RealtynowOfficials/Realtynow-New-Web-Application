@@ -7,6 +7,11 @@ import { formatPrice } from '../../lib/utils';
 import { useToast } from '../../hooks/useToast';
 import { logPropertyShare, SharePlatform } from '../../lib/shares';
 import { QRShareCard } from './qr-share-card';
+import {
+  getPropertyPublicUrl,
+  buildWhatsAppPropertyShareMessage,
+  PropertyShareInput,
+} from '../../lib/share-service';
 
 // Custom icons for platforms (using simple SVG paths for zero dependencies)
 const Icons = {
@@ -32,6 +37,9 @@ export interface SharePropertyModalProps {
     description?: string;
     imageUrl?: string;
     slug?: string;
+    bedrooms?: number | string;
+    bathrooms?: number | string;
+    area?: number | string;
   };
 }
 
@@ -41,9 +49,20 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
   const [downloading, setDownloading] = useState(false);
   const qrRef = useRef<HTMLDivElement>(null);
   
-  // Base URL for the property
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://realtynow.in';
-  const propertyUrl = `${baseUrl}/property/${property.slug || property.id}`;
+  const propInput: PropertyShareInput = {
+    id: property.id,
+    title: property.title,
+    price: property.price,
+    purpose: property.purpose,
+    locality: property.location,
+    slug: property.slug,
+    bedrooms: property.bedrooms,
+    bathrooms: property.bathrooms,
+    area: property.area,
+  };
+
+  const propertyUrl = getPropertyPublicUrl(propInput);
+  const shareText = buildWhatsAppPropertyShareMessage(propInput);
 
   // Reset copied state when modal opens
   useEffect(() => {
@@ -58,7 +77,7 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
     try {
       await navigator.clipboard.writeText(propertyUrl);
       setCopied(true);
-      toast.addToast('success', 'Link copied to clipboard!');
+      toast.addToast('success', 'Public property link copied to clipboard!');
       logPropertyShare(property.id, 'Copy Link');
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -71,7 +90,7 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
       try {
         await navigator.share({
           title: property.title,
-          text: `Check out this property on RealtyNow: ${property.title}`,
+          text: shareText,
           url: propertyUrl,
         });
         logPropertyShare(property.id, 'Native Share');
@@ -111,8 +130,6 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
 
   // --- Social Platform Actions --- //
 
-  const shareText = `🏡 Check out this property on RealtyNow\n\n${property.title}\nPrice: ${typeof property.price === 'number' ? formatPrice(property.price) : property.price}\nLocation: ${property.location}\n\nView Property:\n${propertyUrl}`;
-
   const handlePlatformShare = (platform: SharePlatform) => {
     let url = '';
     
@@ -124,7 +141,7 @@ export function SharePropertyModal({ isOpen, onClose, property }: SharePropertyM
         url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(propertyUrl)}`;
         break;
       case 'X':
-        url = `https://twitter.com/intent/tweet?text=${encodeURIComponent('Check out this property on RealtyNow!')}&url=${encodeURIComponent(propertyUrl)}`;
+        url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`🏡 Check out this property on @RealtyNow: ${property.title}`)}&url=${encodeURIComponent(propertyUrl)}`;
         break;
       case 'LinkedIn':
         url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(propertyUrl)}`;

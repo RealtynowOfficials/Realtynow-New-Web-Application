@@ -365,9 +365,24 @@ export function FaqPage() {
                   <p className="font-semibold text-navy-900">{f.question}</p>
                   <ChevronRight className={cn('h-4 w-4 text-navy-400 transition', openId === f.id && 'rotate-90')} />
                 </button>
-                {openId === f.id && <div className="px-5 pb-5 text-sm text-navy-600">{f.answer}</div>}
+                {openId === f.id && <div className="px-5 pb-5 text-sm text-navy-600 leading-relaxed">{f.answer}</div>}
               </Card>
             ))}
+      </div>
+
+      <div className="mt-10 rounded-2xl bg-slate-900 p-6 sm:p-8 text-white flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <h3 className="font-display font-bold text-lg text-white">Can't find what you're looking for?</h3>
+          <p className="text-xs sm:text-sm text-slate-300 mt-1">
+            Access our Customer Support Hub to raise tracked support tickets, chat with our team, or report issues.
+          </p>
+        </div>
+        <a
+          href="/portal/help"
+          className="rounded-xl bg-red-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-700 transition shrink-0"
+        >
+          Visit Support Desk
+        </a>
       </div>
     </div>
   );

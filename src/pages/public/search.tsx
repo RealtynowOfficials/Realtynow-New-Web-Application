@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, Link, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,15 +43,23 @@ import {
   Rows3,
   AlertTriangle,
 } from 'lucide-react';
-import { type PropertyFilters, fetchPublishedProperties, sanitizeSearchQuery } from '../../lib/properties';
+import { type PropertyFilters, fetchPublishedProperties, sanitizeSearchQuery, normalizeSearchQuery } from '../../lib/properties';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../components/toast';
-import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
+import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { sharePropertyNativeOrCopy } from '../../lib/share-service';
 import type { Property } from '../../lib/types';
 import { getCategoryMeta, normalizeCategorySlug } from '../../lib/categories';
+import { ContactAgentModal } from '../../components/contact-agent-modal';
+import { BookVisitModal } from '../../components/book-visit-modal';
 
+import { LocationCategoryDiscovery } from '../../components/location-category-discovery';
+import { parsePropertySearchQuery, fetchLocationCategoryDiscovery, fetchSearchCategoryCounts, type LocationDiscoveryResult } from '../../lib/search-engine';
+import type { CategorySlug } from '../../lib/categories';
+import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { AdvancedFilters } from '../../components/advanced-filters';
 import { useSEO } from '../../hooks/use-seo';
 import { PostPropertyLink } from '../../components/post-property-link';
@@ -94,10 +102,13 @@ interface HorizontalCardProps {
 
 function HorizontalCard({ property: p, onSave, onCompare, saved = false, compared = false, isAiRecommended = false }: HorizontalCardProps) {
   const { t } = useLanguageContext();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const [activeImg, setActiveImg] = useState(0);
   const [imgHovered, setImgHovered] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [visitModalOpen, setVisitModalOpen] = useState(false);
 
   let parsedImages = p.images;
   if (typeof parsedImages === 'string') {
@@ -148,292 +159,349 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
     { label: 'Hospital 1.2km', icon: '🏥' },
   ];
 
-  const handleContact = (e: React.MouseEvent) => {
+  const handleWhatsAppClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate(generatePropertyUrl(p));
+
+    const agentId = p.assigned_agent_id || (p as any).owner_id;
+    if (!agentId) {
+      const defaultMsg = `Hi, I'm interested in "${p.title}" in ${p.locality_name ?? p.city_name ?? 'Hyderabad'} listed on RealtyNow. Please share more details.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(defaultMsg)}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      const { data: agentProfile } = await supabase
+        .from('profiles')
+        .select('phone, phone_number, whatsapp_number')
+        .eq('id', agentId)
+        .maybeSingle();
+
+      const targetPhone = agentProfile?.whatsapp_number || agentProfile?.phone_number || agentProfile?.phone;
+      if (!targetPhone) {
+        const defaultMsg = `Hi, I'm interested in "${p.title}" in ${p.locality_name ?? p.city_name ?? 'Hyderabad'} listed on RealtyNow. Please share more details.`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(defaultMsg)}`, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const waUrl = buildWhatsAppUrl(targetPhone, p.title);
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      const defaultMsg = `Hi, I'm interested in "${p.title}" in ${p.locality_name ?? p.city_name ?? 'Hyderabad'} listed on RealtyNow. Please share more details.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(defaultMsg)}`, '_blank', 'noopener,noreferrer');
+    }
   };
 
   return (
-    <motion.article
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-      whileHover={{ y: -2 }}
-      className="group relative flex flex-col sm:flex-row bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200 transition-all duration-300 cursor-pointer"
-      onClick={() => navigate(generatePropertyUrl(p))}
-    >
-      {/* ── LEFT: IMAGE GALLERY ── */}
-      <div
-        className="relative w-full sm:w-[40%] shrink-0 overflow-hidden aspect-[4/3] sm:aspect-auto"
-        onMouseEnter={() => setImgHovered(true)}
-        onMouseLeave={() => setImgHovered(false)}
+    <>
+      <motion.article
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        whileHover={{ y: -2 }}
+        className="group relative flex flex-col sm:flex-row bg-white rounded-[18px] overflow-hidden border border-[#E7EAF0] shadow-[0_4px_20px_rgba(15,23,42,0.07)] hover:shadow-[0_10px_30px_rgba(15,23,42,0.11)] transition-all duration-200 ease-out cursor-pointer mb-6"
+        onClick={() => navigate(generatePropertyUrl(p))}
       >
-        <img
-          src={images[activeImg]}
-          alt={p.title}
-          className={cn('h-full w-full object-cover transition-transform duration-500', imgHovered ? 'scale-110' : 'scale-100')}
-          loading="lazy"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/5" />
+        {/* ── LEFT: IMAGE GALLERY ── */}
+        <div
+          className="relative w-full sm:w-[40%] shrink-0 overflow-hidden aspect-[4/3] sm:aspect-auto min-h-[220px]"
+          onMouseEnter={() => setImgHovered(true)}
+          onMouseLeave={() => setImgHovered(false)}
+        >
+          <img
+            src={images[activeImg]}
+            alt={p.title}
+            className={cn('h-full w-full object-cover transition-transform duration-500', imgHovered ? 'scale-105' : 'scale-100')}
+            loading="lazy"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 pointer-events-none" />
 
-        {/* Badges — purpose + at most one highlight */}
-        <div className="absolute top-3 left-3 flex gap-1.5 z-10">
-          {p.purpose && (
-            <span
+          {/* Badges — purpose + at most one highlight */}
+          <div className="absolute top-3 left-3 flex gap-1.5 z-10">
+            {p.purpose && (
+              <span
+                className={cn(
+                  'text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm',
+                  p.purpose === 'Rent' ? 'bg-blue-600 text-white' : 'bg-[#d8232a] text-white',
+                )}
+              >
+                {p.purpose === 'Rent' ? t('property.forRent', 'FOR RENT') : t('property.forSale', 'FOR SALE')}
+              </span>
+            )}
+            {highlightBadge && (
+              <span className={cn('text-[10px] font-extrabold px-2.5 py-0.5 rounded-full text-white shadow-sm uppercase tracking-wider', highlightBadge.className)}>
+                {highlightBadge.label}
+              </span>
+            )}
+          </div>
+
+          {/* Save, Compare + Share */}
+          <div className="absolute top-3 right-3 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                sharePropertyNativeOrCopy(p, () => {
+                  addToast('success', 'Public property link copied to clipboard!');
+                });
+              }}
+              title="Share Property"
+              className="grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110 text-slate-600 hover:text-slate-900"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCompare?.(p.id);
+              }}
+              title={t('property.addToCompare', 'Compare')}
               className={cn(
-                'text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide shadow',
-                p.purpose === 'Rent' ? 'bg-blue-600 text-white' : 'bg-red-600 text-white',
+                'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
+                compared ? 'text-blue-600' : 'text-slate-600',
               )}
             >
-              {p.purpose === 'Rent' ? t('property.forRent', 'For Rent') : t('property.forSale', 'For Sale')}
-            </span>
-          )}
-          {highlightBadge && (
-            <span className={cn('text-[10px] font-extrabold px-2 py-0.5 rounded-full text-white shadow uppercase', highlightBadge.className)}>
-              {highlightBadge.label}
-            </span>
-          )}
-        </div>
-
-        {/* Save, Compare + Share */}
-        <div className="absolute top-3 right-3 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              navigator.share?.({ title: p.title, url: window.location.origin + generatePropertyUrl(p) })
-                .catch(() => navigator.clipboard.writeText(window.location.origin + generatePropertyUrl(p)));
-            }}
-            title="Share"
-            className="grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110 text-slate-500 hover:text-slate-900"
-          >
-            <Share2 className="h-4 w-4" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onCompare?.(p.id);
-            }}
-            title={t('property.addToCompare', 'Compare')}
-            className={cn(
-              'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
-              compared ? 'text-blue-600' : 'text-slate-500',
-            )}
-          >
-            <GitCompare className="h-4 w-4" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSave?.(p.id);
-            }}
-            title={t('property.saveProperty', 'Save')}
-            className={cn(
-              'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
-              saved ? 'text-red-600' : 'text-slate-500',
-            )}
-          >
-            <Heart className={cn('h-4 w-4', saved && 'fill-red-600')} />
-          </button>
-        </div>
-
-        {/* Gallery dots + count */}
-        {images.length > 1 && (
-          <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-1 z-10">
-            {images.slice(0, 5).map((_, i) => (
-              <button
-                key={i}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveImg(i);
-                }}
-                className={cn('h-1.5 rounded-full transition-all', activeImg === i ? 'w-5 bg-white' : 'w-1.5 bg-white/50')}
-              />
-            ))}
+              <GitCompare className="h-4 w-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSave?.(p.id);
+              }}
+              title={t('property.saveProperty', 'Save')}
+              className={cn(
+                'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
+                saved ? 'text-[#d8232a]' : 'text-slate-600',
+              )}
+            >
+              <Heart className={cn('h-4 w-4', saved && 'fill-[#d8232a] text-[#d8232a]')} />
+            </button>
           </div>
-        )}
-        <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-          <Camera className="h-2.5 w-2.5" /> {images.length}
-        </div>
-      </div>
 
-      {/* ── RIGHT: PROPERTY DETAILS ── */}
-      <div className="flex flex-1 flex-col p-4 sm:p-5 min-w-0">
-        {isAiRecommended && (
-          <div className="mb-2 flex items-center gap-1.5 w-fit rounded-full bg-gradient-to-r from-purple-50 to-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-purple-700 border border-purple-100 shadow-sm" title="Recommended by our AI based on your search patterns and property quality">
-            <Sparkles className="h-3 w-3 text-purple-500" /> AI Recommended
-          </div>
-        )}
-        {/* Title + Price */}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 truncate leading-tight">{p.title}</h2>
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-              <MapPin className="h-3 w-3 text-red-500 shrink-0" />
-              <span className="truncate">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
+          {/* Gallery dots + count */}
+          {images.length > 1 && (
+            <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-1 z-10">
+              {images.slice(0, 5).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveImg(i);
+                  }}
+                  className={cn('h-1.5 rounded-full transition-all', activeImg === i ? 'w-5 bg-white' : 'w-1.5 bg-white/50')}
+                />
+              ))}
             </div>
-            {p.property_type_name && (
-              <span className="mt-1.5 inline-block text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                {p.property_type_name}
-              </span>
-            )}
-          </div>
-          <div className="text-right shrink-0">
-            <p className="font-display text-xl sm:text-2xl font-extrabold text-slate-900">{formatCompactPrice(getPropertyPrice(p), p.purpose)}</p>
-            {pricePerSqft && <p className="text-[11px] text-slate-500 mt-0.5">₹{formatNumber(pricePerSqft)}/sq.ft</p>}
+          )}
+          <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+            <Camera className="h-3 w-3" /> {images.length}
           </div>
         </div>
 
-        {/* Key specs — one line */}
-        {specs.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-            {specs.map((s) => (
-              <div key={s.key} className="flex items-center gap-1 text-sm text-slate-700">
-                <s.icon className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                <span className="font-semibold">{s.val}</span>
+        {/* ── RIGHT: PROPERTY DETAILS ── */}
+        <div className="flex flex-1 flex-col p-4 sm:p-5.5 min-w-0">
+          {isAiRecommended && (
+            <div className="mb-2 flex items-center gap-1.5 w-fit rounded-full bg-gradient-to-r from-purple-50 to-fuchsia-50 px-2.5 py-0.5 text-[11px] font-bold text-purple-700 border border-purple-100 shadow-sm">
+              <Sparkles className="h-3 w-3 text-purple-500" /> AI Recommended
+            </div>
+          )}
+
+          {/* Title + Price */}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-display text-base sm:text-lg font-bold text-[#172033] truncate leading-tight group-hover:text-[#d8232a] transition-colors">
+                {p.title}
+              </h2>
+              <div className="mt-1 flex items-center gap-1 text-xs text-[#667085]">
+                <MapPin className="h-3.5 w-3.5 text-[#d8232a] shrink-0" />
+                <span className="truncate">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
               </div>
-            ))}
+              {p.property_type_name && (
+                <span className="mt-1.5 inline-block text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                  {p.property_type_name}
+                </span>
+              )}
+            </div>
+            <div className="text-right shrink-0">
+              <p className="font-display text-xl sm:text-2xl font-extrabold text-[#172033]">
+                {formatCompactPrice(getPropertyPrice(p), p.purpose)}
+              </p>
+              {pricePerSqft && <p className="text-[11px] text-[#667085] mt-0.5 font-medium">₹{formatNumber(pricePerSqft)}/sq.ft</p>}
+            </div>
           </div>
-        )}
 
-        {/* Nearby places — one compact row, icons only */}
-        <div className="mt-2.5 flex items-center gap-3 text-[11px] text-slate-500">
-          {nearby.map((n, i) => (
-            <span key={n.label} className="flex items-center gap-1 whitespace-nowrap">
-              {i > 0 && <span className="text-slate-200">·</span>}
-              <span>{n.icon}</span> {n.label}
-            </span>
-          ))}
-        </div>
+          {/* Key specs */}
+          {specs.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+              {specs.map((s) => (
+                <div key={s.key} className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+                  <s.icon className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>{s.val}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {/* Amenities — max 4 + more */}
-        {topAmenities.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            {topAmenities.map((a) => (
-              <span
-                key={a}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700"
-              >
-                {amenityIcons[a] ?? '✓'} {a}
+          {/* Nearby places */}
+          <div className="mt-2.5 flex items-center gap-3 text-[11px] text-[#667085]">
+            {nearby.map((n, i) => (
+              <span key={n.label} className="flex items-center gap-1 whitespace-nowrap">
+                {i > 0 && <span className="text-slate-300">·</span>}
+                <span>{n.icon}</span> {n.label}
               </span>
             ))}
-            {extraAmenityCount > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowMore(true);
-                }}
-                className="text-[11px] font-semibold text-red-600 hover:underline px-1"
-              >
-                +{extraAmenityCount} More
-              </button>
-            )}
           </div>
-        )}
 
-        {/* More Details — expandable */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowMore((v) => !v);
-          }}
-          className="mt-2.5 flex items-center gap-1 self-start text-[11px] font-bold text-slate-500 hover:text-red-600 transition-colors"
-        >
-          {showMore ? t('common.lessDetails', 'Less Details') : t('common.moreDetails', 'More Details')}
-          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showMore && 'rotate-180')} />
-        </button>
+          {/* Amenities & Feature Badges */}
+          {topAmenities.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              {topAmenities.map((a) => (
+                <span
+                  key={a}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50/70 px-2.5 py-0.5 text-[11px] font-medium text-slate-700"
+                >
+                  <span className="text-emerald-600">✓</span> {a}
+                </span>
+              ))}
+              {extraAmenityCount > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMore(true);
+                  }}
+                  className="text-[11px] font-bold text-[#d8232a] hover:underline px-1"
+                >
+                  +{extraAmenityCount} More
+                </button>
+              )}
+            </div>
+          )}
 
-        <AnimatePresence>
-          {showMore && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+          {/* More Details Toggle */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMore((v) => !v);
+            }}
+            className="mt-2.5 flex items-center gap-1 self-start text-[11px] font-bold text-slate-500 hover:text-[#d8232a] transition-colors"
+          >
+            <span>{showMore ? t('common.lessDetails', 'Less Details') : t('common.moreDetails', 'More Details')}</span>
+            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showMore && 'rotate-180')} />
+          </button>
+
+          <AnimatePresence>
+            {showMore && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5">
+                  <div className="flex items-center gap-1 text-xs text-slate-600 font-medium">
+                    <span className="text-slate-400">ID:</span> RN-{p.id.slice(0, 7).toUpperCase()}
+                  </div>
+                  {p.floor_number != null && (
+                    <div className="flex items-center gap-1 text-xs text-slate-600">
+                      <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                      Floor {p.floor_number}
+                      {p.total_floors ? `/${p.total_floors}` : ''}
+                    </div>
+                  )}
+                  {p.facing && (
+                    <div className="flex items-center gap-1 text-xs text-slate-600">
+                      <Navigation className="h-3.5 w-3.5 text-slate-400" /> {p.facing} facing
+                    </div>
+                  )}
+                  {(p as any).possession_status && (
+                    <div className="flex items-center gap-1 text-xs text-slate-600">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" /> {(p as any).possession_status}
+                    </div>
+                  )}
+                  {(p as any).is_verified && (
+                    <div className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> {t('common.verified', 'Verified')}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                    <TrendingUp className="h-3 w-3" /> Invest {investScore}%
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+                    <BarChart3 className="h-3 w-3" /> Rental Yield {(2.5 + Math.random() * 2).toFixed(1)}%
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
+                    <Zap className="h-3 w-3" /> High Demand
+                  </span>
+                  {p.amenities && p.amenities.length > 4 && (
+                    <div className="mt-1 flex w-full flex-wrap gap-1.5">
+                      {p.amenities.slice(4).map((a) => (
+                        <span
+                          key={a}
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                        >
+                          <span className="text-emerald-600">✓</span> {a}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Updated date */}
+          <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[#667085]">
+            <Clock className="h-3 w-3 text-slate-400" />
+            <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
+          </div>
+
+          {/* CTA row — 4 full action buttons */}
+          <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setContactModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-[#d8232a] hover:bg-[#b81d23] px-2.5 py-2.5 text-xs font-bold text-white transition-all shadow-sm cursor-pointer"
+            >
+              <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('property.contactAgent', 'Contact Agent')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleWhatsAppClick}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-2.5 py-2.5 text-xs font-bold text-white transition-all shadow-sm cursor-pointer"
+            >
+              <MessageCircle className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">WhatsApp</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setVisitModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 hover:border-[#d8232a]/40 bg-white hover:bg-red-50/40 px-2.5 py-2.5 text-xs font-bold text-slate-700 hover:text-[#d8232a] transition-all cursor-pointer"
+            >
+              <Calendar className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('property.bookVisit', 'Book a Visit')}</span>
+            </button>
+            <Link
+              to={generatePropertyUrl(p)}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-2.5 py-2.5 text-xs font-bold text-[#d8232a] transition-all text-center"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5">
-                {p.floor_number != null && (
-                  <div className="flex items-center gap-1 text-xs text-slate-600">
-                    <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                    Floor {p.floor_number}
-                    {p.total_floors ? `/${p.total_floors}` : ''}
-                  </div>
-                )}
-                {p.facing && (
-                  <div className="flex items-center gap-1 text-xs text-slate-600">
-                    <Navigation className="h-3.5 w-3.5 text-slate-400" /> {p.facing} facing
-                  </div>
-                )}
-                {(p as any).is_verified && (
-                  <div className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {t('common.verified', 'Verified')}
-                  </div>
-                )}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                  <TrendingUp className="h-3 w-3" /> Invest {investScore}%
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">
-                  <BarChart3 className="h-3 w-3" /> Rental Yield {(2.5 + Math.random() * 2).toFixed(1)}%
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
-                  <Zap className="h-3 w-3" /> High Demand
-                </span>
-                {p.amenities && p.amenities.length > 4 && (
-                  <div className="mt-1 flex w-full flex-wrap gap-1.5">
-                    {p.amenities.slice(4).map((a) => (
-                      <span
-                        key={a}
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                      >
-                        {amenityIcons[a] ?? '✓'} {a}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Updated date */}
-        <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400">
-          <Clock className="h-3 w-3" />
-          <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
+              <Eye className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('common.viewDetails', 'View Details')}</span>
+            </Link>
+          </div>
         </div>
+      </motion.article>
 
-        {/* CTA row — 4 equal-width buttons, no scrolling */}
-        <div className="mt-3 grid grid-cols-4 gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={handleContact}
-            className="flex items-center justify-center gap-1 rounded-xl bg-red-600 hover:bg-red-700 px-2 py-2 text-[11px] font-bold text-white transition-all shadow-sm shadow-red-600/30"
-          >
-            <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('property.contactAgent', 'Contact')}</span>
-          </button>
-          <button
-            onClick={handleContact}
-            className="flex items-center justify-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-2 py-2 text-[11px] font-bold text-white transition-all shadow-sm shadow-emerald-600/30"
-          >
-            <MessageCircle className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">WhatsApp</span>
-          </button>
-          <button
-            onClick={handleContact}
-            className="flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-700 transition-all"
-          >
-            <Calendar className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('property.bookVisit', 'Visit')}</span>
-          </button>
-          <Link
-            to={generatePropertyUrl(p)}
-            className="flex items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-2 text-[11px] font-bold text-red-600 transition-all"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Eye className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t('common.viewDetails', 'Details')}</span>
-          </Link>
-        </div>
-      </div>
-    </motion.article>
+      <ContactAgentModal property={p as any} isOpen={contactModalOpen} onClose={() => setContactModalOpen(false)} />
+      <BookVisitModal property={p as any} isOpen={visitModalOpen} onClose={() => setVisitModalOpen(false)} />
+    </>
   );
 }
 
@@ -457,17 +525,9 @@ function GridCard({
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}${generatePropertyUrl(p)}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: p.title, url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      addToast('success', 'Link copied to clipboard');
-    } catch {
-      /* user cancelled share sheet — no-op */
-    }
+    await sharePropertyNativeOrCopy(p, () => {
+      addToast('success', 'Public property link copied to clipboard!');
+    });
   };
 
   return (
@@ -819,7 +879,7 @@ function FilterSidebar({ params, setFilter, clearAll, activeCount, types, cities
                     value={v}
                     checked={params.get('furnishing') === v || (!params.get('furnishing') && !v)}
                     onChange={() => setFilter('furnishing', v)}
-                    className="text-red-600 border-slate-300 focus:ring-red-400"
+                    className="text-red-600 border-slate-300 focus:ring-red-400 accent-red-600 cursor-pointer"
                   />
                   {l}
                 </label>
@@ -835,7 +895,7 @@ function FilterSidebar({ params, setFilter, clearAll, activeCount, types, cities
               type="checkbox"
               checked={params.get('luxury') === '1'}
               onChange={(e) => setFilter('luxury', e.target.checked ? '1' : '')}
-              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-400"
+              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
             />
             ✨ {t('search.luxuryOnly', 'Luxury Properties Only')}
           </label>
@@ -844,7 +904,7 @@ function FilterSidebar({ params, setFilter, clearAll, activeCount, types, cities
               type="checkbox"
               checked={params.get('virtual_tour') === '1'}
               onChange={(e) => setFilter('virtual_tour', e.target.checked ? '1' : '')}
-              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-400"
+              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
             />
             <Camera className="h-3.5 w-3.5 text-emerald-600" /> {t('search.hasVirtualTour', '360° Virtual Tour')}
           </label>
@@ -914,6 +974,7 @@ export function SearchPage() {
     const next = new URLSearchParams(params);
     next.set('view', v);
     setParams(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   
   const sort = (params.get('sort') as SortOption) || 'newest';
@@ -921,12 +982,37 @@ export function SearchPage() {
     const next = new URLSearchParams(params);
     next.set('sort', s);
     setParams(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
+  const { data: dbFavoriteIds } = useFavorites(user?.id);
+  const [guestFavoriteIds, setGuestFavoriteIds] = useState<string[]>(getLocalFavoriteIds());
+
+  useEffect(() => {
+    if (!user) {
+      const handleSync = () => setGuestFavoriteIds(getLocalFavoriteIds());
+      window.addEventListener('realtynow-favorites-updated', handleSync);
+      return () => window.removeEventListener('realtynow-favorites-updated', handleSync);
+    }
+  }, [user]);
+
+  const currentFavoriteIds = useMemo(
+    () => new Set(user ? dbFavoriteIds || [] : guestFavoriteIds),
+    [user, dbFavoriteIds, guestFavoriteIds],
+  );
+
   const [comparedIds, setComparedIds] = useState<Set<string>>(new Set());
   const [isVoiceSearchInitiated, setIsVoiceSearchInitiated] = useState(false);
+  const [selectedMapPropertyId, setSelectedMapPropertyId] = useState<string | null>(null);
+  const [hoveredMapPropertyId, setHoveredMapPropertyId] = useState<string | null>(null);
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+
+  // ── Click-outside: close suggestions when user clicks anywhere outside the
+  // search container (input + dropdown). Uses the shared useClickOutside hook
+  // which also handles ESC and touchstart so mobile works too.
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  useClickOutside(searchContainerRef, () => setSuggestions([]), suggestions.length > 0);
 
   const { data: types } = useQuery({
     queryKey: ['ptypes-all'],
@@ -950,28 +1036,74 @@ export function SearchPage() {
     },
   });
 
-  const query = params.get('q') || '';
+  const rawQ = params.get('q') || '';
+  const parsedQueryIntent = useMemo(() => {
+    if (!rawQ) return null;
+    return parsePropertySearchQuery(rawQ);
+  }, [rawQ]);
 
-  const queryClient = useQueryClient();
+  const query = rawQ;
+
+  interface RichSuggestion {
+    id: string;
+    type: 'location' | 'property';
+    title: string;
+    locationName?: string;
+    cityName?: string;
+    categories?: { type: CategorySlug; label: string; emoji: string; count: number }[];
+  }
+
+  const [richSuggestions, setRichSuggestions] = useState<RichSuggestion[]>([]);
 
   const searchSuggestions = useCallback(async (q: string) => {
-    const cleaned = sanitizeSearchQuery(q);
+    const { normalized: cleaned } = normalizeSearchQuery(q);
     if (cleaned.length < 2) {
       setSuggestions([]);
+      setRichSuggestions([]);
       return;
     }
-    // Same canonical live condition and full search_text as main search
-    const { data } = await supabase
-      .from('v_properties_search')
-      .select('title')
-      .or('status.eq.published,status.eq.live,is_live.eq.true')
-      .ilike('search_text', `%${cleaned}%`)
-      .limit(6);
-    setSuggestions((data ?? []).map((p: { title: string }) => p.title));
-  }, []);
+
+    try {
+      // 1. Fetch matching properties from live search view
+      const { data: propData } = await supabase
+        .from('v_properties_search')
+        .select('title')
+        .or('status.eq.published,status.eq.live,is_live.eq.true')
+        .ilike('search_text', `%${cleaned}%`)
+        .limit(5);
+
+      const propTitles = (propData ?? []).map((p: { title: string }) => p.title);
+      setSuggestions(propTitles);
+
+      // 2. Check if the query matches a locality/city to provide instant location discovery
+      const locationMatches: RichSuggestion[] = [];
+      const matchingLocalities = (localities ?? [])
+        .filter((l) => l.name.toLowerCase().includes(cleaned.toLowerCase()))
+        .slice(0, 2);
+
+      for (const loc of matchingLocalities) {
+        const disc = await fetchLocationCategoryDiscovery(loc.name);
+        if (disc.categories.length > 0) {
+          const cName = cities?.find((c) => c.id === loc.city_id)?.name;
+          locationMatches.push({
+            id: `loc-${loc.id}`,
+            type: 'location',
+            title: cName ? `${loc.name}, ${cName}` : loc.name,
+            locationName: loc.name,
+            cityName: cName,
+            categories: disc.categories.slice(0, 4),
+          });
+        }
+      }
+
+      setRichSuggestions(locationMatches);
+    } catch {
+      // Fallback to simple title list
+    }
+  }, [localities, cities]);
 
   const activeCategorySlug = normalizeCategorySlug(
-    routeCategory || params.get('category') || params.get('type')
+    routeCategory || params.get('category') || params.get('type') || (parsedQueryIntent?.propertyType ?? undefined)
   );
   const activeCategoryMeta = useMemo(() => getCategoryMeta(activeCategorySlug), [activeCategorySlug]);
 
@@ -1015,13 +1147,13 @@ export function SearchPage() {
       q: params.get('q') || undefined,
       city_id: resolvedCityId,
       ...(resolvedLocalityId ? { locality_id: resolvedLocalityId } : {}),
-      purpose: params.get('purpose') || undefined,
+      purpose: params.get('purpose') || parsedQueryIntent?.purpose || undefined,
       category: activeCategorySlug || undefined,
       type: typeNameParam,
       property_type_id: resolvedTypeId,
-      min_price: parseNumberParam(params, 'min_price'),
-      max_price: parseNumberParam(params, 'max_price'),
-      bedrooms: parseNumberParam(params, 'bedrooms'),
+      min_price: parseNumberParam(params, 'min_price') ?? parsedQueryIntent?.minPrice ?? undefined,
+      max_price: parseNumberParam(params, 'max_price') ?? parsedQueryIntent?.maxPrice ?? undefined,
+      bedrooms: parseNumberParam(params, 'bedrooms') ?? parsedQueryIntent?.bedrooms ?? undefined,
       bathrooms: parseNumberParam(params, 'bathrooms'),
       min_area: parseNumberParam(params, 'min_area'),
       max_area: parseNumberParam(params, 'max_area'),
@@ -1034,7 +1166,72 @@ export function SearchPage() {
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE,
     };
-  }, [params, types, cities, localities, sort, page, activeCategorySlug]);
+  }, [params, types, cities, localities, sort, page, activeCategorySlug, parsedQueryIntent]);
+
+  // Target Location for Cross-Category Discovery
+  const targetLocation = useMemo(() => {
+    const loc = params.get('locality');
+    if (loc) return loc;
+    const city = params.get('city');
+    if (city) return city;
+    const locationParam = params.get('location');
+    if (locationParam) return locationParam;
+    if (filters.locality_id && localities) {
+      const l = localities.find((locItem) => locItem.id === filters.locality_id);
+      if (l) return l.name;
+    }
+    if (filters.city_id && cities) {
+      const c = cities.find((ct) => ct.id === filters.city_id);
+      if (c) return c.name;
+    }
+    if (parsedQueryIntent?.location && parsedQueryIntent.location.length >= 2) {
+      return parsedQueryIntent.location;
+    }
+    return undefined;
+  }, [params, filters.locality_id, filters.city_id, localities, cities, parsedQueryIntent]);
+
+  // Base non-category filters for live, synchronized category counts
+  const baseCategoryFilters: PropertyFilters = useMemo(() => {
+    return {
+      ...filters,
+      category: undefined,
+      type: undefined,
+      property_type_id: undefined,
+      limit: 5000,
+      offset: 0,
+    };
+  }, [filters]);
+
+  // Fetch Live Synced Category Discovery (grouped category counts strictly from real active inventory matching all non-category filters)
+  const { data: locationDiscovery } = useQuery({
+    queryKey: ['search-category-discovery-sync', baseCategoryFilters],
+    queryFn: () => fetchSearchCategoryCounts(baseCategoryFilters),
+  });
+
+  const categoryCountsMap = useMemo(() => {
+    if (!locationDiscovery?.categories) return undefined;
+    const map: Partial<Record<CategorySlug, number>> = {};
+    for (const cat of locationDiscovery.categories) {
+      map[cat.type] = cat.count;
+    }
+    return map;
+  }, [locationDiscovery]);
+
+  const handleCategorySelect = (catSlug: CategorySlug | null) => {
+    const next = new URLSearchParams(params);
+    if (catSlug) {
+      next.set('category', catSlug);
+      next.delete('type');
+      next.delete('type_id');
+    } else {
+      next.delete('category');
+      next.delete('type');
+      next.delete('type_id');
+    }
+    next.delete('page');
+    setParams(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Query canonical live properties
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
@@ -1051,6 +1248,8 @@ export function SearchPage() {
         { event: '*', schema: 'public', table: 'properties' },
         () => {
           queryClient.invalidateQueries({ queryKey: ['search'] });
+          queryClient.invalidateQueries({ queryKey: ['search-category-discovery-sync'] });
+          queryClient.invalidateQueries({ queryKey: ['location-category-discovery'] });
           queryClient.invalidateQueries({ queryKey: ['ptypes-all'] });
         }
       )
@@ -1067,6 +1266,9 @@ export function SearchPage() {
     else next.delete(key);
     next.delete('page');
     setParams(next);
+    if (key !== 'q') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   useEffect(() => {
@@ -1087,17 +1289,26 @@ export function SearchPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const clearAll = () => setParams(new URLSearchParams());
+  const clearAll = () => {
+    setParams(new URLSearchParams());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const activeCount = Array.from(params.keys()).filter((k) => !['q', 'page'].includes(k)).length;
   const totalPages = data?.count ? Math.ceil(data.count / PAGE_SIZE) : 1;
 
-  const toggleSave = (id: string) => {
-    setSavedIds((prev) => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-    addToast('success', savedIds.has(id) ? 'Removed from saved' : 'Saved!');
+  const toggleSave = async (id: string) => {
+    const isCurrentlySaved = currentFavoriteIds.has(id);
+    try {
+      const isNowSaved = await toggleFavoriteProperty(id, user?.id, isCurrentlySaved);
+      if (!user) {
+        setGuestFavoriteIds(getLocalFavoriteIds());
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['favorites', user.id] });
+      }
+      addToast('success', isNowSaved ? 'Saved to favorites' : 'Removed from saved');
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Could not update favorites');
+    }
   };
   const toggleCompare = (id: string) => {
     setComparedIds((prev) => {
@@ -1114,18 +1325,23 @@ export function SearchPage() {
     return params.get('city') || undefined;
   }, [filters.city_id, cities, params]);
 
+  const displayLocation = useMemo(() => {
+    return targetLocation || cityName || locationDiscovery?.city || locationDiscovery?.location || 'this location';
+  }, [targetLocation, cityName, locationDiscovery]);
+
   const pageTitle = useMemo(() => {
+    const locName = targetLocation || cityName;
     if (activeCategoryMeta) {
-      if (cityName) return `${activeCategoryMeta.pluralName} in ${cityName}`;
+      if (locName) return `${activeCategoryMeta.pluralName} in ${locName}`;
       if (filters.purpose === 'Rent') return `${activeCategoryMeta.pluralName} for Rent`;
       if (filters.purpose === 'Sale') return `${activeCategoryMeta.pluralName} for Sale`;
       return `${activeCategoryMeta.pluralName}`;
     }
-    if (cityName) return `Properties in ${cityName}`;
+    if (locName) return `Properties in ${locName}`;
     if (filters.purpose === 'Rent') return t('search.forRentTitle', 'Properties for Rent');
     if (filters.purpose === 'Sale') return t('search.forSaleTitle', 'Properties for Sale');
     return t('search.title', 'Search Properties');
-  }, [activeCategoryMeta, cityName, filters.purpose, t]);
+  }, [activeCategoryMeta, targetLocation, cityName, filters.purpose, t]);
 
   useSEO({
     title: `${pageTitle} | RealtyNow`,
@@ -1144,7 +1360,7 @@ export function SearchPage() {
         <div className="container-page py-3">
           <div className="flex flex-wrap items-center gap-3">
             {/* Search Input */}
-            <div className="relative flex-1 min-w-[200px] max-w-md">
+            <div ref={searchContainerRef} className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
@@ -1161,6 +1377,8 @@ export function SearchPage() {
                     onClick={() => {
                       setFilter('q', '');
                       setSuggestions([]);
+                      setRichSuggestions([]);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
                   >
@@ -1171,30 +1389,92 @@ export function SearchPage() {
                   onResult={(text) => {
                     setFilter('q', text);
                     setIsVoiceSearchInitiated(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="h-7 w-7 !p-0 rounded-lg"
                 />
               </div>
               <AnimatePresence>
-                {suggestions.length > 0 && (
+                {(suggestions.length > 0 || richSuggestions.length > 0) && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="absolute z-50 mt-1 w-full rounded-xl border border-slate-100 bg-white shadow-xl overflow-hidden"
+                    className="absolute z-50 mt-1 w-full rounded-2xl border border-slate-100 bg-white shadow-2xl overflow-hidden divide-y divide-slate-100 max-h-[380px] overflow-y-auto"
                   >
-                    {suggestions.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          setFilter('q', s);
-                          setSuggestions([]);
-                        }}
-                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm hover:bg-red-50 hover:text-red-700 transition"
-                      >
-                        <Search className="h-3.5 w-3.5 text-slate-400" /> {s}
-                      </button>
-                    ))}
+                    {/* Location Discovery Suggestions */}
+                    {richSuggestions.length > 0 && (
+                      <div className="p-2 bg-slate-50/70">
+                        <div className="px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                          Locations & Availability
+                        </div>
+                        {richSuggestions.map((loc) => (
+                          <div key={loc.id} className="p-2 rounded-xl bg-white border border-slate-100 shadow-sm mb-1.5 last:mb-0">
+                            <button
+                              onClick={() => {
+                                setFilter('q', loc.locationName || loc.title);
+                                setSuggestions([]);
+                                setRichSuggestions([]);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
+                              className="flex items-center gap-1.5 text-xs font-bold text-slate-800 hover:text-red-600 transition w-full text-left"
+                            >
+                              <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                              <span>{loc.title}</span>
+                            </button>
+                            {loc.categories && loc.categories.length > 0 && (
+                              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                                {loc.categories.map((cat) => (
+                                  <button
+                                    key={cat.type}
+                                    onClick={() => {
+                                      const next = new URLSearchParams(params);
+                                      next.set('q', loc.locationName || loc.title);
+                                      next.set('category', cat.type);
+                                      next.delete('page');
+                                      setParams(next);
+                                      setSuggestions([]);
+                                      setRichSuggestions([]);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 hover:bg-red-50 hover:text-red-700 transition"
+                                  >
+                                    <span>{cat.emoji}</span>
+                                    <span>{cat.label}</span>
+                                    <span className="text-slate-400 font-extrabold">{cat.count}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Standard Property Title Suggestions */}
+                    {suggestions.length > 0 && (
+                      <div className="py-1">
+                        {richSuggestions.length > 0 && (
+                          <div className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                            Matching Listings
+                          </div>
+                        )}
+                        {suggestions.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              setFilter('q', s);
+                              setSuggestions([]);
+                              setRichSuggestions([]);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-red-50 hover:text-red-700 transition text-left"
+                          >
+                            <Search className="h-3 w-3 text-slate-400 shrink-0" /> <span className="line-clamp-1">{s}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1312,6 +1592,8 @@ export function SearchPage() {
               <AdvancedFilters
                 cities={cities ?? []}
                 filters={filters}
+                categoryCounts={categoryCountsMap}
+                totalCount={locationDiscovery?.totalCount}
                 onFilterChange={(newFilters) => {
                   const updated = { ...filters, ...newFilters };
                   const newParams = new URLSearchParams(params);
@@ -1342,6 +1624,7 @@ export function SearchPage() {
                   syncParam('amenities', updated.amenities);
 
                   setParams(newParams);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 onCloseMobile={() => setShowFilters(false)}
               />
@@ -1350,6 +1633,18 @@ export function SearchPage() {
 
           {/* Results Area */}
           <div className="flex-1 min-w-0">
+            {/* Location Category Discovery Banner: ONLY shown when exploring ALL categories (no specific category filter selected) */}
+            {locationDiscovery && locationDiscovery.categories.length > 0 && !activeCategorySlug && (
+              <div className="mb-5">
+                <LocationCategoryDiscovery
+                  discovery={locationDiscovery}
+                  activeCategory={null}
+                  onSelectCategory={handleCategorySelect}
+                  purpose={filters.purpose}
+                />
+              </div>
+            )}
+
             {/* Results heading */}
               <div className="mb-4 flex items-center justify-between">
               <h1 className="font-display text-xl font-bold text-slate-900">
@@ -1363,9 +1658,97 @@ export function SearchPage() {
             </div>
 
             {/* Map view */}
-            {view === 'map' && data?.data && (
-              <div className="mt-4">
-                <PropertyMap properties={data.data} />
+            {view === 'map' && (
+              <div className="space-y-6">
+                {isLoading ? (
+                  <div className="h-[580px] w-full rounded-3xl bg-slate-200 animate-pulse flex items-center justify-center">
+                    <span className="text-slate-400 font-semibold text-sm">Loading properties on map...</span>
+                  </div>
+                ) : (
+                  <PropertyMap
+                    properties={(data?.data ?? []) as any}
+                    selectedPropertyId={selectedMapPropertyId}
+                    hoveredPropertyId={hoveredMapPropertyId}
+                    onSelectProperty={(p) => setSelectedMapPropertyId(p.id)}
+                    height="580px"
+                    defaultCity={params.get('city') || 'Hyderabad'}
+                  />
+                )}
+
+                {/* Synced Cards Section in Map View */}
+                {data && data.data.length > 0 && (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-base">
+                          {t('search.propertiesInView', 'Properties on Map')} ({data.count})
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          {t('search.mapHoverHint', 'Click any pin above or card below to highlight location')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {data.data.map((p) => (
+                        <div
+                          key={p.id}
+                          onMouseEnter={() => setHoveredMapPropertyId(p.id)}
+                          onMouseLeave={() => setHoveredMapPropertyId(null)}
+                          onClick={() => setSelectedMapPropertyId(p.id)}
+                          className={cn(
+                            'transition-all duration-200 rounded-2xl',
+                            selectedMapPropertyId === p.id && 'ring-2 ring-red-600 shadow-lg scale-[1.01]'
+                          )}
+                        >
+                          <GridCard
+                            property={p as any}
+                            onSave={toggleSave}
+                            saved={currentFavoriteIds.has(p.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Map Pagination */}
+                    {totalPages > 1 && (
+                      <div className="mt-8 flex items-center justify-center gap-1.5 flex-wrap">
+                        <button
+                          disabled={page <= 1}
+                          onClick={() => goToPage(page - 1)}
+                          className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-red-50 hover:border-red-300 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                        >
+                          <ChevronLeft className="h-4 w-4" /> {t('common.back', 'Prev')}
+                        </button>
+                        {Array.from({ length: Math.min(totalPages, 7) }).map((_, i) => {
+                          const pg = i + 1;
+                          return (
+                            <button
+                              key={pg}
+                              onClick={() => goToPage(pg)}
+                              className={cn(
+                                'h-9 w-9 rounded-xl text-sm font-bold transition border',
+                                page === pg
+                                  ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-600/20'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:border-red-300 hover:text-red-600',
+                              )}
+                            >
+                              {pg}
+                            </button>
+                          );
+                        })}
+                        {totalPages > 7 && <span className="px-2 text-slate-400 font-bold">…</span>}
+                        <button
+                          disabled={page >= totalPages}
+                          onClick={() => goToPage(page + 1)}
+                          className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-red-50 hover:border-red-300 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                        >
+                          {t('common.next', 'Next')} <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1407,24 +1790,23 @@ export function SearchPage() {
                     <div
                       className={cn(
                         view === 'grid'
-                          ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-                          : 'space-y-4',
+                          ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                          : 'flex flex-col',
                       )}
                     >
-                      {data.data.map((p, index) => (
-                        <div key={p.id} className="contents">
+                      {data.data.map((p) => (
+                        <div key={p.id} className="w-full">
                           {view === 'list' ? (
                             <HorizontalCard
                               property={p as any}
                               onSave={toggleSave}
                               onCompare={toggleCompare}
-                              saved={savedIds.has(p.id)}
+                              saved={currentFavoriteIds.has(p.id)}
                               compared={comparedIds.has(p.id)}
                             />
                           ) : (
-                            <GridCard property={p as any} onSave={toggleSave} saved={savedIds.has(p.id)} />
+                            <GridCard property={p as any} onSave={toggleSave} saved={currentFavoriteIds.has(p.id)} />
                           )}
-
                         </div>
                       ))}
                     </div>
@@ -1468,50 +1850,90 @@ export function SearchPage() {
                     )}
                   </>
                 ) : (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 px-6 gap-4 text-center">
-                    {activeCategoryMeta ? (
-                      <div className="p-4 rounded-2xl bg-red-50 text-red-500">
-                        <activeCategoryMeta.icon className="h-12 w-12" />
-                      </div>
-                    ) : (
-                      <MapPin className="h-12 w-12 text-slate-300" />
-                    )}
-                    <div>
-                      <p className="font-bold text-slate-800 text-lg">
-                        {activeCategoryMeta
-                          ? `No ${activeCategoryMeta.pluralName} available in ${cityName || 'this location'} yet`
-                          : filters.q || filters.city_id
-                            ? `No properties found${filters.q ? ` in ${filters.q}` : ''}`
-                            : t('search.notFoundTitle', 'No properties found')}
-                      </p>
-                      <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-                        {activeCategoryMeta
-                          ? `We could not find active ${activeCategoryMeta.name.toLowerCase()} listings matching your filters in ${cityName || 'this area'}.`
-                          : 'Try adjusting your filters, searching a different city or locality, or explore other categories.'}
-                      </p>
+                  <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-10 shadow-sm text-center">
+                    {/* Icon */}
+                    <div className="mx-auto mb-4 w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-sm">
+                      {activeCategoryMeta ? (
+                        <activeCategoryMeta.icon className="h-7 w-7 sm:h-8 sm:w-8" />
+                      ) : (
+                        <MapPin className="h-7 w-7 sm:h-8 sm:w-8 text-slate-400" />
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-2 justify-center mt-2">
+
+                    {/* Title */}
+                    <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 capitalize">
+                      {activeCategoryMeta
+                        ? `No ${activeCategoryMeta.pluralName} Available in ${displayLocation}`
+                        : filters.q || filters.city_id
+                          ? `No properties found${filters.q ? ` matching "${filters.q}"` : ` in ${displayLocation}`}`
+                          : t('search.notFoundTitle', 'No properties found')}
+                    </h2>
+
+                    {/* Description */}
+                    <p className="mt-2 text-xs sm:text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
+                      {activeCategoryMeta
+                        ? `We couldn't find any ${activeCategoryMeta.pluralName.toLowerCase()} matching your current location and filters. Try exploring other property categories, clearing filters, or asking our AI Assistant.`
+                        : 'Try adjusting your filters, searching a different city or locality, or explore other categories.'}
+                    </p>
+
+                    {/* Action buttons */}
+                    <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
                       {activeCategorySlug && (
                         <button
-                          onClick={() => setFilter('category', '')}
-                          className="rounded-xl border border-red-200 bg-red-50 text-red-600 px-4 py-2 text-xs font-bold hover:bg-red-100 transition cursor-pointer"
+                          onClick={() => handleCategorySelect(null)}
+                          className="rounded-xl bg-red-600 text-white px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-bold shadow-md shadow-red-600/20 hover:bg-red-700 transition cursor-pointer"
                         >
                           Explore All Categories
                         </button>
                       )}
                       <button
                         onClick={clearAll}
-                        className="rounded-xl border border-slate-200 bg-white text-slate-700 px-4 py-2 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
+                        className="rounded-xl border border-slate-200 bg-white text-slate-700 px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-bold hover:bg-slate-50 hover:border-slate-300 transition cursor-pointer"
                       >
                         {t('search.clearFilters', 'Clear All Filters')}
                       </button>
                       <Link
                         to="/ai-property-advisor"
-                        className="rounded-xl bg-navy-900 text-white px-4 py-2 text-xs font-bold hover:bg-navy-800 transition"
+                        className="rounded-xl bg-navy-900 text-white px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-bold hover:bg-navy-800 transition"
                       >
                         Ask AI Assistant
                       </Link>
                     </div>
+
+                    {/* Alternative Category Suggestions (clearly separated from primary results) */}
+                    {locationDiscovery && locationDiscovery.categories.some((c) => c.count > 0 && c.type !== activeCategorySlug) && (
+                      <div className="mt-8 pt-6 border-t border-slate-100 text-left">
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                            You may also explore available property types in <span className="text-red-600">{displayLocation}</span>:
+                          </span>
+                          <button
+                            onClick={() => handleCategorySelect(null)}
+                            className="text-xs font-bold text-red-600 hover:text-red-700 transition shrink-0 cursor-pointer"
+                          >
+                            View All ({locationDiscovery.totalCount})
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-200">
+                          {locationDiscovery.categories
+                            .filter((cat) => cat.count > 0 && cat.type !== activeCategorySlug)
+                            .map((cat) => (
+                              <button
+                                key={cat.type}
+                                onClick={() => handleCategorySelect(cat.type)}
+                                className="group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 border border-slate-200 bg-slate-50/80 hover:bg-red-50 hover:border-red-300 hover:text-red-700 cursor-pointer"
+                              >
+                                <span>{cat.emoji}</span>
+                                <span className="text-slate-800 group-hover:text-red-700">{cat.label}</span>
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 group-hover:bg-red-100 group-hover:text-red-800 transition-colors">
+                                  {cat.count}
+                                </span>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -1533,15 +1955,49 @@ export function SearchPage() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Category Page (Buy / Rent / Commercial / Plots / Luxury)
+// Category Page (Buy / Rent / Commercial / Plots / Luxury / Projects)
 // ──────────────────────────────────────────────────────────────
-export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commercial' | 'plots' | 'luxury' }) {
+export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commercial' | 'plots' | 'luxury' | 'projects' }) {
   const { t } = useLanguageContext();
+  const { user } = useAuth();
+  const { addToast } = useToast();
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
   const purpose = category === 'rent' ? 'Rent' : category === 'buy' ? 'Sale' : undefined;
   const isLuxury = category === 'luxury';
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+
+  const { data: dbFavoriteIds } = useFavorites(user?.id);
+  const [guestFavoriteIds, setGuestFavoriteIds] = useState<string[]>(getLocalFavoriteIds());
+
+  useEffect(() => {
+    if (!user) {
+      const handleSync = () => setGuestFavoriteIds(getLocalFavoriteIds());
+      window.addEventListener('realtynow-favorites-updated', handleSync);
+      return () => window.removeEventListener('realtynow-favorites-updated', handleSync);
+    }
+  }, [user]);
+
+  const currentFavoriteIds = useMemo(
+    () => new Set(user ? dbFavoriteIds || [] : guestFavoriteIds),
+    [user, dbFavoriteIds, guestFavoriteIds],
+  );
+
+  const toggleSave = async (id: string) => {
+    const isCurrentlySaved = currentFavoriteIds.has(id);
+    try {
+      const isNowSaved = await toggleFavoriteProperty(id, user?.id, isCurrentlySaved);
+      if (!user) {
+        setGuestFavoriteIds(getLocalFavoriteIds());
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['favorites', user.id] });
+      }
+      addToast('success', isNowSaved ? 'Saved to favorites' : 'Removed from saved');
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Could not update favorites');
+    }
+  };
 
   // SEO
   const seoTitle = {
@@ -1550,7 +2006,8 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
     commercial: t('menu.commercialSpaces', 'Commercial Properties in Hyderabad'),
     plots: t('menu.plotsTitle', 'Plots & Land in Hyderabad'),
     luxury: t('home.signatureCollection', 'Luxury Homes in Hyderabad'),
-  }[category];
+    projects: t('menu.newProjects', 'New Projects & Developments in Hyderabad'),
+  }[category] || 'Properties in Hyderabad';
 
   useSEO({
     title: seoTitle,
@@ -1585,6 +2042,12 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
     return undefined;
   }, [types, category]);
 
+  const activeCategoryFilter = useMemo(() => {
+    if (category === 'plots') return 'plots';
+    if (category === 'commercial') return 'commercial-office';
+    return params.get('category') || undefined;
+  }, [category, params]);
+
   const filters: PropertyFilters = useMemo(() => {
     const typeIdParam = params.get('type_id') || undefined;
     const typeNameParam = params.get('type') || undefined;
@@ -1611,6 +2074,7 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
 
     return {
       q: params.get('q') || undefined,
+      category: activeCategoryFilter,
       city_id: resolvedCityId,
       purpose: params.get('purpose') || defaultPurpose,
       property_type_id: resolvedTypeId || (typeFilter && typeFilter.length === 1 ? typeFilter[0] : undefined),
@@ -1624,7 +2088,33 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
       facing: params.get('facing') || undefined,
       is_luxury: params.get('luxury') === '1' || defaultIsLuxury,
     };
-  }, [params, types, category, typeFilter, cities]);
+  }, [params, types, category, typeFilter, cities, activeCategoryFilter]);
+
+  // Base non-category filters for live, synchronized category counts in CategoryPage
+  const baseCategoryFilters: PropertyFilters = useMemo(() => {
+    return {
+      ...filters,
+      category: undefined,
+      type: undefined,
+      property_type_id: undefined,
+      limit: 5000,
+      offset: 0,
+    };
+  }, [filters]);
+
+  const { data: locationDiscovery } = useQuery({
+    queryKey: ['category-page-discovery-sync', category, baseCategoryFilters],
+    queryFn: () => fetchSearchCategoryCounts(baseCategoryFilters),
+  });
+
+  const categoryCountsMap = useMemo(() => {
+    if (!locationDiscovery?.categories) return undefined;
+    const map: Partial<Record<CategorySlug, number>> = {};
+    for (const cat of locationDiscovery.categories) {
+      map[cat.type] = cat.count;
+    }
+    return map;
+  }, [locationDiscovery]);
 
   // Same v_properties_search source/status as the main search page and every
   // other listing surface — search_text covers locality/city/project/title so
@@ -1637,14 +2127,18 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
         .select('*', { count: 'exact' })
         .or('status.eq.published,is_live.eq.true');
 
-      if (filters.purpose) q = q.eq('purpose', filters.purpose);
-      if (filters.city_id) q = q.eq('city_id', filters.city_id);
-
-      if (filters.property_type_id) {
+      if (category === 'projects') {
+        q = q.or('possession_status.eq.New Launch,possession_status.eq.Under Construction,is_project.eq.true');
+      } else if (category === 'plots') {
+        q = q.or('property_type_category.eq.Plot,property_type_name.ilike.%Plot%,property_type_name.ilike.%Land%');
+      } else if (filters.property_type_id) {
         q = q.eq('property_type_id', filters.property_type_id);
       } else if (typeFilter && typeFilter.length > 0) {
         q = q.in('property_type_id', typeFilter);
       }
+
+      if (filters.purpose) q = q.eq('purpose', filters.purpose);
+      if (filters.city_id) q = q.eq('city_id', filters.city_id);
 
       if (filters.min_price != null) q = q.gte('price', filters.min_price);
       if (filters.max_price != null) q = q.lte('price', filters.max_price);
@@ -1679,7 +2173,8 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
     commercial: t('menu.commercialSpaces', 'Commercial Properties'),
     plots: t('menu.plotsTitle', 'Plots & Land'),
     luxury: t('home.signatureCollection', 'Luxury Homes'),
-  }[category];
+    projects: t('menu.newProjects', 'New Projects & Developments'),
+  }[category] || 'Properties';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -1709,6 +2204,8 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
               <AdvancedFilters
                 cities={cities ?? []}
                 filters={filters}
+                categoryCounts={categoryCountsMap}
+                totalCount={locationDiscovery?.totalCount}
                 onFilterChange={(newFilters) => {
                   const updated = { ...filters, ...newFilters };
                   const newParams = new URLSearchParams(params);
@@ -1737,6 +2234,7 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
                   syncParam('amenities', updated.amenities);
 
                   setParams(newParams);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 onCloseMobile={() => setShowFilters(false)}
               />
@@ -1767,10 +2265,14 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
                 </button>
               </div>
             ) : data && data.data.length > 0 ? (
-              <div className="space-y-4">
-                {data.data.map((p, index) => (
-                  <div key={p.id} className="contents">
-                    <HorizontalCard property={p as any} />
+              <div className="flex flex-col">
+                {data.data.map((p) => (
+                  <div key={p.id} className="w-full">
+                    <HorizontalCard
+                      property={p as any}
+                      onSave={toggleSave}
+                      saved={currentFavoriteIds.has(p.id)}
+                    />
                   </div>
                 ))}
                 {totalPages > 1 && (

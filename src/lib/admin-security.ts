@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { isAuthorizedAdminPhone } from './admin-auth';
 
 export type AdminRole = 'super_admin' | 'admin' | 'moderator' | 'support';
 
@@ -81,15 +82,18 @@ export interface AdminLoginLog {
 // grant access — it would just let OTP send proceed for a number that fails
 // verification anyway.
 export async function checkAdminMobile(mobile: string): Promise<boolean> {
+  if (isAuthorizedAdminPhone(mobile)) {
+    return true;
+  }
   try {
     const { data, error } = await supabase.functions.invoke('otp-auth', {
       body: { mobile },
       headers: { 'x-action': 'check-admin-mobile' },
     });
-    if (error) return false;
+    if (error) return isAuthorizedAdminPhone(mobile);
     return !!data?.authorized;
   } catch {
-    return false;
+    return isAuthorizedAdminPhone(mobile);
   }
 }
 

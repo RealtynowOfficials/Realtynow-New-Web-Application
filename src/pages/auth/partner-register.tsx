@@ -1057,17 +1057,17 @@ export function PartnerRegisterPage() {
 
                     <div className="mt-5 space-y-2.5">
                       <label className="flex items-start gap-2.5 text-xs text-navy-600 cursor-pointer">
-                        <input type="checkbox" checked={form.agree_privacy} onChange={(e) => set('agree_privacy', e.target.checked)} className="mt-0.5" />
+                        <input type="checkbox" checked={form.agree_privacy} onChange={(e) => set('agree_privacy', e.target.checked)} className="mt-0.5 accent-red-600 cursor-pointer" />
                         {t('auth.iAgreeToThe', 'I agree to the')}{' '}
-                        <Link to="/privacy" className="text-gold-600 hover:underline">{t('auth.privacyPolicyLink', 'Privacy Policy')}</Link>
+                        <Link to="/privacy" className="text-red-600 hover:underline">{t('auth.privacyPolicyLink', 'Privacy Policy')}</Link>
                       </label>
                       <label className="flex items-start gap-2.5 text-xs text-navy-600 cursor-pointer">
-                        <input type="checkbox" checked={form.agree_terms} onChange={(e) => set('agree_terms', e.target.checked)} className="mt-0.5" />
+                        <input type="checkbox" checked={form.agree_terms} onChange={(e) => set('agree_terms', e.target.checked)} className="mt-0.5 accent-red-600 cursor-pointer" />
                         {t('auth.iAgreeToThe', 'I agree to the')}{' '}
-                        <Link to="/terms" className="text-gold-600 hover:underline">{t('auth.partnerTermsLink', 'Partner Terms & Conditions')}</Link>
+                        <Link to="/terms" className="text-red-600 hover:underline">{t('auth.partnerTermsLink', 'Partner Terms & Conditions')}</Link>
                       </label>
                       <label className="flex items-start gap-2.5 text-xs text-navy-600 cursor-pointer">
-                        <input type="checkbox" checked={form.agree_verification} onChange={(e) => set('agree_verification', e.target.checked)} className="mt-0.5" />
+                        <input type="checkbox" checked={form.agree_verification} onChange={(e) => set('agree_verification', e.target.checked)} className="mt-0.5 accent-red-600 cursor-pointer" />
                         {t('auth.authorizeVerification', 'I authorize RealtyNow to verify the information provided')}
                       </label>
                     </div>

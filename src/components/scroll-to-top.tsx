@@ -58,7 +58,8 @@ export function ScrollToTop() {
 
   // Apply scroll BEFORE paint for fresh navigations to eliminate flash
   useLayoutEffect(() => {
-    const pathnameChanged = location.pathname !== prevPathnameRef.current;
+    const prevPathname = prevPathnameRef.current;
+    const pathnameChanged = location.pathname !== prevPathname;
     prevPathnameRef.current = location.pathname;
 
     // Hash navigation: defer until after paint so the element exists
@@ -70,11 +71,15 @@ export function ScrollToTop() {
       return;
     }
 
+    // Do NOT scroll to top when navigating within the Admin Portal (/admin/*)
+    // to keep sidebar navigation completely stable and avoid unexpected window jumping.
+    const isAdminNav = prevPathname.startsWith('/admin') && location.pathname.startsWith('/admin');
+
     // PUSH / REPLACE to a genuinely different page: reset to top synchronously
     // before the browser paints. A PUSH/REPLACE that only changed the query
     // string (setSearchParams — filters, sort, pagination, ...) must NOT reset
     // scroll; it's still the same page and the user is mid-interaction with it.
-    if (navigationType !== 'POP' && pathnameChanged) {
+    if (navigationType !== 'POP' && pathnameChanged && !isAdminNav) {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     }
   }, [location.key, location.hash, navigationType, location.pathname]);

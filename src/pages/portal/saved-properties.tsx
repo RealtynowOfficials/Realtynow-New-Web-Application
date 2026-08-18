@@ -55,7 +55,7 @@ export default function SavedProperties() {
           query = supabase
             .from('v_saved_properties')
             .select('*')
-            .eq('favorite_user_id', user.id);
+            .eq('user_id', user.id);
         } else {
           query = supabase
             .from('v_properties_search')
@@ -68,8 +68,25 @@ export default function SavedProperties() {
         }
 
         const { data, error } = await query;
-        if (error) throw error;
-        setProperties(data || []);
+        if (error) {
+          // If v_saved_properties query errors, fallback to v_properties_search with favorite IDs
+          console.warn('v_saved_properties query error, using fallback:', error);
+          if (currentFavoriteIds.length > 0) {
+            let fb = supabase.from('v_properties_search').select('*').in('id', currentFavoriteIds);
+            if (searchQuery) fb = fb.ilike('title', `%${searchQuery}%`);
+            const { data: fbData } = await fb;
+            setProperties(fbData || []);
+          } else {
+            setProperties([]);
+          }
+        } else if (user && (!data || data.length === 0) && currentFavoriteIds.length > 0) {
+          let fb = supabase.from('v_properties_search').select('*').in('id', currentFavoriteIds);
+          if (searchQuery) fb = fb.ilike('title', `%${searchQuery}%`);
+          const { data: fbData } = await fb;
+          setProperties(fbData || []);
+        } else {
+          setProperties(data || []);
+        }
       } catch (err) {
         console.error('Error fetching saved properties:', err);
       } finally {

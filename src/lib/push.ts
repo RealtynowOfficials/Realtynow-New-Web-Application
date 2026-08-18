@@ -20,6 +20,18 @@ export interface EnablePushResult {
   error?: string;
 }
 
+export function isPushSupported(): boolean {
+  return typeof window !== 'undefined' && 'Notification' in window;
+}
+
+// 'default' | 'granted' | 'denied' | 'unsupported' — callers use this instead
+// of touching the raw Notification API directly so the "don't re-prompt" rule
+// lives in one place.
+export function getPermissionStatus(): NotificationPermission | 'unsupported' {
+  if (!isPushSupported()) return 'unsupported';
+  return Notification.permission;
+}
+
 // Requests notification permission, registers a Firebase Cloud Messaging
 // token for this device, and persists it to push_tokens so the send-push
 // edge function (triggered from every fn_send_notification() call) can
@@ -60,6 +72,27 @@ export async function enablePushNotifications(userId: string): Promise<EnablePus
     return { success: true };
   } catch (err) {
     return { success: true, degraded: true, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Deactivates this device's push token on logout so a subsequent user on
+// the same shared browser doesn't inherit the previous user's subscription.
+// Best-effort/no-op when push was never registered — logout must never fail
+// because of this.
+export async function unregisterPushSubscription(userId: string): Promise<void> {
+  if (getPermissionStatus() !== 'granted') return;
+
+  try {
+    const messaging = await getFirebaseMessaging();
+    if (!messaging || !VAPID_KEY) return;
+
+    const swRegistration = (await registerMessagingServiceWorker()) ?? undefined;
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swRegistration });
+    if (!token) return;
+
+    await supabase.from('push_tokens').update({ is_active: false }).eq('user_id', userId).eq('token', token);
+  } catch {
+    // best-effort; logout should never fail because of this
   }
 }
 

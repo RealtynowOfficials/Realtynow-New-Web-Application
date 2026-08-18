@@ -63,7 +63,7 @@ export default function InvoiceTable({ onCreateNew }: { onCreateNew: () => void 
               className="pl-9 pr-4 py-2 border rounded-md text-sm w-64"
             />
           </div>
-          <button onClick={onCreateNew} className="bg-blue-600 text-white px-4 py-2 rounded-md font-medium text-sm hover:bg-blue-700">
+          <button onClick={onCreateNew} className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-red-700 shadow-sm shadow-red-600/20 transition cursor-pointer">
             + Create Invoice
           </button>
         </div>
@@ -99,8 +99,8 @@ export default function InvoiceTable({ onCreateNew }: { onCreateNew: () => void 
                   <td className="p-4">{getStatusBadge(inv.payment_status)}</td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => setPreviewInvoice(inv)} title="View & Download PDF" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Eye className="w-4 h-4" /></button>
-                      <button title="Send Email/WA" className="p-1.5 text-green-600 hover:bg-green-50 rounded"><Send className="w-4 h-4" /></button>
+                      <button onClick={() => setPreviewInvoice(inv)} title="View & Download PDF" className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"><Eye className="w-4 h-4" /></button>
+                      <button title="Send Email/WA" className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition cursor-pointer"><Send className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>

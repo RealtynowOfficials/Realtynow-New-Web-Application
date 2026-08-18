@@ -29,6 +29,8 @@ interface AdvancedFiltersProps {
   onFilterChange: (filters: Partial<PropertyFilters>) => void;
   onCloseMobile?: () => void;
   cities?: { id: string; name: string }[];
+  categoryCounts?: Partial<Record<CategorySlug, number>>;
+  totalCount?: number;
 }
 
 const BHK_OPTIONS = [1, 2, 3, 4, 5];
@@ -43,6 +45,8 @@ export function AdvancedFilters({
   onFilterChange,
   onCloseMobile,
   cities = [],
+  categoryCounts,
+  totalCount,
 }: AdvancedFiltersProps) {
   const activeSlug = normalizeCategorySlug(filters.category || filters.type);
   const activeCategory = useMemo(() => getCategoryMeta(activeSlug), [activeSlug]);
@@ -168,16 +172,27 @@ export function AdvancedFilters({
                 <button
                   onClick={() => onFilterChange({ category: undefined, type: undefined })}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-all border',
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5',
                     !activeSlug
                       ? 'bg-navy-900 text-white border-navy-900 shadow-sm'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                   )}
                 >
-                  All Categories
+                  <span>All Categories</span>
+                  {totalCount != null && (
+                    <span
+                      className={cn(
+                        'text-[10px] font-extrabold px-1.5 py-0.5 rounded-full',
+                        !activeSlug ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      )}
+                    >
+                      {totalCount}
+                    </span>
+                  )}
                 </button>
                 {CATEGORY_LIST.map((cat) => {
                   const isSelected = activeSlug === cat.slug;
+                  const count = categoryCounts ? categoryCounts[cat.slug] : undefined;
                   return (
                     <button
                       key={cat.id}
@@ -195,6 +210,18 @@ export function AdvancedFilters({
                       )}
                     >
                       <span>{cat.name}</span>
+                      {count !== undefined && (
+                        <span
+                          className={cn(
+                            'text-[10px] font-extrabold px-1.5 py-0.5 rounded-full transition-colors',
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : 'bg-slate-100 text-slate-600 group-hover:bg-red-100'
+                          )}
+                        >
+                          {count}
+                        </span>
+                      )}
                       {isSelected && <X className="h-3 w-3" />}
                     </button>
                   );
@@ -434,8 +461,8 @@ export function AdvancedFilters({
                       className={cn(
                         'h-4 w-4 rounded border flex items-center justify-center transition-all',
                         filters.possession_status === status
-                          ? 'bg-navy-600 border-navy-600'
-                          : 'border-slate-300 group-hover:border-navy-400 bg-white'
+                          ? 'bg-red-600 border-red-600'
+                          : 'border-slate-300 group-hover:border-red-400 bg-white'
                       )}
                     >
                       {filters.possession_status === status && <Check className="h-3 w-3 text-white" />}

@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import i18n from './i18n/i18n';
 import { formatPrice, formatCompactPrice, generatePropertyUrl } from './utils';
 import { normalizeCityAliases } from './properties';
+import { parsePropertySearchQuery, fetchLocationCategoryDiscovery } from './search-engine';
 import type { Property } from './types';
 
 export type AITask =
@@ -89,6 +90,9 @@ function extractPriceConstraint(message: string): { max_price?: number; min_pric
 function isPropertySearchIntent(message: string): boolean {
   if (BHK_TEST_RE.test(message) || PROPERTY_TYPE_TEST_RE.test(message)) return true;
 
+  // Pure purpose-only intent: "Rent", "Buy", "Sale", "rental", "lease" etc.
+  if (RENT_INTENT_RE.test(message) || BUY_INTENT_RE.test(message)) return true;
+
   // A voice/chat utterance that's just a short, non-question phrase (e.g. "Bangalore",
   // "Kondapur Hyderabad") is almost always a bare location search on a real estate site.
   // Route it through the real-DB search too, rather than letting it fall through to a
@@ -134,32 +138,37 @@ function parseSearchFiltersFromMessage(message: string): {
 }
 
 // Answers property-search-style chat messages directly from RealtyNow's own listings,
+// Answers property-search-style chat messages directly from RealtyNow's own listings,
 // bypassing the LLM entirely so results can never include fabricated data or competitor mentions.
+// Also includes live verified cross-category discovery from real DB inventory.
 async function answerRealtyNowPropertySearch(message: string): Promise<string> {
   const { bedrooms, purpose, typeLabel, typeSingular, q, max_price, min_price } = parseSearchFiltersFromMessage(message);
+  const parsedIntent = parsePropertySearchQuery(message);
+  const detectedLocation = parsedIntent.location || q;
+
   const bhkLabel = bedrooms.length > 0 ? `${bedrooms.map((b) => `${b}BHK`).join(' and ')} ` : '';
   const placeLabel = q ? ` in ${q}` : '';
   const priceLabel =
     max_price != null ? ` under ${formatCompactPrice(max_price)}` : min_price != null ? ` above ${formatCompactPrice(min_price)}` : '';
-  const intro = `Sure! I'll search RealtyNow for available ${bhkLabel}${typeLabel}${placeLabel}${priceLabel}.`;
+  const purposeLabel = purpose === 'Rent' ? 'for Rent' : purpose === 'Sale' ? 'for Sale' : '';
+  const intro = `Sure! I'll search RealtyNow for available ${bhkLabel}${typeLabel}${placeLabel}${priceLabel}${purposeLabel ? ' ' + purposeLabel : ''}.`;
 
   try {
-    // Match each locality/city word independently (rather than as one phrase) since
-    // v_properties_search.search_text concatenates city before locality, while users
-    // usually type locality before city (e.g. "LB Nagar Hyderabad").
     let query = supabase
       .from('v_properties_search')
       .select('*')
       .or('status.eq.published,is_live.eq.true')
       .order('published_at', { ascending: false })
-      .limit(5);
+      .limit(6);
 
     if (purpose) query = query.eq('purpose', purpose);
     if (bedrooms.length > 0) query = query.in('bedrooms', bedrooms);
     if (typeSingular) query = query.ilike('property_type_name', `%${typeSingular}%`);
     if (max_price != null) query = query.lte('price', max_price);
     if (min_price != null) query = query.gte('price', min_price);
-    for (const token of q.split(' ').filter(Boolean)) {
+
+    const tokens = q.split(' ').filter(Boolean);
+    for (const token of tokens) {
       query = query.ilike('search_text', `%${token}%`);
     }
 
@@ -167,8 +176,28 @@ async function answerRealtyNowPropertySearch(message: string): Promise<string> {
     if (error) throw error;
     const matches = (data ?? []) as Property[];
 
+    // Fetch verified location category discovery if location was detected
+    let discoveryText = '';
+    if (detectedLocation && detectedLocation.length >= 2) {
+      const disc = await fetchLocationCategoryDiscovery(detectedLocation, purpose);
+      if (disc.categories.length > 0) {
+        const catLines = disc.categories
+          .map((c) => `• ${c.emoji} [${c.label} (${c.count})](/search?locality=${encodeURIComponent(disc.location)}&category=${c.type}${purpose ? `&purpose=${purpose}` : ''})`)
+          .join('\n');
+        discoveryText = `\n\n**Explore other verified property types in ${disc.location}:**\n${catLines}`;
+      }
+    }
+
     if (matches.length === 0) {
-      return `${intro}\n\nI couldn't find an exact match on RealtyNow right now. Try nearby locations or adjust your budget/preferences. You can also browse all current RealtyNow listings${placeLabel} on our search page.`;
+      const hint = purpose
+        ? `Try searching for a specific locality or city for ${purpose === 'Rent' ? 'rental' : 'sale'} properties.`
+        : `Try nearby locations or adjust your budget/preferences.`;
+      
+      if (discoveryText) {
+        return `${intro}\n\nI couldn't find active ${typeLabel || 'matching'} listings in ${detectedLocation || 'this area'} right now.${discoveryText}\n\nYou can also browse all listings on our [search page](/search${purpose ? `?purpose=${purpose}` : ''}).`;
+      }
+
+      return `${intro}\n\nI couldn't find an exact match on RealtyNow right now. ${hint} You can also browse all current RealtyNow listings${placeLabel} on our [search page](/search${purpose ? `?purpose=${purpose}` : ''}).`;
     }
 
     const lines = matches.map((p, i) => {
@@ -180,9 +209,9 @@ async function answerRealtyNowPropertySearch(message: string): Promise<string> {
       return `${i + 1}. [${p.title}](${url}) — ${bhk}${type}in ${where} — ${priceLabel}`;
     });
 
-    return `${intro}\n\nHere's what's currently listed on RealtyNow:\n${lines.join('\n')}\n\nOpen any listing above on RealtyNow for full details or to schedule a visit.`;
+    return `${intro}\n\nHere's what's currently listed on RealtyNow:\n${lines.join('\n')}${discoveryText}\n\nOpen any listing above on RealtyNow for full details or to schedule a visit.`;
   } catch {
-    return `${intro}\n\nI'm having trouble searching RealtyNow listings right now. Please try again in a moment or use the RealtyNow search page directly.`;
+    return `${intro}\n\nI'm having trouble searching RealtyNow listings right now. Please try again in a moment or use the RealtyNow [search page](/search) directly.`;
   }
 }
 

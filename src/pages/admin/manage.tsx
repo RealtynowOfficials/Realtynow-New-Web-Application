@@ -1511,7 +1511,7 @@ export function AdminBlogs() {
                 type="checkbox"
                 checked={editing.published}
                 onChange={(e) => setEditing({ ...editing, published: e.target.checked })}
-                className="rounded border-navy-300 text-navy-700"
+                className="rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
               />{' '}
               Publish immediately
             </label>

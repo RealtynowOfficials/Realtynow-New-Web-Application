@@ -46,13 +46,13 @@ export function useSEO({ title, description, type = 'website', schema, image, tw
     }
 
     // 4. Update Open Graph
-    const updateOG = (property: string, content: string) => {
-      let meta = document.querySelector(`meta[property="${property}"]`);
+    const updateOG = (propName: string, content: string) => {
+      let meta = document.querySelector(`meta[property="${propName}"]`);
       if (meta) {
         meta.setAttribute('content', content);
       } else {
         meta = document.createElement('meta');
-        meta.setAttribute('property', property);
+        meta.setAttribute('property', propName);
         meta.setAttribute('content', content);
         document.head.appendChild(meta);
       }
@@ -62,7 +62,15 @@ export function useSEO({ title, description, type = 'website', schema, image, tw
     updateOG('og:description', descText);
     updateOG('og:url', url);
     updateOG('og:type', type);
-    if (image) updateOG('og:image', image);
+    updateOG('og:site_name', 'RealtyNow — All About Realty');
+    updateOG('og:locale', 'en_IN');
+    if (image) {
+      updateOG('og:image', image);
+      updateOG('og:image:secure_url', image);
+      updateOG('og:image:width', '1200');
+      updateOG('og:image:height', '630');
+      updateOG('og:image:alt', title || 'RealtyNow Property');
+    }
 
     // 4b. Update Twitter Card
     const updateTwitter = (name: string, content: string) => {
@@ -78,6 +86,7 @@ export function useSEO({ title, description, type = 'website', schema, image, tw
     };
     const twImage = twitterImage || image;
     updateTwitter('twitter:card', twImage ? 'summary_large_image' : 'summary');
+    updateTwitter('twitter:site', '@RealtyNow');
     updateTwitter('twitter:title', twitterTitle || fullTitle);
     updateTwitter('twitter:description', twitterDescription || descText);
     if (twImage) updateTwitter('twitter:image', twImage);

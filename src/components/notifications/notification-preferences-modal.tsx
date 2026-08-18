@@ -114,7 +114,7 @@ export function NotificationPreferencesModal({ open, onClose }: { open: boolean;
                   type="checkbox"
                   checked={!!prefs[key]}
                   onChange={() => toggle(key)}
-                  className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400"
+                  className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                 />
               </label>
             ))}
@@ -131,7 +131,7 @@ export function NotificationPreferencesModal({ open, onClose }: { open: boolean;
                   type="checkbox"
                   checked={!!prefs[key]}
                   onChange={() => toggle(key)}
-                  className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400"
+                  className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer"
                 />
               </label>
             ))}

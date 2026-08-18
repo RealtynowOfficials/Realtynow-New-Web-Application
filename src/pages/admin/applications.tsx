@@ -50,22 +50,41 @@ export function formatApplicationStatus(status: string, t?: (key: string, fallba
 // ─── Shared status badge ──────────────────────────────────────────────────────
 export function AppBadge({ status }: { status: string }) {
   const { t } = useLanguageContext();
-  const variantMap: Record<string, string> = {
-    submitted: 'navy',
-    pending_review: 'warning',
-    document_verification: 'warning',
-    identity_verification: 'warning',
-    rera_verification: 'warning',
-    background_verification: 'warning',
-    final_review: 'warning',
-    approved: 'success',
-    rejected: 'error',
-    pending: 'warning',
-  };
+  const label = formatApplicationStatus(status, t);
+
+  if (status === 'approved') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+        {label}
+      </span>
+    );
+  }
+
+  if (status === 'rejected') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200/80 shrink-0">
+        <span className="h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0" />
+        {label}
+      </span>
+    );
+  }
+
+  if (status === 'submitted') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-700 border border-slate-200 shrink-0">
+        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+        {label}
+      </span>
+    );
+  }
+
+  // Pending review & other verification stages
   return (
-    <Badge variant={(variantMap[status] ?? 'default') as any}>
-      {formatApplicationStatus(status, t)}
-    </Badge>
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 shrink-0">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+      {label}
+    </span>
   );
 }
 
@@ -73,35 +92,53 @@ export function AppBadge({ status }: { status: string }) {
 function ClickableStatCard({
   label,
   value,
+  sublabel,
   icon: Icon,
   active,
+  variant = 'default',
   onClick,
 }: {
   label: string;
   value: number;
+  sublabel?: string;
   icon: React.ComponentType<{ className?: string }>;
   active: boolean;
+  variant?: 'default' | 'warning' | 'success';
   onClick: () => void;
 }) {
+  const iconBg =
+    variant === 'warning'
+      ? 'bg-amber-50 text-amber-600 border-amber-100'
+      : variant === 'success'
+        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+        : 'bg-slate-50 text-slate-600 border-slate-100';
+
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      title={`Show ${label.toLowerCase()}`}
-      className={`w-full text-left rounded-2xl border bg-white p-5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 cursor-pointer ${
-        active ? 'border-red-300 ring-1 ring-red-200' : 'border-navy-100 hover:border-navy-200'
-      }`}
+      title={`Filter by ${label.toLowerCase()}`}
+      className={cn(
+        'w-full text-left rounded-2xl border bg-white p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer relative overflow-hidden flex flex-col justify-between',
+        active
+          ? 'border-red-400 ring-2 ring-red-100 bg-gradient-to-br from-white to-red-50/20 shadow-sm'
+          : 'border-slate-200/80 hover:border-slate-300',
+      )}
     >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-navy-500">{label}</p>
-          <p className="mt-1 font-display text-2xl font-bold text-navy-900">{value}</p>
-        </div>
-        <div className={`h-10 w-10 rounded-xl grid place-items-center ${active ? 'bg-red-50' : 'bg-navy-50'}`}>
-          <Icon className={`h-5 w-5 ${active ? 'text-red-600' : 'text-navy-600'}`} />
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+        <div className={cn('h-9 w-9 rounded-full border grid place-items-center shrink-0', iconBg)}>
+          <Icon className="h-4 w-4" />
         </div>
       </div>
+      <div className="mt-3">
+        <p className="font-display text-3xl font-bold text-slate-900 tracking-tight">{value}</p>
+        {sublabel && <p className="text-xs text-slate-500 font-medium mt-1">{sublabel}</p>}
+      </div>
+      {active && (
+        <div className="absolute top-0 left-0 right-0 h-1 bg-red-600" />
+      )}
     </button>
   );
 }
@@ -123,83 +160,103 @@ function AgentAppCard({
     .slice(0, 2)
     .toUpperCase();
 
+  const status = app.status || 'pending_review';
+
   return (
-    <div className="bg-white rounded-2xl border border-navy-100 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
-      {/* Header strip */}
-      <div className="bg-gradient-to-r from-navy-700 to-navy-900 px-5 pt-5 pb-10 relative">
-        <div className="absolute top-3 right-3">
-          <AppBadge status={app.status || 'pending_review'} />
+    <div className="group relative bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200 flex flex-col justify-between hover:-translate-y-0.5 min-h-[380px]">
+      <div>
+        {/* Top Bar: Date & Status Badge */}
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <span className="text-[11px] font-medium text-slate-400">
+            {app.created_at ? t('admin.appliedOn', 'Applied {{date}}').replace('{{date}}', formatDate(app.created_at)) : ''}
+          </span>
+          <AppBadge status={status} />
         </div>
-      </div>
 
-      {/* Avatar */}
-      <div className="flex justify-center -mt-7">
-        {app.profile_image ? (
-          <img
-            src={app.profile_image}
-            alt={name}
-            className="h-14 w-14 rounded-full object-cover border-4 border-white shadow"
-          />
-        ) : (
-          <div className="h-14 w-14 rounded-full bg-navy-100 border-4 border-white shadow grid place-items-center">
-            <span className="text-navy-600 font-bold text-lg">{initials}</span>
+        {/* Profile Section: Contained Avatar + Name & Designation */}
+        <div className="flex items-start gap-3.5 mb-4">
+          <div className="relative shrink-0">
+            {app.profile_image ? (
+              <img
+                src={app.profile_image}
+                alt={name}
+                className="h-16 w-16 rounded-full object-cover border-2 border-slate-100 ring-2 ring-slate-100/60 shadow-xs"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border-2 border-slate-100 ring-2 ring-slate-100/60 shadow-xs flex items-center justify-center">
+                <span className="text-slate-700 font-bold text-lg tracking-tight">{initials}</span>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="px-5 pb-5 pt-3 flex flex-col gap-3 flex-1">
-        <div className="text-center">
-          <h4 className="font-bold text-navy-900 text-base">{name}</h4>
-          {app.specialization && (
-            <p className="text-xs text-navy-500 mt-0.5">{`${app.specialization} ${t('admin.specialistSuffix', 'Specialist')}`}</p>
-          )}
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h4 className="font-bold text-slate-900 text-base leading-snug truncate group-hover:text-red-600 transition-colors">
+              {name}
+            </h4>
+            <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-1">
+              {app.specialization ? `${app.specialization} ${t('admin.specialistSuffix', 'Specialist')}` : t('admin.realEstateAgent', 'Real Estate Agent')}
+            </p>
+            {app.license_number && (
+              <p className="text-[11px] font-mono text-slate-400 mt-1 truncate">
+                RERA: {app.license_number}
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-1.5 text-xs text-navy-600">
+        <div className="h-px bg-slate-100 w-full mb-3.5" />
+
+        {/* Contact & Meta rows */}
+        <div className="space-y-2 text-xs text-slate-600 mb-5">
           {app.phone && (
-            <div className="flex items-center gap-2">
-              <Phone className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{app.phone}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Phone className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700">{app.phone}</span>
             </div>
           )}
           {app.email && (
-            <div className="flex items-center gap-2">
-              <Mail className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span className="truncate">{app.email}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Mail className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700 truncate" title={app.email}>{app.email}</span>
             </div>
           )}
           {app.experience_years != null && (
-            <div className="flex items-center gap-2">
-              <Award className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{t('admin.yrsExperience', '{{count}} yrs experience').replace('{{count}}', String(app.experience_years))}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Award className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700">
+                {t('admin.yrsExperience', '{{count}} yrs experience').replace('{{count}}', String(app.experience_years))}
+              </span>
             </div>
           )}
           {app.assigned_areas && app.assigned_areas.length > 0 && (
-            <div className="flex items-center gap-2">
-              <MapPin className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span className="truncate">{app.assigned_areas.join(', ')}</span>
-            </div>
-          )}
-          {app.created_at && (
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{t('admin.appliedOn', 'Applied {{date}}').replace('{{date}}', formatDate(app.created_at))}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <MapPin className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700 truncate" title={app.assigned_areas.join(', ')}>
+                {app.assigned_areas.join(', ')}
+              </span>
             </div>
           )}
         </div>
+      </div>
 
-        <div className="mt-auto pt-2">
-          <Button
-            className="w-full"
-            variant="secondary"
-            size="sm"
-            icon={<Eye className="h-3.5 w-3.5" />}
-            onClick={() => onReview(app)}
-          >
-            {t('admin.reviewApplication', 'Review Application')}
-          </Button>
-        </div>
+      {/* Review Button */}
+      <div className="mt-auto pt-1">
+        <button
+          type="button"
+          onClick={() => onReview(app)}
+          className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
+        >
+          <Eye className="h-3.5 w-3.5 text-slate-400 group-hover/btn:text-red-500 transition-colors" />
+          <span>{t('admin.reviewApplication', 'Review Application')}</span>
+          <span className="text-slate-300 group-hover/btn:text-red-500 group-hover/btn:translate-x-0.5 transition-all font-bold">→</span>
+        </button>
       </div>
     </div>
   );
@@ -215,78 +272,93 @@ function BuilderAppCard({
 }) {
   const { t } = useLanguageContext();
   const name = app.company_name || app.contact_name || app.email;
+  const status = app.status || 'pending_review';
 
   return (
-    <div className="bg-white rounded-2xl border border-navy-100 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
-      {/* Header strip */}
-      <div className="bg-gradient-to-r from-navy-700 to-navy-900 px-5 pt-5 pb-10 relative">
-        <div className="absolute top-3 right-3">
-          <AppBadge status={app.status || 'pending_review'} />
+    <div className="group relative bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200 flex flex-col justify-between hover:-translate-y-0.5 min-h-[380px]">
+      <div>
+        {/* Top Bar: Date & Status Badge */}
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <span className="text-[11px] font-medium text-slate-400">
+            {app.created_at ? t('admin.appliedOn', 'Applied {{date}}').replace('{{date}}', formatDate(app.created_at)) : ''}
+          </span>
+          <AppBadge status={status} />
         </div>
-      </div>
 
-      {/* Avatar */}
-      <div className="flex justify-center -mt-7">
-        {app.logo_url ? (
-          <img
-            src={app.logo_url}
-            alt={name}
-            className="h-14 w-14 rounded-xl object-cover border-4 border-white shadow"
-          />
-        ) : (
-          <div className="h-14 w-14 rounded-xl bg-navy-100 border-4 border-white shadow grid place-items-center">
-            <Building2 className="h-6 w-6 text-navy-600" />
+        {/* Profile Section: Logo + Company Name & Contact */}
+        <div className="flex items-start gap-3.5 mb-4">
+          <div className="relative shrink-0">
+            {app.logo_url ? (
+              <img
+                src={app.logo_url}
+                alt={name}
+                className="h-16 w-16 rounded-2xl object-cover border-2 border-slate-100 ring-2 ring-slate-100/60 shadow-xs"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 border-2 border-slate-100 ring-2 ring-slate-100/60 shadow-xs flex items-center justify-center">
+                <Building2 className="h-7 w-7 text-slate-600" />
+              </div>
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="px-5 pb-5 pt-3 flex flex-col gap-3 flex-1">
-        <div className="text-center">
-          <h4 className="font-bold text-navy-900 text-base">{name}</h4>
-          {app.contact_name && app.company_name && (
-            <p className="text-xs text-navy-500 mt-0.5">{t('admin.contactLabel', 'Contact:')} {app.contact_name}</p>
-          )}
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h4 className="font-bold text-slate-900 text-base leading-snug truncate group-hover:text-red-600 transition-colors">
+              {name}
+            </h4>
+            {app.contact_name && app.company_name && (
+              <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-1">
+                {t('admin.contactLabel', 'Contact:')} {app.contact_name}
+              </p>
+            )}
+            {app.rera_number && (
+              <p className="text-[11px] font-mono text-slate-400 mt-1 truncate">
+                RERA: {app.rera_number}
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-1.5 text-xs text-navy-600">
+        <div className="h-px bg-slate-100 w-full mb-3.5" />
+
+        {/* Meta rows */}
+        <div className="space-y-2 text-xs text-slate-600 mb-5">
           {app.email && (
-            <div className="flex items-center gap-2">
-              <Mail className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span className="truncate">{app.email}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Mail className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700 truncate" title={app.email}>{app.email}</span>
+            </div>
+          )}
+          {app.phone && (
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Phone className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700">{app.phone}</span>
             </div>
           )}
           {app.city && (
-            <div className="flex items-center gap-2">
-              <MapPin className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{app.city}</span>
-            </div>
-          )}
-          {app.rera_number && (
-            <div className="flex items-center gap-2">
-              <BadgeCheck className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span className="font-mono truncate">{app.rera_number}</span>
-            </div>
-          )}
-          {app.created_at && (
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{t('admin.appliedOn', 'Applied {{date}}').replace('{{date}}', formatDate(app.created_at))}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <MapPin className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700">{app.city}</span>
             </div>
           )}
         </div>
+      </div>
 
-        <div className="mt-auto pt-2">
-          <Button
-            className="w-full"
-            variant="secondary"
-            size="sm"
-            icon={<Eye className="h-3.5 w-3.5" />}
-            onClick={() => onReview(app)}
-          >
-            {t('admin.reviewApplication', 'Review Application')}
-          </Button>
-        </div>
+      {/* Review Button */}
+      <div className="mt-auto pt-1">
+        <button
+          type="button"
+          onClick={() => onReview(app)}
+          className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
+        >
+          <Eye className="h-3.5 w-3.5 text-slate-400 group-hover/btn:text-red-500 transition-colors" />
+          <span>{t('admin.reviewApplication', 'Review Application')}</span>
+          <span className="text-slate-300 group-hover/btn:text-red-500 group-hover/btn:translate-x-0.5 transition-all font-bold">→</span>
+        </button>
       </div>
     </div>
   );
@@ -301,68 +373,85 @@ function PartnerAppCard({
   onReview: (a: PartnerApplication) => void;
 }) {
   const { t } = useLanguageContext();
+  const status = app.status || 'submitted';
+
   return (
-    <div className="bg-white rounded-2xl border border-navy-100 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
-      <div className="bg-gradient-to-r from-navy-700 to-navy-900 px-5 pt-5 pb-10 relative">
-        <div className="absolute top-3 right-3">
-          <AppBadge status={app.status || 'submitted'} />
-        </div>
-      </div>
-
-      <div className="flex justify-center -mt-7">
-        <div className="h-14 w-14 rounded-full bg-navy-100 border-4 border-white shadow grid place-items-center">
-          <Handshake className="h-6 w-6 text-navy-600" />
-        </div>
-      </div>
-
-      <div className="px-5 pb-5 pt-3 flex flex-col gap-3 flex-1">
-        <div className="text-center">
-          <h4 className="font-bold text-navy-900 text-base">{app.full_name}</h4>
-          {app.partner_type && <p className="text-xs text-navy-500 mt-0.5">{app.partner_type}</p>}
+    <div className="group relative bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200 flex flex-col justify-between hover:-translate-y-0.5 min-h-[380px]">
+      <div>
+        {/* Top Bar: Date & Status Badge */}
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <span className="text-[11px] font-medium text-slate-400">
+            {app.created_at ? t('admin.appliedOn', 'Applied {{date}}').replace('{{date}}', formatDate(app.created_at)) : ''}
+          </span>
+          <AppBadge status={status} />
         </div>
 
-        <div className="grid grid-cols-1 gap-1.5 text-xs text-navy-600">
-          <div className="flex items-center gap-2">
-            <Phone className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-            <span>{app.mobile_number}</span>
+        {/* Profile Section: Icon + Partner Name & Type */}
+        <div className="flex items-start gap-3.5 mb-4">
+          <div className="relative shrink-0">
+            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 border-2 border-slate-100 ring-2 ring-slate-100/60 shadow-xs flex items-center justify-center">
+              <Handshake className="h-7 w-7 text-slate-600" />
+            </div>
           </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h4 className="font-bold text-slate-900 text-base leading-snug truncate group-hover:text-red-600 transition-colors">
+              {app.full_name}
+            </h4>
+            {app.partner_type && (
+              <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-1">
+                {app.partner_type}
+              </p>
+            )}
+            {app.application_number && (
+              <p className="text-[11px] font-mono text-slate-400 mt-1 truncate">
+                ID: {app.application_number}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="h-px bg-slate-100 w-full mb-3.5" />
+
+        {/* Meta rows */}
+        <div className="space-y-2 text-xs text-slate-600 mb-5">
+          {app.mobile_number && (
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Phone className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700">{app.mobile_number}</span>
+            </div>
+          )}
           {app.email && (
-            <div className="flex items-center gap-2">
-              <Mail className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span className="truncate">{app.email}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <Mail className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700 truncate" title={app.email}>{app.email}</span>
             </div>
           )}
           {app.city && (
-            <div className="flex items-center gap-2">
-              <MapPin className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{app.city}{app.state ? `, ${app.state}` : ''}</span>
-            </div>
-          )}
-          {app.application_number && (
-            <div className="flex items-center gap-2">
-              <BadgeCheck className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span className="font-mono truncate">{app.application_number}</span>
-            </div>
-          )}
-          {app.created_at && (
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-navy-400 shrink-0" />
-              <span>{t('admin.appliedOn', 'Applied {{date}}').replace('{{date}}', formatDate(app.created_at))}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 grid place-items-center shrink-0">
+                <MapPin className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <span className="font-medium text-slate-700">{app.city}{app.state ? `, ${app.state}` : ''}</span>
             </div>
           )}
         </div>
+      </div>
 
-        <div className="mt-auto pt-2">
-          <Button
-            className="w-full"
-            variant="secondary"
-            size="sm"
-            icon={<Eye className="h-3.5 w-3.5" />}
-            onClick={() => onReview(app)}
-          >
-            {t('admin.reviewApplication', 'Review Application')}
-          </Button>
-        </div>
+      {/* Review Button */}
+      <div className="mt-auto pt-1">
+        <button
+          type="button"
+          onClick={() => onReview(app)}
+          className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
+        >
+          <Eye className="h-3.5 w-3.5 text-slate-400 group-hover/btn:text-red-500 transition-colors" />
+          <span>{t('admin.reviewApplication', 'Review Application')}</span>
+          <span className="text-slate-300 group-hover/btn:text-red-500 group-hover/btn:translate-x-0.5 transition-all font-bold">→</span>
+        </button>
       </div>
     </div>
   );
@@ -454,25 +543,31 @@ export function AdminAgentApplications() {
     <DashboardLayout sections={adminSections} title={t('dashboard:agentApps', 'Agent Applications')}>
       <PageHeader title={t('admin.agentApplicationsCrmTitle', 'Agent Applications CRM')} subtitle={t('admin.agentApplicationsCrmSubtitle', 'Manage and verify agent registration pipeline')} />
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <ClickableStatCard
           label={t('admin.pendingVerification', 'Pending Verification')}
           value={pendingCount}
+          sublabel={t('admin.awaitingReview', 'Awaiting review')}
           icon={Clock}
+          variant="warning"
           active={statusFilter === 'pending'}
           onClick={() => setStatusFilter(statusFilter === 'pending' ? null : 'pending')}
         />
         <ClickableStatCard
           label={t('admin.approved', 'Approved')}
           value={approvedCount}
+          sublabel={t('admin.successfullyVerified', 'Successfully verified')}
           icon={CheckCircle2}
+          variant="success"
           active={statusFilter === 'approved'}
           onClick={() => setStatusFilter(statusFilter === 'approved' ? null : 'approved')}
         />
         <ClickableStatCard
           label={t('admin.totalApplicants', 'Total Applicants')}
           value={applications.length}
+          sublabel={t('admin.allApplications', 'All applications')}
           icon={User}
+          variant="default"
           active={!statusFilter}
           onClick={() => setStatusFilter(null)}
         />
@@ -517,7 +612,7 @@ export function AdminAgentApplications() {
             setViewing(null);
             queryClient.invalidateQueries({ queryKey: ['admin-agent-applications'] });
           }}
-          application={viewing}
+          application={applications.find((a) => a.id === viewing.id) ?? viewing}
           type="agent"
         />
       )}
@@ -607,25 +702,31 @@ export function AdminBuilderApplications() {
     <DashboardLayout sections={adminSections} title={t('dashboard:builderApps', 'Builder Applications')}>
       <PageHeader title={t('admin.builderApplicationsCrmTitle', 'Builder Applications CRM')} subtitle={t('admin.builderApplicationsCrmSubtitle', 'Manage builder registration pipeline')} />
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <ClickableStatCard
           label={t('admin.pendingVerification', 'Pending Verification')}
           value={pendingCount}
+          sublabel={t('admin.awaitingReview', 'Awaiting review')}
           icon={Clock}
+          variant="warning"
           active={statusFilter === 'pending'}
           onClick={() => setStatusFilter(statusFilter === 'pending' ? null : 'pending')}
         />
         <ClickableStatCard
           label={t('admin.approved', 'Approved')}
           value={approvedCount}
+          sublabel={t('admin.successfullyVerified', 'Successfully verified')}
           icon={CheckCircle2}
+          variant="success"
           active={statusFilter === 'approved'}
           onClick={() => setStatusFilter(statusFilter === 'approved' ? null : 'approved')}
         />
         <ClickableStatCard
           label={t('admin.totalBuilders', 'Total Builders')}
           value={applications.length}
+          sublabel={t('admin.allApplications', 'All applications')}
           icon={Building2}
+          variant="default"
           active={!statusFilter}
           onClick={() => setStatusFilter(null)}
         />
@@ -670,7 +771,7 @@ export function AdminBuilderApplications() {
             setViewing(null);
             queryClient.invalidateQueries({ queryKey: ['admin-builder-applications'] });
           }}
-          application={viewing}
+          application={applications.find((a) => a.id === viewing.id) ?? viewing}
           type="builder"
         />
       )}
@@ -760,25 +861,31 @@ export function AdminPartnerApplications() {
     <DashboardLayout sections={adminSections} title={t('dashboard:partnerApps', 'Partner Applications')}>
       <PageHeader title={t('admin.partnerApplicationsCrmTitle', 'Partner Applications CRM')} subtitle={t('admin.partnerApplicationsCrmSubtitle', 'Manage and verify partner registration pipeline')} />
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <ClickableStatCard
           label={t('admin.pendingReview', 'Pending Review')}
           value={pendingCount}
+          sublabel={t('admin.awaitingReview', 'Awaiting review')}
           icon={Clock}
+          variant="warning"
           active={statusFilter === 'pending'}
           onClick={() => setStatusFilter(statusFilter === 'pending' ? null : 'pending')}
         />
         <ClickableStatCard
           label={t('admin.approved', 'Approved')}
           value={approvedCount}
+          sublabel={t('admin.successfullyVerified', 'Successfully verified')}
           icon={CheckCircle2}
+          variant="success"
           active={statusFilter === 'approved'}
           onClick={() => setStatusFilter(statusFilter === 'approved' ? null : 'approved')}
         />
         <ClickableStatCard
-          label={t('admin.totalApplicants', 'Total Applicants')}
+          label={t('admin.totalPartners', 'Total Partners')}
           value={applications.length}
+          sublabel={t('admin.allApplications', 'All applications')}
           icon={Handshake}
+          variant="default"
           active={!statusFilter}
           onClick={() => setStatusFilter(null)}
         />
@@ -823,7 +930,7 @@ export function AdminPartnerApplications() {
             setViewing(null);
             queryClient.invalidateQueries({ queryKey: ['admin-partner-applications'] });
           }}
-          application={viewing}
+          application={applications.find((a) => a.id === viewing.id) ?? viewing}
           type="partner"
         />
       )}
