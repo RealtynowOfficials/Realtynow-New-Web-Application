@@ -93,5 +93,6 @@
   "bio": "Bio",
   "started": "Started",
   "with": "with",
-  "payment": "Payment"
+  "payment": "Payment",
+  "searchAssignedProperties": "Search assigned properties by title, locality, city..."
 }

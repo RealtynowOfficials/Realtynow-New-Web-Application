@@ -87,14 +87,19 @@ export const BookVisitModal: React.FC<BookVisitModalProps> = ({
       return;
     }
 
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setErrorMsg('Please enter a valid email address');
+      return;
+    }
+
     setSubmitting(true);
     setErrorMsg('');
 
     try {
       const normalizedPhone = normalizePhoneNumber(phone);
-      let agentId = property.assigned_agent_id || property.owner_id || null;
+      const agentId = property.assigned_agent_id || property.owner_id || null;
 
-      // 1. Call canonical visit RPC
+      // 1. Call canonical visit RPC (creates/updates Lead + Appointment + Notification)
       const { data, error } = await supabase.rpc('submit_visit_request', {
         p_property_id: property.id,
         p_agent_id: agentId,
@@ -113,10 +118,38 @@ export const BookVisitModal: React.FC<BookVisitModalProps> = ({
           `${preferredDate}T${timeSlot.includes('PM') && !timeSlot.startsWith('12') ? parseInt(timeSlot) + 12 : timeSlot.split(':')[0]}:00:00`
         ).toISOString();
 
-        // 2. Direct insert with full fields
-        let insertPayload: Record<string, any> = {
+        // 2. Create or find Lead first
+        let leadId: string | null = null;
+        try {
+          const { data: leadRes } = await supabase
+            .from('enquiries')
+            .insert({
+              property_id: property.id,
+              agent_id: agentId,
+              assigned_to: agentId,
+              customer_id: user?.id ?? null,
+              name: name.trim(),
+              phone: normalizedPhone,
+              email: email.trim() || null,
+              message: `Requested ${visitType} on ${preferredDate} at ${timeSlot}`,
+              source: 'site_visit',
+              lead_status: 'site_visit',
+              status: 'contacted',
+              priority: 'high',
+              follow_up_at: scheduledTime,
+            })
+            .select('id')
+            .maybeSingle();
+          leadId = leadRes?.id ?? null;
+        } catch {
+          // Non-blocking
+        }
+
+        // 3. Direct insert into appointments
+        const insertPayload: Record<string, any> = {
           property_id: property.id,
           customer_id: user?.id ?? null,
+          lead_id: leadId,
           name: name.trim(),
           phone: normalizedPhone,
           email: email.trim() || null,
@@ -135,17 +168,14 @@ export const BookVisitModal: React.FC<BookVisitModalProps> = ({
 
         let { error: directError } = await supabase.from('appointments').insert(insertPayload);
 
-        // If FK constraint error (e.g. agent_id not in auth.users), retry without agent_id
-        if (directError && (directError.code === '23503' || directError.message?.toLowerCase().includes('foreign key') || directError.message?.toLowerCase().includes('agent_id'))) {
-          console.warn('FK constraint error on agent_id, retrying without assigned agent:', directError);
+        if (directError && (directError.code === '23503' || directError.message?.toLowerCase().includes('foreign key'))) {
           delete insertPayload.agent_id;
+          delete insertPayload.lead_id;
           const retryRes = await supabase.from('appointments').insert(insertPayload);
           directError = retryRes.error;
         }
 
-        // If column error (e.g. unknown column visit_type/preferred_date), retry with minimal core schema
         if (directError) {
-          console.warn('Direct appointment insert failed, attempting minimal core schema insert:', directError);
           const minimalPayload: Record<string, any> = {
             property_id: property.id,
             customer_id: user?.id ?? null,

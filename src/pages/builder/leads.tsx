@@ -137,6 +137,50 @@ export function BuilderLeads() {
             getRowId={(row) => row.id}
             searchKeys={['name', 'email', 'phone']}
             selectedIds={selected}
+            cardRender={(l) => (
+              <div
+                key={l.id}
+                className="card p-5 hover:shadow-cardHover transition-all flex flex-col justify-between h-full group bg-white border border-slate-200/80 rounded-2xl"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-11 w-11 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200 flex items-center justify-center font-bold text-navy-900 text-sm shadow-2xs shrink-0">
+                        {l.name ? l.name.charAt(0).toUpperCase() : 'L'}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-navy-900 text-base truncate">{l.name}</h4>
+                        <p className="text-xs text-slate-500 truncate">{l.builder_projects?.name || 'General Inquiry'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs text-slate-600">
+                    {l.email && (
+                      <p className="truncate text-slate-600">📧 {l.email}</p>
+                    )}
+                    {l.phone && (
+                      <p className="text-slate-600">📞 {l.phone}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-[11px] text-slate-400">{formatDate(l.created_at)}</span>
+                  <Select
+                    value={l.status}
+                    onChange={(ev) => updateStatus.mutate({ id: l.id, status: ev.target.value })}
+                    className="py-1 text-xs w-32 capitalize"
+                  >
+                    {BUILDER_LEAD_STATUSES.map((s) => (
+                      <option key={s} value={s} className="capitalize">
+                        {s.replace('_', ' ')}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            )}
             onToggleSelect={(id) => setSelected((prev) => {
               const next = new Set(prev);
               next.has(id) ? next.delete(id) : next.add(id);

@@ -164,6 +164,7 @@ export const WIZARD_STEPS = [
   'Media',
   'Pricing',
   'Availability',
+  'Ownership',
   'SEO',
   'Review',
   'Submit',

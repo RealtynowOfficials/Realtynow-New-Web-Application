@@ -396,13 +396,13 @@ export function BuilderPricing() {
             value={form.effective_from}
             onChange={(e) => setForm((f) => ({ ...f, effective_from: e.target.value }))}
             error={formErrors.effective_from}
-            className="sm:col-span-2"
+            containerClassName="sm:col-span-2"
           />
           <Textarea
             label="Notes (optional)"
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-            className="sm:col-span-2"
+            containerClassName="sm:col-span-2"
           />
         </div>
       </Modal>

@@ -79,11 +79,16 @@ export function Badge({
 
 export const Input = forwardRef<
   HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement> & { label?: string; error?: string; hint?: string }
->(({ label, error, hint, className, id, ...props }, ref) => {
+  React.InputHTMLAttributes<HTMLInputElement> & {
+    label?: string;
+    error?: string;
+    hint?: string;
+    containerClassName?: string;
+  }
+>(({ label, error, hint, className, containerClassName, id, ...props }, ref) => {
   const inputId = id || props.name;
   return (
-    <div>
+    <div className={containerClassName}>
       {label && (
         <label htmlFor={inputId} className="label">
           {label}
@@ -107,11 +112,16 @@ Input.displayName = 'Input';
 
 export const Textarea = forwardRef<
   HTMLTextAreaElement,
-  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: string; error?: string }
->(({ label, error, className, id, ...props }, ref) => {
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+    label?: string;
+    error?: string;
+    hint?: string;
+    containerClassName?: string;
+  }
+>(({ label, error, hint, className, containerClassName, id, ...props }, ref) => {
   const taId = id || props.name;
   return (
-    <div>
+    <div className={containerClassName}>
       {label && (
         <label htmlFor={taId} className="label">
           {label}
@@ -123,7 +133,11 @@ export const Textarea = forwardRef<
         className={cn('input min-h-[96px] resize-y', error && 'border-error-400', className)}
         {...props}
       />
-      {error && <p className="mt-1 text-xs text-error-600">{error}</p>}
+      {error ? (
+        <p className="mt-1 text-xs text-error-600">{error}</p>
+      ) : hint ? (
+        <p className="mt-1 text-xs text-navy-400">{hint}</p>
+      ) : null}
     </div>
   );
 });
@@ -131,11 +145,17 @@ Textarea.displayName = 'Textarea';
 
 export const Select = forwardRef<
   HTMLSelectElement,
-  React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string; error?: string; children: React.ReactNode }
->(({ label, error, className, id, children, ...props }, ref) => {
+  React.SelectHTMLAttributes<HTMLSelectElement> & {
+    label?: string;
+    error?: string;
+    hint?: string;
+    containerClassName?: string;
+    children: React.ReactNode;
+  }
+>(({ label, error, hint, className, containerClassName, id, children, ...props }, ref) => {
   const selId = id || props.name;
   return (
-    <div>
+    <div className={containerClassName}>
       {label && (
         <label htmlFor={selId} className="label">
           {label}
@@ -144,7 +164,11 @@ export const Select = forwardRef<
       <select ref={ref} id={selId} className={cn('input pr-8', error && 'border-error-400', className)} {...props}>
         {children}
       </select>
-      {error && <p className="mt-1 text-xs text-error-600">{error}</p>}
+      {error ? (
+        <p className="mt-1 text-xs text-error-600">{error}</p>
+      ) : hint ? (
+        <p className="mt-1 text-xs text-navy-400">{hint}</p>
+      ) : null}
     </div>
   );
 });

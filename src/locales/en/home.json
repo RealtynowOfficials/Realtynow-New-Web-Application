@@ -131,5 +131,12 @@
   "bankingPartners": "Our Banking & Insurance Partners",
   "readyToFind": "Ready to Find Your Dream Property?",
   "joinThousands": "Join thousands of satisfied customers who found their perfect home with RealtyNow\\'s AI-powered platform.",
-  "faqTitle": "Frequently Asked Questions"
+  "faqTitle": "Frequently Asked Questions",
+  "exploreBuildersTitle": "Explore Builders on RealtyNow",
+  "exploreBuildersSubtitle": "Discover trusted builders, explore their projects, and find your next property with confidence.",
+  "viewAllBuilders": "View All Builders",
+  "viewBuilder": "View Builder",
+  "verifiedBuilder": "Verified Builder",
+  "noBuildersAvailable": "No builders available at the moment.",
+  "unableToLoadBuilders": "Unable to load builders right now."
 }

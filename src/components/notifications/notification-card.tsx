@@ -67,6 +67,15 @@ export function NotificationCard({
   const status = statusOf(notif);
   const link = notif.action_url || notif.link;
 
+  const isLeadOrVisit =
+    Boolean(link && (link.includes('/agent/leads') || link.includes('/agent/appointments'))) ||
+    category === 'Enquiry' ||
+    category === 'Appointment' ||
+    notif.title.toLowerCase().includes('lead') ||
+    notif.title.toLowerCase().includes('visit') ||
+    notif.title.toLowerCase().includes('appointment') ||
+    notif.title.toLowerCase().includes('enquiry');
+
   return (
     <motion.div
       layout
@@ -74,19 +83,26 @@ export function NotificationCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.2 }}
+      onClick={() => {
+        if (link) onView();
+      }}
       className={cn(
-        'group relative flex items-start gap-3 rounded-2xl border p-4 transition-colors sm:gap-4',
+        'group relative flex items-start gap-3 rounded-2xl border p-4 transition-all sm:gap-4',
+        link && 'cursor-pointer hover:border-slate-300 hover:shadow-xs',
         status === 'Unread'
           ? 'border-red-100 bg-red-50/40 dark:border-red-900/40 dark:bg-red-950/10'
           : 'border-navy-100 bg-white dark:border-navy-800 dark:bg-navy-900',
         status === 'Archived' && 'opacity-60',
-        'hover:shadow-sm dark:hover:shadow-none',
       )}
     >
       <input
         type="checkbox"
         checked={selected}
-        onChange={(e) => onToggleSelect(e.target.checked)}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggleSelect(e.target.checked);
+        }}
+        onClick={(e) => e.stopPropagation()}
         className="mt-1.5 h-4 w-4 shrink-0 cursor-pointer rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600"
         aria-label="Select notification"
       />
@@ -102,9 +118,9 @@ export function NotificationCard({
           </p>
           <span className="shrink-0 text-xs text-navy-400 dark:text-navy-500">{relativeTime(notif.created_at)}</span>
         </div>
-        {notif.body && <p className="mt-0.5 text-sm text-navy-600 dark:text-navy-300 line-clamp-2">{notif.body}</p>}
+        {notif.body && <p className="mt-1 text-sm text-navy-600 dark:text-navy-300 leading-relaxed">{notif.body}</p>}
 
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <Badge variant="default" className="text-[10px]">
             {category}
           </Badge>
@@ -119,15 +135,31 @@ export function NotificationCard({
           {status === 'Archived' && (
             <span className="text-[10px] font-bold uppercase tracking-wide text-navy-400">Archived</span>
           )}
+
+          {link && isLeadOrVisit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onView();
+              }}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-red-700 hover:underline ml-1"
+            >
+              View Details <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1 opacity-100 sm:flex-row sm:items-center sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
+      <div
+        className="flex shrink-0 flex-col items-end gap-1 opacity-100 sm:flex-row sm:items-center sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
         {link && (
           <button
             type="button"
             onClick={onView}
-            title="View"
+            title="View Details"
             className="grid h-8 w-8 place-items-center rounded-lg text-navy-400 hover:bg-navy-100 hover:text-navy-700 dark:hover:bg-navy-800"
           >
             <ExternalLink className="h-4 w-4" />

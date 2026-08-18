@@ -134,13 +134,17 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
       setErrorMsg('Please enter your phone number');
       return;
     }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setErrorMsg('Please enter a valid email address');
+      return;
+    }
 
     setSubmitting(true);
     setErrorMsg('');
 
     try {
       const normalizedPhone = normalizePhoneNumber(phone);
-      let agentId = agent?.id || property.assigned_agent_id || property.owner_id || null;
+      const agentId = agent?.id || property.assigned_agent_id || property.owner_id || null;
 
       // 1. Try canonical RPC
       const { data, error } = await supabase.rpc('submit_contact_lead', {
@@ -156,14 +160,14 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
         console.warn('submit_contact_lead RPC returned error, attempting direct insert:', error);
 
         // 2. Direct insert with full fields
-        let insertPayload: Record<string, any> = {
+        const insertPayload: Record<string, any> = {
           property_id: property.id,
           customer_id: user?.id ?? null,
           name: name.trim(),
           phone: normalizedPhone,
           email: email.trim() || null,
           message: message.trim() || null,
-          source: 'contact_agent',
+          source: 'property_contact_agent',
           lead_status: 'new',
           status: 'new',
         };
@@ -171,20 +175,20 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
         if (agentId) {
           insertPayload.agent_id = agentId;
           insertPayload.assigned_to = agentId;
+          insertPayload.assigned_at = new Date().toISOString();
         }
 
         let { error: directError } = await supabase.from('enquiries').insert(insertPayload);
 
-        // If FK constraint error (e.g. agent_id not in auth.users), retry without agent_id
+        // If FK constraint error on agent_id (e.g. agent_id not in auth.users), fallback by keeping assigned_to
         if (directError && (directError.code === '23503' || directError.message?.toLowerCase().includes('foreign key') || directError.message?.toLowerCase().includes('agent_id'))) {
-          console.warn('FK constraint error on agent_id, retrying without assigned agent:', directError);
+          console.warn('FK constraint error on agent_id, retrying with assigned_to only:', directError);
           delete insertPayload.agent_id;
-          delete insertPayload.assigned_to;
           const retryRes = await supabase.from('enquiries').insert(insertPayload);
           directError = retryRes.error;
         }
 
-        // If column error (e.g. unknown column lead_status/source), retry with minimal core schema
+        // If column error, retry with minimal core schema
         if (directError) {
           console.warn('Direct insert failed, attempting minimal core enquiry insert:', directError);
           const minimalPayload: Record<string, any> = {
@@ -196,6 +200,9 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
             message: message.trim() || null,
             status: 'new',
           };
+          if (agentId) {
+            minimalPayload.assigned_to = agentId;
+          }
           const minimalRetry = await supabase.from('enquiries').insert(minimalPayload);
           if (minimalRetry.error) {
             console.error('All enquiry insertion tiers failed:', minimalRetry.error);
@@ -208,7 +215,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
       addToast('success', 'Enquiry sent successfully!');
     } catch (err: unknown) {
       console.error('Contact agent submission failed:', err);
-      setErrorMsg('Unable to send your enquiry right now. Please try again.');
+      setErrorMsg('Unable to submit your enquiry right now. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -226,9 +233,12 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
             <CheckCircle2 className="w-10 h-10" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-navy-900">Enquiry Sent Successfully</h3>
-            <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
-              The agent will contact you shortly regarding <strong className="text-navy-900">{property.title}</strong>.
+            <h3 className="text-xl font-bold text-navy-900">Enquiry Submitted</h3>
+            <p className="text-sm text-slate-600 mt-2 max-w-sm mx-auto">
+              Thank you, <strong className="text-navy-900">{name.trim()}</strong>.
+            </p>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              <strong className="text-navy-900">{agentDisplayName}</strong> will contact you shortly regarding <strong className="text-navy-900">{property.title}</strong>.
             </p>
           </div>
           <div className="pt-4">

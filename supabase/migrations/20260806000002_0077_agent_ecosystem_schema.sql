@@ -24,12 +24,19 @@ CREATE TABLE IF NOT EXISTS public.agent_negotiations (
 
 ALTER TABLE public.agent_negotiations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "agent_negotiations_select" ON public.agent_negotiations;
 CREATE POLICY "agent_negotiations_select" ON public.agent_negotiations
   FOR SELECT TO authenticated USING (auth.uid() = agent_id OR public.is_staff());
+
+DROP POLICY IF EXISTS "agent_negotiations_insert" ON public.agent_negotiations;
 CREATE POLICY "agent_negotiations_insert" ON public.agent_negotiations
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = agent_id);
+
+DROP POLICY IF EXISTS "agent_negotiations_update" ON public.agent_negotiations;
 CREATE POLICY "agent_negotiations_update" ON public.agent_negotiations
   FOR UPDATE TO authenticated USING (auth.uid() = agent_id) WITH CHECK (auth.uid() = agent_id);
+
+DROP POLICY IF EXISTS "agent_negotiations_delete" ON public.agent_negotiations;
 CREATE POLICY "agent_negotiations_delete" ON public.agent_negotiations
   FOR DELETE TO authenticated USING (auth.uid() = agent_id);
 
@@ -54,12 +61,19 @@ CREATE TABLE IF NOT EXISTS public.agent_documents (
 
 ALTER TABLE public.agent_documents ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "agent_documents_select" ON public.agent_documents;
 CREATE POLICY "agent_documents_select" ON public.agent_documents
   FOR SELECT TO authenticated USING (auth.uid() = agent_id OR public.is_staff());
+
+DROP POLICY IF EXISTS "agent_documents_insert" ON public.agent_documents;
 CREATE POLICY "agent_documents_insert" ON public.agent_documents
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = agent_id);
+
+DROP POLICY IF EXISTS "agent_documents_update" ON public.agent_documents;
 CREATE POLICY "agent_documents_update" ON public.agent_documents
   FOR UPDATE TO authenticated USING (auth.uid() = agent_id) WITH CHECK (auth.uid() = agent_id);
+
+DROP POLICY IF EXISTS "agent_documents_delete" ON public.agent_documents;
 CREATE POLICY "agent_documents_delete" ON public.agent_documents
   FOR DELETE TO authenticated USING (auth.uid() = agent_id);
 
@@ -84,12 +98,19 @@ CREATE TABLE IF NOT EXISTS public.agent_tasks (
 
 ALTER TABLE public.agent_tasks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "agent_tasks_select" ON public.agent_tasks;
 CREATE POLICY "agent_tasks_select" ON public.agent_tasks
   FOR SELECT TO authenticated USING (auth.uid() = agent_id OR public.is_staff());
+
+DROP POLICY IF EXISTS "agent_tasks_insert" ON public.agent_tasks;
 CREATE POLICY "agent_tasks_insert" ON public.agent_tasks
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = agent_id);
+
+DROP POLICY IF EXISTS "agent_tasks_update" ON public.agent_tasks;
 CREATE POLICY "agent_tasks_update" ON public.agent_tasks
   FOR UPDATE TO authenticated USING (auth.uid() = agent_id) WITH CHECK (auth.uid() = agent_id);
+
+DROP POLICY IF EXISTS "agent_tasks_delete" ON public.agent_tasks;
 CREATE POLICY "agent_tasks_delete" ON public.agent_tasks
   FOR DELETE TO authenticated USING (auth.uid() = agent_id);
 

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Edit3, Layers, Plus, Trash2 } from 'lucide-react';
+import { Edit3, Layers, Plus, Trash2, Building2, Sparkles, Check, AlertCircle, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
@@ -8,20 +9,29 @@ import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
 import { DataTable } from '../../components/data-table';
 import type { Column } from '../../components/data-table';
-import { Badge, Button, EmptyState, Input, Modal, Select } from '../../components/ui';
+import { Badge, Button, EmptyState, Input, Modal, Select, Spinner } from '../../components/ui';
 import { useToast } from '../../components/toast';
 import { useRealtimeCount } from '../../lib/realtime';
 import { logBuilderAudit } from '../../lib/builder-audit';
 import type { BuilderFloor, BuilderTowerStatus } from '../../lib/types';
 
-type FloorRow = BuilderFloor & { builder_towers: { name: string } | null };
+type FloorRow = BuilderFloor & { builder_towers: { name: string; project_id?: string; builder_projects?: { name: string } | null } | null };
 
 const STATUS_OPTIONS: BuilderTowerStatus[] = ['planned', 'under_construction', 'ready'];
 
 const statusBadgeVariant = (status: BuilderTowerStatus) =>
   status === 'ready' ? 'success' : status === 'under_construction' ? 'warning' : 'default';
 
-const emptyForm = { tower_id: '', floor_number: '', name: '', status: 'planned' as BuilderTowerStatus };
+const emptyForm = {
+  project_id: '',
+  tower_id: '',
+  floor_number: '',
+  name: '',
+  status: 'planned' as BuilderTowerStatus,
+  is_batch: false,
+  start_floor: '1',
+  end_floor: '10',
+};
 
 export function BuilderFloors() {
   const { user } = useAuth();
@@ -39,10 +49,21 @@ export function BuilderFloors() {
   const [toDelete, setToDelete] = useState<FloorRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const { data: projects } = useQuery({
+  // Inline quick block creation state
+  const [showQuickAddTower, setShowQuickAddTower] = useState(false);
+  const [quickTowerName, setQuickTowerName] = useState('');
+  const [quickTowerFloors, setQuickTowerFloors] = useState('10');
+  const [quickTowerSaving, setQuickTowerSaving] = useState(false);
+
+  // 1. Fetch Builder's Projects
+  const { data: projects, isLoading: projectsLoading } = useQuery({
     queryKey: ['builder-my-projects', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('builder_projects').select('id').eq('builder_id', user!.id);
+      const { data, error } = await supabase
+        .from('builder_projects')
+        .select('id, name')
+        .eq('builder_id', user!.id)
+        .order('name');
       if (error) throw error;
       return data ?? [];
     },
@@ -51,24 +72,26 @@ export function BuilderFloors() {
 
   const projectIds = useMemo(() => (projects ?? []).map((p) => p.id), [projects]);
 
-  const { data: towers } = useQuery({
+  // 2. Fetch Builder's Towers/Blocks across all projects
+  const { data: towers, isLoading: towersLoading } = useQuery({
     queryKey: ['builder-my-towers', user?.id, projectIds.join(',')],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
       const { data, error } = await supabase
         .from('builder_towers')
-        .select('id, name')
+        .select('id, name, project_id, total_floors, builder_projects(id, name)')
         .in('project_id', projectIds)
         .order('name');
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as any[];
     },
-    enabled: !!user && !!projects,
+    enabled: !!user && projectIds.length > 0,
   });
 
   const towerIds = useMemo(() => (towers ?? []).map((tw) => tw.id), [towers]);
   const floorsTick = useRealtimeCount('builder_floors');
 
+  // 3. Fetch Builder's Floors
   const {
     data: floors,
     isLoading,
@@ -79,14 +102,21 @@ export function BuilderFloors() {
       if (towerIds.length === 0) return [] as FloorRow[];
       const { data, error } = await supabase
         .from('builder_floors')
-        .select('*, builder_towers(name)')
+        .select('*, builder_towers(name, project_id, builder_projects(name))')
         .in('tower_id', towerIds)
         .order('floor_number', { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as FloorRow[];
     },
-    enabled: !!user && !!towers,
+    enabled: !!user && towerIds.length > 0,
   });
+
+  // Filter towers based on selected project in form
+  const availableTowers = useMemo(() => {
+    if (!towers || towers.length === 0) return [];
+    if (!form.project_id) return towers;
+    return towers.filter((tw) => tw.project_id === form.project_id);
+  }, [towers, form.project_id]);
 
   const stats = useMemo(() => {
     const rows = floors ?? [];
@@ -99,29 +129,89 @@ export function BuilderFloors() {
   }, [floors]);
 
   const openCreate = () => {
+    const defaultProject = projects?.[0]?.id ?? '';
+    const initialTowers = defaultProject ? (towers ?? []).filter((t) => t.project_id === defaultProject) : (towers ?? []);
+    const defaultTower = initialTowers[0]?.id ?? towers?.[0]?.id ?? '';
+
     setEditing(null);
-    setForm({ ...emptyForm, tower_id: towerIds[0] ?? '' });
+    setForm({
+      ...emptyForm,
+      project_id: defaultProject,
+      tower_id: defaultTower,
+      floor_number: '',
+    });
     setFormErrors({});
+    setShowQuickAddTower(false);
+    setQuickTowerName('');
     setShowModal(true);
   };
 
   const openEdit = (row: FloorRow) => {
     setEditing(row);
+    const tower = towers?.find((t) => t.id === row.tower_id);
     setForm({
+      ...emptyForm,
+      project_id: tower?.project_id ?? '',
       tower_id: row.tower_id,
       floor_number: String(row.floor_number),
       name: row.name ?? '',
       status: row.status,
+      is_batch: false,
     });
     setFormErrors({});
+    setShowQuickAddTower(false);
     setShowModal(true);
+  };
+
+  // Inline Quick Add Block
+  const handleQuickAddTower = async () => {
+    const projectId = form.project_id || projects?.[0]?.id;
+    if (!projectId) {
+      addToast('error', 'Please select or create a project first');
+      return;
+    }
+    if (!quickTowerName.trim()) {
+      addToast('error', 'Please enter a block/tower name');
+      return;
+    }
+    setQuickTowerSaving(true);
+    try {
+      const payload = {
+        project_id: projectId,
+        name: quickTowerName.trim(),
+        total_floors: Math.max(1, Number(quickTowerFloors) || 1),
+        status: 'planned' as BuilderTowerStatus,
+      };
+      const { data, error } = await supabase.from('builder_towers').insert(payload).select('id, name, project_id').single();
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({ queryKey: ['builder-my-towers'] });
+      await queryClient.invalidateQueries({ queryKey: ['builder-towers'] });
+
+      setForm((f) => ({ ...f, project_id: projectId, tower_id: data.id }));
+      setShowQuickAddTower(false);
+      setQuickTowerName('');
+      addToast('success', `Block "${data.name}" created and selected!`);
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to create block');
+    } finally {
+      setQuickTowerSaving(false);
+    }
   };
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!form.tower_id) errs.tower_id = 'Block/tower is required';
-    if (form.floor_number.trim() === '' || Number.isNaN(Number(form.floor_number))) {
-      errs.floor_number = 'Floor number is required';
+    if (!form.tower_id) errs.tower_id = 'Block / Tower is required';
+    if (!form.is_batch) {
+      if (form.floor_number.trim() === '' || Number.isNaN(Number(form.floor_number))) {
+        errs.floor_number = 'Floor number is required (e.g. 1, 2, 3)';
+      }
+    } else {
+      const start = Number(form.start_floor);
+      const end = Number(form.end_floor);
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end) {
+        errs.start_floor = 'Start floor must be less than or equal to End floor';
+      }
     }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -131,26 +221,43 @@ export function BuilderFloors() {
     if (!validate()) return;
     setSaving(true);
     try {
-      const payload = {
-        tower_id: form.tower_id,
-        floor_number: Number(form.floor_number),
-        name: form.name.trim() || null,
-        status: form.status,
-      };
       if (editing) {
+        const payload = {
+          tower_id: form.tower_id,
+          floor_number: Number(form.floor_number),
+          name: form.name.trim() || null,
+          status: form.status,
+        };
         const { error } = await supabase.from('builder_floors').update(payload).eq('id', editing.id);
         if (error) throw error;
-        logBuilderAudit('update', 'builder_floors', editing.id, { floor_number: payload.floor_number }).catch(
-          () => {},
-        );
-        addToast('success', 'Floor updated');
+        logBuilderAudit('update', 'builder_floors', editing.id, { floor_number: payload.floor_number }).catch(() => {});
+        addToast('success', 'Floor updated successfully');
+      } else if (form.is_batch) {
+        const start = Number(form.start_floor);
+        const end = Number(form.end_floor);
+        const batchPayload = [];
+        for (let fl = start; fl <= end; fl++) {
+          batchPayload.push({
+            tower_id: form.tower_id,
+            floor_number: fl,
+            name: fl === 0 ? 'Ground Floor' : `Floor ${fl}`,
+            status: form.status,
+          });
+        }
+        const { error } = await supabase.from('builder_floors').insert(batchPayload);
+        if (error) throw error;
+        addToast('success', `Created ${batchPayload.length} floors (Floors ${start} to ${end}) successfully!`);
       } else {
+        const payload = {
+          tower_id: form.tower_id,
+          floor_number: Number(form.floor_number),
+          name: form.name.trim() || null,
+          status: form.status,
+        };
         const { data, error } = await supabase.from('builder_floors').insert(payload).select('id').single();
         if (error) throw error;
-        logBuilderAudit('create', 'builder_floors', data?.id ?? null, { floor_number: payload.floor_number }).catch(
-          () => {},
-        );
-        addToast('success', 'Floor created');
+        logBuilderAudit('create', 'builder_floors', data?.id ?? null, { floor_number: payload.floor_number }).catch(() => {});
+        addToast('success', 'Floor created successfully');
       }
       queryClient.invalidateQueries({ queryKey: ['builder-floors'] });
       setShowModal(false);
@@ -181,12 +288,34 @@ export function BuilderFloors() {
 
   const columns = useMemo<Column<FloorRow>[]>(
     () => [
-      { key: 'floor_number', header: 'Floor #', sortable: true, render: (row) => row.floor_number },
-      { key: 'name', header: 'Name', render: (row) => row.name ?? '—' },
+      {
+        key: 'floor_number',
+        header: 'Floor #',
+        sortable: true,
+        render: (row) => (
+          <span className="font-bold text-navy-900 bg-slate-100 px-2.5 py-1 rounded-lg text-xs">
+            Floor {row.floor_number}
+          </span>
+        ),
+      },
+      {
+        key: 'name',
+        header: 'Floor Name / Label',
+        render: (row) => <span className="font-medium text-slate-800">{row.name ?? '—'}</span>,
+      },
       {
         key: 'tower',
         header: 'Block / Tower',
-        render: (row) => <span className="text-sm text-navy-600">{row.builder_towers?.name ?? '—'}</span>,
+        render: (row) => (
+          <div>
+            <span className="font-semibold text-navy-900">{row.builder_towers?.name ?? '—'}</span>
+            {row.builder_towers?.builder_projects?.name && (
+              <span className="block text-xs text-slate-400 font-normal">
+                {row.builder_towers.builder_projects.name}
+              </span>
+            )}
+          </div>
+        ),
       },
       {
         key: 'status',
@@ -206,7 +335,7 @@ export function BuilderFloors() {
             <Button
               size="sm"
               variant="ghost"
-              className="text-error-600"
+              className="text-error-600 hover:text-error-700"
               icon={<Trash2 className="h-4 w-4" />}
               onClick={() => setToDelete(row)}
             />
@@ -240,10 +369,10 @@ export function BuilderFloors() {
       <DataTable
         columns={columns}
         rows={floors ?? []}
-        loading={isLoading}
+        loading={isLoading || towersLoading || projectsLoading}
         error={error instanceof Error ? error.message : null}
         getRowId={(row) => row.id}
-        searchKeys={['name']}
+        searchKeys={['name', 'floor_number']}
         selectedIds={selected}
         onToggleSelect={(id) =>
           setSelected((prev) => {
@@ -263,9 +392,9 @@ export function BuilderFloors() {
           <EmptyState
             icon={<Layers className="h-6 w-6" />}
             title="No floors yet"
-            description="Add floors to a block to start placing units on them."
+            description="Add floors to a block/tower to start placing units on them."
             action={
-              <Button size="sm" onClick={openCreate}>
+              <Button size="sm" onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
                 Add Floor
               </Button>
             }
@@ -273,6 +402,7 @@ export function BuilderFloors() {
         }
       />
 
+      {/* Add / Edit Floor Modal */}
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
@@ -283,54 +413,219 @@ export function BuilderFloors() {
             <Button variant="secondary" onClick={() => setShowModal(false)}>
               Cancel
             </Button>
-            <Button onClick={saveFloor} loading={saving}>
-              {editing ? 'Save changes' : 'Create floor'}
+            <Button onClick={saveFloor} loading={saving} icon={editing ? undefined : <Plus className="h-4 w-4" />}>
+              {editing ? 'Save changes' : form.is_batch ? 'Generate floors' : 'Create floor'}
             </Button>
           </>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select
-            label="Block / Tower"
-            value={form.tower_id}
-            onChange={(e) => setForm((f) => ({ ...f, tower_id: e.target.value }))}
-            error={formErrors.tower_id}
-            className="sm:col-span-2"
-          >
-            <option value="">Select a block/tower</option>
-            {(towers ?? []).map((tw) => (
-              <option key={tw.id} value={tw.id}>
-                {tw.name}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Floor Number"
-            type="number"
-            value={form.floor_number}
-            onChange={(e) => setForm((f) => ({ ...f, floor_number: e.target.value }))}
-            error={formErrors.floor_number}
-          />
-          <Input
-            label="Name (optional)"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-          <Select
-            label="Status"
-            value={form.status}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as BuilderTowerStatus }))}
-            className="sm:col-span-2"
-          >
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s} className="capitalize">
-                {s.replace('_', ' ')}
-              </option>
-            ))}
-          </Select>
+        <div className="space-y-4">
+          {/* If No Projects Exist */}
+          {!projectsLoading && (!projects || projects.length === 0) && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-sm text-amber-900 mb-1">No Projects Found</p>
+                <p className="text-amber-700 mb-2">
+                  You need to create a project in the Builder Portal before adding blocks and floors.
+                </p>
+                <Link
+                  to="/builder/projects"
+                  className="inline-flex items-center gap-1 font-bold text-red-600 hover:text-red-700 bg-white px-3 py-1.5 rounded-lg border border-amber-300 shadow-2xs"
+                >
+                  Create Project <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Project & Tower Selection Grid */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {/* Project Selection (shown when multiple projects or to switch project) */}
+            {projects && projects.length > 1 && (
+              <Select
+                label="Project"
+                value={form.project_id}
+                onChange={(e) => {
+                  const newProjectId = e.target.value;
+                  const newTowers = (towers ?? []).filter((tw) => tw.project_id === newProjectId);
+                  setForm((f) => ({
+                    ...f,
+                    project_id: newProjectId,
+                    tower_id: newTowers[0]?.id ?? '',
+                  }));
+                }}
+                containerClassName="sm:col-span-2"
+              >
+                <option value="">All Projects</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {/* Block / Tower Dropdown */}
+            <div className="sm:col-span-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="label mb-0">Block / Tower</label>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddTower((prev) => !prev)}
+                  className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {showQuickAddTower ? 'Cancel New Block' : '+ Quick Add Block'}
+                </button>
+              </div>
+
+              {!showQuickAddTower ? (
+                <div>
+                  <select
+                    value={form.tower_id}
+                    onChange={(e) => setForm((f) => ({ ...f, tower_id: e.target.value }))}
+                    className={`input pr-8 ${formErrors.tower_id ? 'border-error-400' : ''}`}
+                  >
+                    <option value="">Select a block/tower</option>
+                    {availableTowers.map((tw) => {
+                      const projName = tw.builder_projects?.name;
+                      return (
+                        <option key={tw.id} value={tw.id}>
+                          {tw.name} {projName ? `· (${projName})` : ''} {tw.total_floors ? `· [${tw.total_floors} Floors]` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {formErrors.tower_id && <p className="mt-1 text-xs text-error-600">{formErrors.tower_id}</p>}
+                </div>
+              ) : (
+                /* Inline Quick Add Block Form */
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
+                  <p className="text-xs font-bold text-navy-900 flex items-center gap-1.5">
+                    <Building2 className="h-4 w-4 text-red-600" /> Create New Block / Tower
+                  </p>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <Input
+                      label="Block Name"
+                      placeholder="e.g. Tower A, Block 1"
+                      value={quickTowerName}
+                      onChange={(e) => setQuickTowerName(e.target.value)}
+                    />
+                    <Input
+                      label="Total Floors"
+                      type="number"
+                      min={1}
+                      value={quickTowerFloors}
+                      onChange={(e) => setQuickTowerFloors(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button size="sm" variant="secondary" onClick={() => setShowQuickAddTower(false)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleQuickAddTower} loading={quickTowerSaving}>
+                      Save & Select Block
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* No Towers Warning Banner */}
+              {!towersLoading && availableTowers.length === 0 && !showQuickAddTower && (
+                <div className="mt-2 p-3 rounded-xl bg-slate-100/90 text-xs text-slate-600 flex items-center justify-between">
+                  <span>No blocks/towers found for this project.</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickAddTower(true)}
+                    className="font-bold text-red-600 hover:text-red-700 underline"
+                  >
+                    + Create a block now
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Mode Switcher (Single Floor vs Batch Floor Generator) - only on Create */}
+            {!editing && (
+              <div className="sm:col-span-2 flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                <div>
+                  <span className="text-xs font-bold text-navy-900 block">Batch Floor Generator</span>
+                  <span className="text-[11px] text-slate-500">Generate multiple floors in 1 click (e.g. Floors 1 to 10)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, is_batch: !f.is_batch }))}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    form.is_batch ? 'bg-red-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      form.is_batch ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
+            {/* Single Floor Inputs */}
+            {!form.is_batch ? (
+              <>
+                <Input
+                  label="Floor Number"
+                  type="number"
+                  placeholder="e.g. 1, 2, 3"
+                  value={form.floor_number}
+                  onChange={(e) => setForm((f) => ({ ...f, floor_number: e.target.value }))}
+                  error={formErrors.floor_number}
+                />
+                <Input
+                  label="Floor Name / Label (Optional)"
+                  placeholder="e.g. Ground Floor, Penthouse"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </>
+            ) : (
+              /* Batch Generation Inputs */
+              <>
+                <Input
+                  label="From Floor #"
+                  type="number"
+                  placeholder="1"
+                  value={form.start_floor}
+                  onChange={(e) => setForm((f) => ({ ...f, start_floor: e.target.value }))}
+                  error={formErrors.start_floor}
+                />
+                <Input
+                  label="To Floor #"
+                  type="number"
+                  placeholder="10"
+                  value={form.end_floor}
+                  onChange={(e) => setForm((f) => ({ ...f, end_floor: e.target.value }))}
+                />
+              </>
+            )}
+
+            {/* Status Dropdown */}
+            <Select
+              label="Status"
+              value={form.status}
+              onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as BuilderTowerStatus }))}
+              containerClassName="sm:col-span-2"
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s} className="capitalize">
+                  {s.replace('_', ' ')}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
       </Modal>
 
+      {/* Delete Floor Confirmation Modal */}
       <Modal
         open={!!toDelete}
         onClose={() => setToDelete(null)}
@@ -356,7 +651,7 @@ export function BuilderFloors() {
         }
       >
         <p className="text-sm text-navy-700">
-          This will permanently delete floor {toDelete?.floor_number} and unlink any units placed on it.
+          This will permanently delete floor <strong>{toDelete?.floor_number}</strong> and unlink any units placed on it.
         </p>
       </Modal>
     </DashboardLayout>

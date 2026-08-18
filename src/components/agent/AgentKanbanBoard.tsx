@@ -19,16 +19,17 @@ type Lead = any;
 interface AgentKanbanBoardProps {
   leads: Lead[];
   onStatusChange: (id: string, newStatus: string) => void;
+  onOpenLead?: (lead: Lead) => void;
 }
 
-export function AgentKanbanBoard({ leads, onStatusChange }: AgentKanbanBoardProps) {
+export function AgentKanbanBoard({ leads, onStatusChange, onOpenLead }: AgentKanbanBoardProps) {
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
 
   const leadsByStage = useMemo(() => {
     const grouped: Record<string, Lead[]> = {};
-    PIPELINE_STAGES.forEach(s => grouped[s.id] = []);
-    
-    leads.forEach(lead => {
+    PIPELINE_STAGES.forEach((s) => (grouped[s.id] = []));
+
+    leads.forEach((lead) => {
       const status = lead.lead_status || lead.status;
       if (grouped[status]) {
         grouped[status].push(lead);
@@ -72,24 +73,24 @@ export function AgentKanbanBoard({ leads, onStatusChange }: AgentKanbanBoardProp
     <div className="flex gap-4 overflow-x-auto pb-4 h-[calc(100vh-280px)] min-h-[600px] snap-x">
       {PIPELINE_STAGES.map((stage) => {
         const stageLeads = leadsByStage[stage.id] || [];
-        
+
         return (
-          <div 
+          <div
             key={stage.id}
-            className="flex-shrink-0 w-80 bg-gray-50 rounded-xl border border-gray-200 flex flex-col snap-start"
+            className="flex-shrink-0 w-80 bg-slate-50/70 rounded-2xl border border-slate-200/80 flex flex-col snap-start"
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, stage.id)}
           >
-            <div className="p-4 border-b border-gray-200 bg-white rounded-t-xl flex justify-between items-center sticky top-0 z-10 shadow-sm">
-              <h3 className="font-semibold text-navy-900 flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${stage.color.split(' ')[0]}`}></span>
+            <div className="p-4 border-b border-slate-200/80 bg-white rounded-t-2xl flex justify-between items-center sticky top-0 z-10 shadow-2xs">
+              <h3 className="font-bold text-navy-900 text-sm flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${stage.color.split(' ')[0]}`} />
                 {stage.label}
               </h3>
               <Badge variant="default" className="font-mono text-xs">
                 {stageLeads.length}
               </Badge>
             </div>
-            
+
             <div className="p-3 flex-1 overflow-y-auto space-y-3">
               {stageLeads.map((lead) => (
                 <motion.div
@@ -99,61 +100,65 @@ export function AgentKanbanBoard({ leads, onStatusChange }: AgentKanbanBoardProp
                   draggable
                   onDragStart={(e) => handleDragStart(e as any, lead.id)}
                   onDragEnd={(e) => handleDragEnd(e as any, lead.id)}
-                  className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 cursor-grab active:cursor-grabbing hover:border-primary-300 hover:shadow-md transition group"
+                  onClick={() => onOpenLead?.(lead)}
+                  className="bg-white p-4 rounded-xl shadow-xs border border-slate-200/80 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all group"
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-navy-900 text-sm">{lead.name}</h4>
+                    <h4 className="font-bold text-navy-900 text-sm group-hover:text-red-600 transition-colors">
+                      {lead.name || 'Anonymous Customer'}
+                    </h4>
                     {lead.priority === 'high' || lead.priority === 'urgent' ? (
                       <span className="text-[10px] uppercase font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
                         {lead.priority}
                       </span>
                     ) : null}
                   </div>
-                  
+
                   {lead.property?.title && (
-                    <Link
-                      to={generatePropertyUrl(lead.property)}
-                      className="text-xs text-primary-600 hover:underline flex items-center gap-1 mb-2 font-medium line-clamp-1"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Building2 className="h-3 w-3 flex-shrink-0" /> {lead.property.title}
-                    </Link>
+                    <div className="flex items-center gap-2 mb-2 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                      {lead.property.images?.[0] && (
+                        <img
+                          src={lead.property.images[0]}
+                          alt=""
+                          className="w-7 h-7 rounded object-cover shrink-0"
+                        />
+                      )}
+                      <p className="text-xs font-semibold text-navy-900 truncate">
+                        {lead.property.title}
+                      </p>
+                    </div>
                   )}
-                  
+
                   <div className="space-y-1.5 mb-3">
                     {lead.phone && (
-                      <a
-                        href={`tel:${lead.phone}`}
-                        className="text-xs text-navy-600 hover:text-navy-900 flex items-center gap-1.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Phone className="h-3 w-3 text-navy-400" /> {lead.phone}
-                      </a>
+                      <div className="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
+                        <Phone className="h-3 w-3 text-slate-400" /> {lead.phone}
+                      </div>
                     )}
                     {lead.email && (
-                      <div className="text-xs text-navy-600 flex items-center gap-1.5 truncate">
-                        <Mail className="h-3 w-3 text-navy-400 flex-shrink-0" /> {lead.email}
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                        <Mail className="h-3 w-3 text-slate-400 shrink-0" /> {lead.email}
                       </div>
                     )}
                   </div>
-                  
-                  <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-xs">
-                    <div className="text-navy-400 flex items-center gap-1">
+
+                  <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
+                    <div className="text-slate-400 flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {formatDate(lead.created_at).split(',')[0]}
+                      {formatDate(lead.created_at)}
                     </div>
                     {lead.follow_up_at && (
-                       <div className="text-orange-600 flex items-center gap-1 font-medium bg-orange-50 px-1.5 py-0.5 rounded">
-                         <Calendar className="h-3 w-3" />
-                         Follow up
-                       </div>
+                      <div className="text-orange-600 flex items-center gap-1 font-medium bg-orange-50 px-1.5 py-0.5 rounded">
+                        <Calendar className="h-3 w-3" />
+                        Follow up
+                      </div>
                     )}
                   </div>
                 </motion.div>
               ))}
-              
+
               {stageLeads.length === 0 && (
-                <div className="h-24 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center text-navy-300 text-sm font-medium">
+                <div className="h-24 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-300 text-xs font-medium">
                   Drop leads here
                 </div>
               )}

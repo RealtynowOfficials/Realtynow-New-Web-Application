@@ -41,12 +41,12 @@ export function AgentAnalytics() {
   const agentSections = getAgentSections(t);
   const { user } = useAuth();
   const { data: properties } = useQuery({
-    queryKey: ['agent-properties', user?.id],
+    queryKey: ['agent-properties-analytics', user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from('properties')
         .select('id, title, view_count, status, purpose, price, created_at')
-        .eq('assigned_agent_id', user!.id);
+        .or(`assigned_agent_id.eq.${user!.id},owner_id.eq.${user!.id}`);
       return data ?? [];
     },
     enabled: !!user,
@@ -55,7 +55,10 @@ export function AgentAnalytics() {
   const { data: leads } = useQuery({
     queryKey: ['agent-leads-analytics', user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from('enquiries').select('status, created_at').eq('agent_id', user!.id);
+      const { data } = await supabase
+        .from('enquiries')
+        .select('id, status, lead_status, created_at')
+        .or(`agent_id.eq.${user!.id},assigned_to.eq.${user!.id}`);
       return data ?? [];
     },
     enabled: !!user,
@@ -63,8 +66,10 @@ export function AgentAnalytics() {
 
   const totalViews = (properties ?? []).reduce((a, p) => a + (p.view_count ?? 0), 0);
   const published = (properties ?? []).filter((p) => p.status === 'published').length;
-  const newLeads = (leads ?? []).filter((l) => l.status === 'new').length;
-  const closedLeads = (leads ?? []).filter((l) => l.status === 'closed').length;
+  const newLeads = (leads ?? []).filter((l) => (l.lead_status || l.status) === 'new').length;
+  const contactedLeads = (leads ?? []).filter((l) => (l.lead_status || l.status) === 'contacted' || (l.lead_status || l.status) === 'interested').length;
+  const siteVisits = (leads ?? []).filter((l) => (l.lead_status || l.status) === 'site_visit').length;
+  const closedLeads = (leads ?? []).filter((l) => (l.lead_status || l.status) === 'won' || (l.lead_status || l.status) === 'closed').length;
   const conversionRate = leads && leads.length > 0 ? ((closedLeads / leads.length) * 100).toFixed(1) : '0.0';
   const totalValue = (properties ?? []).filter((p) => p.status === 'published').reduce((a, p) => a + (p.price ?? 0), 0);
 

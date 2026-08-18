@@ -731,27 +731,30 @@ function HeroSection() {
           </>
         )}
 
-        {/* Animated progress indicator pills */}
+        {/* Carousel indicator dots */}
         {slides.length > 1 && (
-          <div className="absolute bottom-12 right-4 z-20 flex gap-1.5 sm:right-8">
-            {slides.map((s, idx) => (
-              <button
-                type="button"
-                key={s.id}
-                onClick={() => scrollTo(idx)}
-                aria-label={`Go to slide ${idx + 1}`}
-                className="relative h-1.5 w-6 overflow-hidden rounded-full bg-white/30 sm:w-8 transition-all"
-              >
-                <span
-                  key={idx === selectedIndex ? `progress-${selectedIndex}` : undefined}
-                  className={cn(
-                    'absolute inset-y-0 left-0 w-full origin-left rounded-full bg-white',
-                    idx < selectedIndex ? 'scale-x-100' : idx > selectedIndex ? 'scale-x-0' : 'animate-hero-progress',
-                  )}
-                  style={idx === selectedIndex ? { animationPlayState: isHovering ? 'paused' : 'running' } : undefined}
-                />
-              </button>
-            ))}
+          <div className="absolute bottom-16 sm:bottom-20 right-4 z-20 flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 rounded-full bg-navy-950/60 backdrop-blur-md border border-white/15 shadow-xl sm:right-8">
+            {slides.map((s, idx) => {
+              const isActive = idx === selectedIndex;
+              return (
+                <button
+                  type="button"
+                  key={s.id}
+                  onClick={() => scrollTo(idx)}
+                  aria-label={`Go to slide ${idx + 1}`}
+                  className="group relative flex items-center justify-center p-0.5 cursor-pointer focus:outline-none"
+                >
+                  <span
+                    className={cn(
+                      'block rounded-full transition-all duration-300',
+                      isActive
+                        ? 'h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500 ring-2 ring-white/90 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-110'
+                        : 'h-2 w-2 sm:h-2 sm:w-2 bg-white/40 group-hover:bg-white/80 group-hover:scale-125',
+                    )}
+                  />
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -2306,7 +2309,7 @@ function SignatureCollection() {
 }
 
 /* ============================================================
-   Verified Builders Carousel
+   Explore Builders on RealtyNow Section
 ============================================================ */
 const BUILDER_COVER_FALLBACKS = [
   'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=900&q=80',
@@ -2315,37 +2318,116 @@ const BUILDER_COVER_FALLBACKS = [
   'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80',
 ];
 
-function VerifiedBuilders() {
-  const { data: builders, isLoading, isError } = useQuery({
-    queryKey: ['home-verified-builders'],
+function ExploreBuildersSection() {
+  const { t } = useLanguageContext();
+  const queryClient = useQueryClient();
+
+  const {
+    data: builders,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: ['home-explore-builders-realtynow'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('builders')
-        .select('*')
+        .select('*, cities:city_id(name), localities:locality_id(name)')
         .eq('status', 'approved')
         .eq('public_visible', true)
         .order('is_featured', { ascending: false })
         .order('display_order', { ascending: true })
         .order('created_at', { ascending: false })
         .limit(12);
+
       if (error) throw error;
 
-      const builderRows = data ?? [];
+      const builderRows = (data ?? []) as any[];
       const ids = builderRows.map((b) => b.id);
+      const userIds = builderRows.map((b) => b.user_id).filter(Boolean);
+
       const projectCounts = new Map<string, number>();
+      const propertyCounts = new Map<string, number>();
+
       if (ids.length > 0) {
-        const { data: projectRows } = await supabase.from('projects').select('builder_id').in('builder_id', ids);
+        // Fetch projects count per builder
+        const { data: projectRows } = await supabase
+          .from('projects')
+          .select('builder_id')
+          .in('builder_id', ids);
+
         (projectRows ?? []).forEach((p: { builder_id: string }) => {
           projectCounts.set(p.builder_id, (projectCounts.get(p.builder_id) ?? 0) + 1);
         });
+
+        // Also check builder_projects linked by user_id
+        if (userIds.length > 0) {
+          const { data: bpRows } = await supabase
+            .from('builder_projects')
+            .select('builder_id')
+            .in('builder_id', userIds);
+
+          (bpRows ?? []).forEach((p: { builder_id: string }) => {
+            const b = builderRows.find((x) => x.user_id === p.builder_id);
+            if (b) {
+              projectCounts.set(b.id, (projectCounts.get(b.id) ?? 0) + 1);
+            }
+          });
+        }
+
+        // Fetch properties count linked by builder_id or owner_id
+        const orFilter = [
+          ids.length ? `builder_id.in.(${ids.join(',')})` : '',
+          userIds.length ? `owner_id.in.(${userIds.join(',')})` : '',
+        ]
+          .filter(Boolean)
+          .join(',');
+
+        if (orFilter) {
+          const { data: propRows } = await supabase
+            .from('properties')
+            .select('builder_id, owner_id')
+            .or(orFilter);
+
+          (propRows ?? []).forEach((p: { builder_id: string | null; owner_id: string | null }) => {
+            if (p.builder_id) {
+              propertyCounts.set(p.builder_id, (propertyCounts.get(p.builder_id) ?? 0) + 1);
+            } else if (p.owner_id) {
+              const b = builderRows.find((x) => x.user_id === p.owner_id);
+              if (b) {
+                propertyCounts.set(b.id, (propertyCounts.get(b.id) ?? 0) + 1);
+              }
+            }
+          });
+        }
       }
-      return builderRows.map((b, i) => ({
-        ...b,
-        _projectCount: projectCounts.get(b.id) ?? 0,
-        _cover: b.cover_image || BUILDER_COVER_FALLBACKS[i % BUILDER_COVER_FALLBACKS.length],
-      }));
+
+      return builderRows.map((b, i) => {
+        const locParts = [b.localities?.name, b.cities?.name].filter(Boolean);
+        return {
+          ...b,
+          _location: locParts.length > 0 ? locParts.join(', ') : '',
+          _projectCount: projectCounts.get(b.id) ?? 0,
+          _propertyCount: propertyCounts.get(b.id) ?? 0,
+          _cover: b.cover_image || BUILDER_COVER_FALLBACKS[i % BUILDER_COVER_FALLBACKS.length],
+        };
+      });
     },
+    staleTime: 5 * 60 * 1000,
   });
+
+  useEffect(() => {
+    // Realtime synchronization with builders table
+    const channel = supabase
+      .channel('public:explore-builders-realtynow-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'builders' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['home-explore-builders-realtynow'] });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const [emblaRef, emblaApi] = useEmblaCarousel(
     { align: 'start', loop: false, containScroll: 'trimSnaps' },
@@ -2361,100 +2443,173 @@ function VerifiedBuilders() {
   const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
   const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
 
-  if (isError) return null;
-  if (!isLoading && (!builders || builders.length === 0)) return null;
-
   return (
-    <section className="py-12 sm:py-16 bg-white" id="verified-builders">
+    <section className="py-14 sm:py-20 bg-slate-50/70 border-y border-slate-200/80" id="explore-builders">
       <div className="container-wide">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        {/* Section Header */}
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-                Verified Builders
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h2 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900">
+                {t('home:exploreBuildersTitle', 'Explore Builders on RealtyNow')}
               </h2>
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100">
-                <BadgeCheck className="h-3 w-3" /> RealtyNow Verified
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200/60 shadow-2xs">
+                <BadgeCheck className="h-3.5 w-3.5" /> {t('home:verifiedBuilder', 'Verified Builder')}
               </span>
             </div>
-            <p className="text-sm text-slate-500">
-              Meet the trusted developers shaping India's next generation of premium living spaces.
+            <p className="text-sm sm:text-base text-slate-500 max-w-2xl">
+              {t(
+                'home:exploreBuildersSubtitle',
+                'Discover trusted builders, explore their projects, and find your next property with confidence.',
+              )}
             </p>
           </div>
           <Link
             to="/builders"
-            className="inline-flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
+            className="group inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-white hover:bg-red-600 hover:text-white border border-red-200/80 transition-all duration-200 shadow-2xs shrink-0 self-start sm:self-end"
           >
-            View All Builders <ArrowRight className="h-4 w-4" />
+            <span>{t('home:viewAllBuilders', 'View All Builders')}</span>
+            <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
           </Link>
         </div>
 
-        {isLoading ? (
-          <div className="flex gap-4 overflow-hidden">
+        {/* Loading State */}
+        {isLoading && (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="skeleton min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] h-[340px] rounded-2xl" />
+              <div
+                key={i}
+                className="skeleton h-[360px] rounded-3xl border border-slate-200/60 bg-slate-100"
+              />
             ))}
           </div>
-        ) : (
+        )}
+
+        {/* Error State */}
+        {isError && !isLoading && (
+          <div className="rounded-3xl border border-red-200 bg-red-50/50 p-8 text-center max-w-lg mx-auto">
+            <p className="text-sm font-bold text-red-800 mb-3">
+              {t('home:unableToLoadBuilders', 'Unable to load builders right now.')}
+            </p>
+            <button
+              onClick={() => refetch()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold shadow-md hover:bg-red-700 transition cursor-pointer"
+            >
+              {t('common:retry', 'Retry')}
+            </button>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && !isError && (!builders || builders.length === 0) && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center max-w-lg mx-auto shadow-xs">
+            <div className="h-12 w-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+              <Building2 className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-semibold text-slate-700">
+              {t('home:noBuildersAvailable', 'No builders available at the moment.')}
+            </p>
+          </div>
+        )}
+
+        {/* Success State with Carousel / Responsive Layout */}
+        {!isLoading && !isError && builders && builders.length > 0 && (
           <div className="relative">
             <div className="overflow-hidden" ref={emblaRef}>
-              <div className="flex gap-4">
-                {(builders ?? []).map((b, i) => (
+              <div className="flex gap-5">
+                {builders.map((b, i) => (
                   <motion.div
                     key={b.id}
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    transition={{ delay: i * 0.05 }}
-                    whileHover={{ y: -4 }}
-                    className="min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)]"
+                    transition={{ delay: i * 0.05, duration: 0.4 }}
+                    className="min-w-0 flex-[0_0_88%] sm:flex-[0_0_calc(50%-10px)] lg:flex-[0_0_calc(25%-15px)]"
                   >
                     <Link
                       to={`/builders/${b.id}`}
-                      className="group block h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-xl transition-all duration-300"
+                      className="group flex flex-col justify-between h-full overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-xs hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
                     >
-                      {/* Cover image */}
-                      <div className="relative h-40 overflow-hidden bg-slate-100">
+                      {/* Cover image & Floating Logo */}
+                      <div className="relative h-44 overflow-hidden bg-slate-100">
                         <img
                           src={b._cover}
                           alt={b.name}
                           loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
-                        <span className="absolute top-3 left-3 inline-flex items-center gap-1 rounded-full bg-white/95 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-emerald-700 shadow-sm">
-                          <BadgeCheck className="h-3 w-3" /> Verified
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
+
+                        <span className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-full bg-white/95 backdrop-blur-md px-2.5 py-1 text-[11px] font-bold text-emerald-700 shadow-sm border border-emerald-100">
+                          <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" /> Verified
                         </span>
-                        {/* Logo overlapping bottom of cover */}
-                        <div className="absolute -bottom-6 left-4 h-14 w-14 rounded-xl bg-white border border-slate-200 shadow-md grid place-items-center overflow-hidden">
+
+                        <div className="absolute -bottom-6 left-5 h-14 w-14 rounded-2xl bg-white border-2 border-white shadow-md grid place-items-center overflow-hidden ring-1 ring-slate-200/80">
                           {b.logo_url ? (
-                            <img src={b.logo_url} alt="" className="h-full w-full object-cover" />
+                            <img
+                              src={b.logo_url}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
                           ) : (
-                            <Building2 className="h-6 w-6 text-navy-400" />
+                            <div className="h-full w-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-bold text-navy-900 text-sm">
+                              {b.name ? b.name.charAt(0).toUpperCase() : <Building2 className="h-6 w-6 text-navy-400" />}
+                            </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="pt-8 pb-5 px-4">
-                        <p className="font-display font-bold text-navy-900 truncate">{b.name}</p>
-                        {b.description && (
-                          <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{b.description}</p>
-                        )}
-                        <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
-                          {b._projectCount > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Building2 className="h-3.5 w-3.5 text-slate-400" /> {b._projectCount} Projects
-                            </span>
+                      {/* Content Area */}
+                      <div className="pt-8 pb-5 px-5 flex flex-col flex-1 justify-between">
+                        <div>
+                          <h3 className="font-display font-bold text-navy-900 text-lg group-hover:text-red-600 transition-colors line-clamp-1">
+                            {b.name}
+                          </h3>
+
+                          {b._location && (
+                            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500 font-medium truncate">
+                              <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">{b._location}</span>
+                            </p>
                           )}
-                          {b.established_year && (
-                            <span className="flex items-center gap-1">
-                              <Award className="h-3.5 w-3.5 text-slate-400" />
-                              {new Date().getFullYear() - b.established_year}+ Yrs
-                            </span>
+
+                          {b.description && (
+                            <p className="mt-2 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                              {b.description}
+                            </p>
                           )}
+
+                          {/* Stats Pills */}
+                          <div className="mt-3.5 flex flex-wrap items-center gap-1.5 text-xs">
+                            {b._projectCount > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-navy-900 font-bold text-[11px]">
+                                <Building2 className="h-3 w-3 text-slate-500" />
+                                {b._projectCount} {t('home:projects', 'Projects')}
+                              </span>
+                            )}
+                            {b._propertyCount > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-red-700 font-bold text-[11px] border border-red-100/60">
+                                <Home className="h-3 w-3 text-red-500" />
+                                {b._propertyCount} {t('home:properties', 'Properties')}
+                              </span>
+                            )}
+                            {b.established_year && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-100/60">
+                                <Award className="h-3 w-3 text-amber-500" />
+                                {new Date().getFullYear() - b.established_year}+ Yrs
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-                          <span className="text-xs font-bold text-red-600 group-hover:text-red-700 inline-flex items-center gap-1">
-                            View Builder <ArrowRight className="h-3.5 w-3.5" />
+
+                        {/* Card CTA */}
+                        <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-xs font-bold text-red-600 group-hover:text-red-700 inline-flex items-center gap-1.5">
+                            {t('home:viewBuilder', 'View Builder')}{' '}
+                            <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                           </span>
                         </div>
                       </div>
@@ -2464,18 +2619,19 @@ function VerifiedBuilders() {
               </div>
             </div>
 
-            {(builders?.length ?? 0) > 4 && (
+            {/* Desktop Navigation Arrows */}
+            {builders.length > 4 && (
               <>
                 <button
                   onClick={scrollPrev}
-                  className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                  className="absolute left-[-18px] top-[40%] -translate-y-1/2 z-20 hidden lg:flex h-11 w-11 items-center justify-center rounded-full bg-white border border-slate-200 shadow-md text-slate-700 transition-all hover:scale-105 hover:text-red-600 cursor-pointer"
                   aria-label="Previous builder"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
                 <button
                   onClick={scrollNext}
-                  className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
+                  className="absolute right-[-18px] top-[40%] -translate-y-1/2 z-20 hidden lg:flex h-11 w-11 items-center justify-center rounded-full bg-white border border-slate-200 shadow-md text-slate-700 transition-all hover:scale-105 hover:text-red-600 cursor-pointer"
                   aria-label="Next builder"
                 >
                   <ChevronRight className="h-5 w-5" />
@@ -2483,9 +2639,10 @@ function VerifiedBuilders() {
               </>
             )}
 
-            {(builders?.length ?? 0) > 1 && (
+            {/* Mobile / Tablet Pagination Dots */}
+            {builders.length > 1 && (
               <div className="mt-6 flex items-center justify-center gap-2 lg:hidden">
-                {(builders ?? []).map((_, i) => (
+                {builders.map((_, i) => (
                   <button
                     key={i}
                     onClick={() => emblaApi && emblaApi.scrollTo(i)}
@@ -3799,202 +3956,6 @@ function ThreeColumnAdBannersSection() {
 
 
 /* ============================================================
-   Explore Builders in Hyderabad Carousel
-============================================================ */
-function ExploreBuildersCarousel() {
-  const queryClient = useQueryClient();
-  const { data: builders, isLoading, isError } = useQuery({
-    queryKey: ['home-explore-hyderabad-builders'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('builders')
-        .select('*')
-        .eq('status', 'approved')
-        .eq('public_visible', true)
-        .order('is_featured', { ascending: false })
-        .order('display_order', { ascending: true })
-        .order('created_at', { ascending: false })
-        .limit(12);
-      if (error) throw error;
-
-      const builderRows = data ?? [];
-      const ids = builderRows.map((b) => b.id);
-      const projectCounts = new Map<string, number>();
-      if (ids.length > 0) {
-        const { data: projectRows } = await supabase.from('projects').select('builder_id').in('builder_id', ids);
-        (projectRows ?? []).forEach((p: { builder_id: string }) => {
-          projectCounts.set(p.builder_id, (projectCounts.get(p.builder_id) ?? 0) + 1);
-        });
-      }
-      return builderRows.map((b, i) => ({
-        ...b,
-        _projectCount: projectCounts.get(b.id) ?? 0,
-        _cover: b.cover_image || BUILDER_COVER_FALLBACKS[i % BUILDER_COVER_FALLBACKS.length],
-      }));
-    },
-  });
-
-  useEffect(() => {
-    // Realtime synchronization with builders table
-    const channel = supabase
-      .channel('public:builders-explore')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'builders' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['home-explore-hyderabad-builders'] });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
-
-  const [emblaRef, emblaApi] = useEmblaCarousel(
-    { align: 'start', loop: false, containScroll: 'trimSnaps' },
-    [Autoplay({ delay: 5500, stopOnInteraction: true, stopOnMouseEnter: true })],
-  );
-  const [selectedIndex, setSelectedIndex] = useState(0);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    emblaApi.on('select', () => setSelectedIndex(emblaApi.selectedScrollSnap()));
-  }, [emblaApi]);
-
-  const scrollPrev = useCallback(() => emblaApi && emblaApi.scrollPrev(), [emblaApi]);
-  const scrollNext = useCallback(() => emblaApi && emblaApi.scrollNext(), [emblaApi]);
-
-  if (isError) return null;
-  if (!isLoading && (!builders || builders.length === 0)) return null;
-
-  return (
-    <section className="py-12 sm:py-16 bg-slate-50 border-y border-slate-100" id="explore-builders-hyderabad">
-      <div className="container-wide">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-                Explore Builders in Hyderabad
-              </h2>
-            </div>
-            <p className="text-sm text-slate-500">
-              Discover top real estate developers and their premium projects in Hyderabad.
-            </p>
-          </div>
-          <Link
-            to="/builders"
-            className="inline-flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
-          >
-            View All <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-
-        {isLoading ? (
-          <div className="flex gap-4 overflow-hidden">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="skeleton min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)] h-[340px] rounded-2xl" />
-            ))}
-          </div>
-        ) : (
-          <div className="relative">
-            <div className="overflow-hidden" ref={emblaRef}>
-              <div className="flex gap-4">
-                {(builders ?? []).map((b, i) => (
-                  <motion.div
-                    key={b.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.05 }}
-                    whileHover={{ y: -4 }}
-                    className="min-w-0 flex-[0_0_82%] sm:flex-[0_0_calc(50%-8px)] lg:flex-[0_0_calc(25%-12px)]"
-                  >
-                    <Link
-                      to={`/builders/${b.id}`}
-                      className="group block h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-xl transition-all duration-300"
-                    >
-                      <div className="relative h-40 overflow-hidden bg-slate-100">
-                        <img
-                          src={b._cover}
-                          alt={b.name}
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
-                        />
-                        <div className="absolute -bottom-6 left-4 h-14 w-14 rounded-xl bg-white border border-slate-200 shadow-md grid place-items-center overflow-hidden">
-                          {b.logo_url ? (
-                            <img src={b.logo_url} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <Building2 className="h-6 w-6 text-navy-400" />
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="pt-8 pb-5 px-4">
-                        <p className="font-display font-bold text-navy-900 truncate">{b.name}</p>
-                        {b.description && (
-                          <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{b.description}</p>
-                        )}
-                        <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
-                          {b._projectCount > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Building2 className="h-3.5 w-3.5 text-slate-400" /> {b._projectCount} Projects
-                            </span>
-                          )}
-                          {b.established_year && (
-                            <span className="flex items-center gap-1">
-                              <Award className="h-3.5 w-3.5 text-slate-400" />
-                              {new Date().getFullYear() - b.established_year}+ Yrs
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-                          <span className="text-xs font-bold text-red-600 group-hover:text-red-700 inline-flex items-center gap-1">
-                            View Builder <ArrowRight className="h-3.5 w-3.5" />
-                          </span>
-                        </div>
-                      </div>
-                    </Link>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
-            {(builders?.length ?? 0) > 4 && (
-              <>
-                <button
-                  onClick={scrollPrev}
-                  className="absolute left-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
-                  aria-label="Previous builder"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <button
-                  onClick={scrollNext}
-                  className="absolute right-[-16px] top-[35%] -translate-y-1/2 z-20 hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-slate-700 transition-all hover:scale-105 hover:text-red-600"
-                  aria-label="Next builder"
-                >
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </>
-            )}
-
-            {(builders?.length ?? 0) > 1 && (
-              <div className="mt-6 flex items-center justify-center gap-2 lg:hidden">
-                {(builders ?? []).map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => emblaApi && emblaApi.scrollTo(i)}
-                    className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-red-600' : 'w-1.5 bg-slate-300'}`}
-                    aria-label={`Go to builder ${i + 1}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/* ============================================================
    Main HomePage
 ============================================================ */
 export function HomePage() {
@@ -4008,11 +3969,10 @@ export function HomePage() {
       <SponsoredPropertiesCarousel />
       <LuxuryAdBannersSection />
       <ExploreHyderabad />
-      <ExploreBuildersCarousel />
+      <ExploreBuildersSection />
       <TopAgents />
       <PostPropertyBanner />
       <SignatureCollection />
-      <VerifiedBuilders />
       <ThreeColumnAdBannersSection />
       <LatestBlogs />
       <RealtynowExclusiveSection />
@@ -4023,3 +3983,4 @@ export function HomePage() {
     </div>
   );
 }
+

@@ -14,6 +14,11 @@ import {
   Eye,
   TrendingUp,
   Package,
+  Upload,
+  Link as LinkIcon,
+  Camera,
+  X,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
@@ -21,10 +26,11 @@ import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboar
 import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
 import { DataTable, type Column } from '../../components/data-table';
-import { Badge, Button, Input, Modal, Select, Textarea, Card, EmptyState } from '../../components/ui';
+import { Badge, Button, Input, Modal, Select, Textarea, Card, EmptyState, Spinner } from '../../components/ui';
 import { useToast } from '../../components/toast';
 import { formatDate } from '../../lib/utils';
 import { logBuilderAudit } from '../../lib/builder-audit';
+import { uploadFile } from '../../lib/storage';
 import type { BuilderProject, BuilderProjectStatus } from '../../lib/types';
 
 const STATUS_OPTIONS: BuilderProjectStatus[] = ['upcoming', 'ongoing', 'completed'];
@@ -54,6 +60,10 @@ export function BuilderProjects() {
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<BuilderProject | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Cover image mode: 'upload' | 'url'
+  const [imageInputMode, setImageInputMode] = useState<'upload' | 'url'>('upload');
+  const [imageUploading, setImageUploading] = useState(false);
 
   // Fetch Cities & Localities
   const { data: cities } = useQuery({
@@ -112,6 +122,7 @@ export function BuilderProjects() {
       ...emptyForm,
       city_id: cities?.[0]?.id || '',
     });
+    setImageInputMode('upload');
     setFormErrors({});
     setShowModal(true);
   };
@@ -127,8 +138,43 @@ export function BuilderProjects() {
       locality_id: row.locality_id || '',
       cover_image: row.cover_image || '',
     });
+    setImageInputMode(row.cover_image ? 'url' : 'upload');
     setFormErrors({});
     setShowModal(true);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      addToast('error', 'Please select a valid image file (JPG, PNG, WEBP)');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('error', 'Image size must be less than 5MB');
+      return;
+    }
+
+    setImageUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `projects-${user?.id}/${crypto.randomUUID()}.${ext}`;
+      const { url, error } = await uploadFile('builder-media', file, path);
+      if (error) throw new Error(error);
+
+      setForm((f) => ({ ...f, cover_image: url }));
+      addToast('success', 'Cover image uploaded');
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to upload cover image');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setForm((f) => ({ ...f, cover_image: '' }));
   };
 
   const validate = () => {
@@ -206,7 +252,7 @@ export function BuilderProjects() {
         sortable: true,
         render: (p) => (
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50 text-navy-400 overflow-hidden shrink-0 border border-navy-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50 text-navy-400 overflow-hidden shrink-0 border border-navy-100 shadow-2xs">
               {p.cover_image ? (
                 <img src={p.cover_image} alt="" className="h-full w-full object-cover" />
               ) : (
@@ -235,7 +281,7 @@ export function BuilderProjects() {
         render: (p) => (
           <Badge
             variant={p.status === 'completed' ? 'success' : p.status === 'ongoing' ? 'gold' : 'info'}
-            className="capitalize text-xs"
+            className="capitalize text-xs font-bold"
           >
             {p.status}
           </Badge>
@@ -251,7 +297,7 @@ export function BuilderProjects() {
         key: 'actions',
         header: 'Actions',
         render: (p) => (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <Link
               to="/builder/blocks"
               className="p-1.5 text-navy-600 hover:bg-navy-50 rounded-lg text-xs flex items-center gap-1 font-medium transition"
@@ -268,14 +314,14 @@ export function BuilderProjects() {
             </Link>
             <button
               onClick={() => openEdit(p)}
-              className="p-1.5 text-navy-600 hover:bg-navy-50 rounded-lg transition"
+              className="p-1.5 text-navy-600 hover:bg-navy-50 rounded-lg transition cursor-pointer"
               title="Edit Project"
             >
               <Edit3 className="h-4 w-4" />
             </button>
             <button
               onClick={() => setToDelete(p)}
-              className="p-1.5 text-error-500 hover:bg-error-50 rounded-lg transition"
+              className="p-1.5 text-error-500 hover:bg-error-50 rounded-lg transition cursor-pointer"
               title="Delete Project"
             >
               <Trash2 className="h-4 w-4" />
@@ -284,7 +330,7 @@ export function BuilderProjects() {
         ),
       },
     ],
-    []
+    [],
   );
 
   return (
@@ -375,7 +421,7 @@ export function BuilderProjects() {
             <Input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="e.g. Prestige High Fields / My Home Bhooja"
+              placeholder="e.g. Aparna Heights / Prestige High Fields"
               required
             />
             {formErrors.name && <p className="text-xs text-error-600 mt-1">{formErrors.name}</p>}
@@ -387,7 +433,7 @@ export function BuilderProjects() {
               <Input
                 value={form.rera_id}
                 onChange={(e) => setForm((f) => ({ ...f, rera_id: e.target.value }))}
-                placeholder="e.g. P02400001234"
+                placeholder="e.g. P02401000123"
               />
             </div>
 
@@ -396,7 +442,7 @@ export function BuilderProjects() {
               <select
                 value={form.status}
                 onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as BuilderProjectStatus }))}
-                className="w-full text-sm rounded-lg border border-navy-200 p-2.5 bg-white text-navy-900 focus:ring-2 focus:ring-gold-400 outline-none capitalize"
+                className="w-full text-sm rounded-xl border border-navy-200 p-2.5 bg-white text-navy-900 focus:ring-2 focus:ring-red-400 outline-hidden capitalize"
               >
                 {STATUS_OPTIONS.map((st) => (
                   <option key={st} value={st}>
@@ -413,7 +459,7 @@ export function BuilderProjects() {
               <select
                 value={form.city_id}
                 onChange={(e) => setForm((f) => ({ ...f, city_id: e.target.value, locality_id: '' }))}
-                className="w-full text-sm rounded-lg border border-navy-200 p-2.5 bg-white text-navy-900 focus:ring-2 focus:ring-gold-400 outline-none"
+                className="w-full text-sm rounded-xl border border-navy-200 p-2.5 bg-white text-navy-900 focus:ring-2 focus:ring-red-400 outline-hidden"
               >
                 <option value="">-- Select City --</option>
                 {cities?.map((c) => (
@@ -429,7 +475,7 @@ export function BuilderProjects() {
               <select
                 value={form.locality_id}
                 onChange={(e) => setForm((f) => ({ ...f, locality_id: e.target.value }))}
-                className="w-full text-sm rounded-lg border border-navy-200 p-2.5 bg-white text-navy-900 focus:ring-2 focus:ring-gold-400 outline-none"
+                className="w-full text-sm rounded-xl border border-navy-200 p-2.5 bg-white text-navy-900 focus:ring-2 focus:ring-red-400 outline-hidden"
                 disabled={!form.city_id}
               >
                 <option value="">-- Select Locality --</option>
@@ -442,13 +488,108 @@ export function BuilderProjects() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-navy-700 mb-1">Cover Image URL</label>
-            <Input
-              value={form.cover_image}
-              onChange={(e) => setForm((f) => ({ ...f, cover_image: e.target.value }))}
-              placeholder="https://images.pexels.com/..."
-            />
+          {/* Cover Image Upload & URL Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-navy-700">Project Cover Image</label>
+              <div className="inline-flex rounded-lg p-0.5 bg-slate-100 border border-slate-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setImageInputMode('upload')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                    imageInputMode === 'upload'
+                      ? 'bg-white text-navy-900 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <Upload className="w-3 h-3" /> Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImageInputMode('url')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                    imageInputMode === 'url'
+                      ? 'bg-white text-navy-900 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <LinkIcon className="w-3 h-3" /> Image URL
+                </button>
+              </div>
+            </div>
+
+            {imageInputMode === 'upload' ? (
+              <div className="p-4 rounded-2xl border-2 border-dashed border-slate-300 hover:border-red-400 transition-colors bg-slate-50/60 text-center">
+                {imageUploading ? (
+                  <div className="py-6 flex flex-col items-center justify-center gap-2">
+                    <Spinner className="h-6 w-6 text-red-600" />
+                    <p className="text-xs font-semibold text-navy-900">Uploading cover image to storage...</p>
+                  </div>
+                ) : form.cover_image ? (
+                  <div className="relative group rounded-xl overflow-hidden max-h-48 border border-slate-200 bg-white">
+                    <img
+                      src={form.cover_image}
+                      alt="Project Cover Preview"
+                      className="w-full h-40 object-cover"
+                    />
+                    <div className="absolute inset-0 bg-navy-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-white text-navy-900 text-xs font-bold shadow-md hover:bg-slate-100 transition">
+                        Change
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold shadow-md hover:bg-red-700 transition"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer py-4 flex flex-col items-center justify-center gap-2">
+                    <div className="h-10 w-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center shadow-2xs">
+                      <Camera className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-navy-900">Click to upload project cover image</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">JPG, PNG, or WEBP up to 5MB</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                  </label>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  value={form.cover_image}
+                  onChange={(e) => setForm((f) => ({ ...f, cover_image: e.target.value }))}
+                  placeholder="https://images.pexels.com/photos/..."
+                />
+                {form.cover_image && (
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 max-h-36">
+                    <img src={form.cover_image} alt="Preview" className="w-full h-32 object-cover" />
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      className="absolute top-2 right-2 p-1 rounded-full bg-navy-950/70 text-white hover:bg-red-600 transition"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div>
@@ -465,7 +606,7 @@ export function BuilderProjects() {
             <Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving}>
+            <Button variant="primary" onClick={handleSave} disabled={saving || imageUploading}>
               {saving ? 'Saving...' : editing ? 'Update Project' : 'Create Project'}
             </Button>
           </div>

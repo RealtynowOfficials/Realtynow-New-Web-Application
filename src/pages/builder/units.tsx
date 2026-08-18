@@ -403,7 +403,7 @@ export function BuilderUnits() {
             label="Status"
             value={form.status}
             onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as BuilderUnitStatus }))}
-            className="sm:col-span-2"
+            containerClassName="sm:col-span-2"
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s} className="capitalize">

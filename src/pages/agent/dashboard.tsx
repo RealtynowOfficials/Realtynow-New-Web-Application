@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AiLeadAssistant } from '../../components/agent/AiLeadAssistant';
 import { Link, useNavigate } from 'react-router-dom';
@@ -18,6 +19,7 @@ import { Card, Skeleton, Badge, EmptyState } from '../../components/ui';
 import { formatNumber } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { RemindersWidget } from '../../components/reminders-widget';
+import { AgentLeadDetailDrawer } from '../../components/agent/AgentLeadDetailDrawer';
 
 const AGENT_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -47,44 +49,84 @@ export function AgentDashboard() {
   const { user, profile } = useAuth();
   const agentDisplayName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || 'Agent';
   const navigate = useNavigate();
+
+  const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const realtimeTick = useRealtimeCount('enquiries', { column: 'agent_id', value: user?.id ?? '' });
+  const realtimeTickAssigned = useRealtimeCount('enquiries', { column: 'assigned_to', value: user?.id ?? '' });
+  const realtimeTasks = useRealtimeCount('agent_tasks', { column: 'agent_id', value: user?.id ?? '' });
+  const realtimeAppts = useRealtimeCount('appointments', { column: 'agent_id', value: user?.id ?? '' });
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['agent-stats', user?.id, realtimeTick],
+    queryKey: ['agent-stats', user?.id, dateRange, realtimeTick, realtimeTickAssigned, realtimeTasks, realtimeAppts],
     queryFn: async () => {
       if (!user) return null;
-      const [assigned, leads, appointments, pendingAppts] = await Promise.all([
-        supabase.from('properties').select('id, view_count, status').eq('assigned_agent_id', user.id),
-        supabase.from('enquiries').select('id, status', { count: 'exact' }).eq('agent_id', user.id),
-        supabase.from('appointments').select('id, status', { count: 'exact' }).eq('agent_id', user.id),
-        supabase
-          .from('appointments')
-          .select('id', { count: 'exact', head: true })
-          .eq('agent_id', user.id)
-          .eq('status', 'requested'),
+
+      let dateThreshold: string | null = null;
+      const now = new Date();
+      if (dateRange === 'today') {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        dateThreshold = start.toISOString();
+      } else if (dateRange === 'week') {
+        const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        dateThreshold = start.toISOString();
+      } else if (dateRange === 'month') {
+        const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        dateThreshold = start.toISOString();
+      }
+
+      let leadsQuery = supabase
+        .from('enquiries')
+        .select('id, status, lead_status, created_at')
+        .or(`agent_id.eq.${user.id},assigned_to.eq.${user.id}`);
+
+      let apptsQuery = supabase
+        .from('appointments')
+        .select('id, status, created_at, scheduled_at')
+        .eq('agent_id', user.id);
+
+      if (dateThreshold) {
+        leadsQuery = leadsQuery.gte('created_at', dateThreshold);
+        apptsQuery = apptsQuery.gte('created_at', dateThreshold);
+      }
+
+      const [assigned, leadsRes, apptsRes, tasksRes] = await Promise.all([
+        supabase.from('properties').select('id, view_count, status').or(`assigned_agent_id.eq.${user.id},owner_id.eq.${user.id}`),
+        leadsQuery,
+        apptsQuery,
+        supabase.from('agent_tasks').select('id, status, due_date').eq('agent_id', user.id),
       ]);
+
       const props = assigned.data ?? [];
-      const allLeads = leads.data ?? [];
+      const allLeads = leadsRes.data ?? [];
+      const allAppts = apptsRes.data ?? [];
+      const allTasks = tasksRes.data ?? [];
+
       return {
-        assigned: assigned.count ?? 0,
+        assigned: props.length,
         views: props.reduce((a, p) => a + (p.view_count ?? 0), 0),
-        leads: leads.count ?? 0,
-        newLeads: allLeads.filter((l) => l.status === 'new').length,
-        appointments: appointments.count ?? 0,
-        pendingAppts: pendingAppts.count ?? 0,
-        published: props.filter((p) => p.status === 'published').length,
+        totalLeads: allLeads.length,
+        newLeads: allLeads.filter((l) => (l.lead_status || l.status) === 'new').length,
+        contactedLeads: allLeads.filter((l) => (l.lead_status || l.status) === 'contacted' || (l.lead_status || l.status) === 'interested').length,
+        siteVisits: allLeads.filter((l) => (l.lead_status || l.status) === 'site_visit').length,
+        converted: allLeads.filter((l) => (l.lead_status || l.status) === 'won').length,
+        appointments: allAppts.length,
+        pendingAppts: allAppts.filter((a) => a.status === 'requested').length,
+        pendingTasks: allTasks.filter((t) => t.status === 'pending' || t.status === 'in_progress').length,
       };
     },
     enabled: !!user,
   });
 
   const { data: recentLeads } = useQuery({
-    queryKey: ['agent-leads-recent', user?.id, realtimeTick],
+    queryKey: ['agent-leads-recent', user?.id, realtimeTick, realtimeTickAssigned],
     queryFn: async () => {
       const { data } = await supabase
         .from('enquiries')
-        .select('*, property:properties(title, id)')
-        .eq('agent_id', user!.id)
+        .select('*, property:properties(id, title, price, purpose, images, locality_name, city_name)')
+        .or(`agent_id.eq.${user!.id},assigned_to.eq.${user!.id}`)
         .order('created_at', { ascending: false })
         .limit(5);
       return (data ?? []).map((e) => ({ ...e, property: Array.isArray(e.property) ? e.property[0] : e.property }));
@@ -94,19 +136,30 @@ export function AgentDashboard() {
 
   return (
     <DashboardLayout sections={agentSections} title="Agent Dashboard" badge="Agent">
-      <PageHeader
-        title={`Welcome, ${agentDisplayName}`}
-        subtitle="Your performance at a glance."
-        actions={[
-          {
-            label: 'List Property',
-            icon: <PlusCircle className="h-4 w-4" />,
-            primary: true,
-            onClick: () => navigate('/agent/list-property'),
-          },
-        ]}
-      />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-navy-900">Welcome, {agentDisplayName}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Your real-time CRM performance & portfolio overview.</p>
+        </div>
+
+        {/* Date Range Tabs */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+          {(['all', 'today', 'week', 'month'] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setDateRange(r)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition cursor-pointer ${
+                dateRange === r ? 'bg-white text-red-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {r === 'all' ? 'All Time' : r === 'week' ? 'Last 7 Days' : r === 'month' ? 'Last 30 Days' : 'Today'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         {isLoading || !stats ? (
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)
         ) : (
@@ -130,14 +183,14 @@ export function AgentDashboard() {
               value={stats.newLeads}
               icon={<MessageSquare className="h-5 w-5" />}
               accent="success"
-              to="/agent/leads"
+              to="/agent/leads?status=new"
             />
             <StatCard
-              label="Pending Appts"
+              label="Pending Visits & Appts"
               value={stats.pendingAppts}
               icon={<Calendar className="h-5 w-5" />}
               accent="navy"
-              to="/agent/appointments"
+              to="/agent/appointments?status=requested"
             />
           </>
         )}
@@ -149,8 +202,13 @@ export function AgentDashboard() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div>
-          <h3 className="mb-3 font-display text-lg font-semibold text-navy-900">Recent leads</h3>
-          <Card className="divide-y divide-navy-50">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-display text-lg font-semibold text-navy-900">Recent leads</h3>
+            <Link to="/agent/leads" className="text-xs font-bold text-red-600 hover:underline">
+              View All Leads →
+            </Link>
+          </div>
+          <Card className="divide-y divide-navy-50 overflow-hidden">
             {!recentLeads ? (
               <div className="p-4 space-y-3">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -158,36 +216,50 @@ export function AgentDashboard() {
                 ))}
               </div>
             ) : recentLeads.length > 0 ? (
-              recentLeads.map((e) => (
-                <div key={e.id} className="flex items-center justify-between p-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-navy-900 truncate">{e.name}</p>
-                    <p className="text-xs text-navy-500 truncate">{e.property?.title ?? 'Enquiry'}</p>
-                  </div>
-                  <Badge
-                    variant={
-                      e.status === 'new'
-                        ? 'info'
-                        : e.status === 'contacted'
-                          ? 'success'
-                          : e.status === 'closed'
-                            ? 'default'
-                            : 'error'
-                    }
+              recentLeads.map((e) => {
+                const currentStatus = e.lead_status || e.status || 'new';
+                return (
+                  <div
+                    key={e.id}
+                    onClick={() => {
+                      setSelectedLead(e);
+                      setDrawerOpen(true);
+                    }}
+                    className="flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer transition-colors"
                   >
-                    {e.status}
-                  </Badge>
-                </div>
-              ))
+                    <div className="min-w-0 flex-1 pr-3">
+                      <p className="text-sm font-semibold text-navy-900 truncate">{e.name || 'Anonymous'}</p>
+                      <p className="text-xs text-slate-500 truncate">{e.property?.title ?? 'General Enquiry'}</p>
+                    </div>
+                    <Badge
+                      variant={
+                        currentStatus === 'won'
+                          ? 'success'
+                          : currentStatus === 'lost'
+                            ? 'error'
+                            : currentStatus === 'new'
+                              ? 'info'
+                              : 'default'
+                      }
+                      className="uppercase text-[10px] font-bold shrink-0"
+                    >
+                      {currentStatus.replace('_', ' ')}
+                    </Badge>
+                  </div>
+                );
+              })
             ) : (
-              <EmptyState
-                icon={<MessageSquare className="h-6 w-6" />}
-                title="No leads yet"
-                description="Leads from property enquiries will appear here."
-              />
+              <div className="p-6">
+                <EmptyState
+                  icon={<MessageSquare className="h-8 w-8 text-navy-300" />}
+                  title="No leads yet"
+                  description="Enquiries assigned to you will appear here."
+                />
+              </div>
             )}
           </Card>
         </div>
+
         <div>
           <h3 className="mb-3 font-display text-lg font-semibold text-navy-900">Quick actions</h3>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -217,6 +289,15 @@ export function AgentDashboard() {
           </div>
         </div>
       </div>
+
+      <AgentLeadDetailDrawer
+        lead={selectedLead}
+        isOpen={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setSelectedLead(null);
+        }}
+      />
     </DashboardLayout>
   );
 }

@@ -24,5 +24,12 @@
   "commercialTab": "వాణిజ్య",
   "searchBtn": "శోధించు",
   "newListings": "కొత్త జాబితాలు",
-  "viewAllProperties": "అన్ని ఆస్తులు చూడు"
+  "viewAllProperties": "అన్ని ఆస్తులు చూడు",
+  "exploreBuildersTitle": "RealtyNow లో బిల్డర్లను అన్వేషించండి",
+  "exploreBuildersSubtitle": "నమ్మకమైన బిల్డర్లను కనుగొనండి, వారి ప్రాజెక్టులను అన్వేషించండి మరియు విశ్వాసంతో మీ తదుపరి ఆస్తిని ఎంచుకోండి.",
+  "viewAllBuilders": "అన్ని బిల్డర్లను చూడండి",
+  "viewBuilder": "బిల్డర్ చూడండి",
+  "verifiedBuilder": "ధృవీకరించబడిన బిల్డర్",
+  "noBuildersAvailable": "ప్రస్తుతానికి బిల్డర్లు అందుబాటులో లేరు.",
+  "unableToLoadBuilders": "ప్రస్తుతం బిల్డర్లను లోడ్ చేయడం సాధ్యపడలేదు."
 }

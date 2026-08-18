@@ -28,6 +28,7 @@ import {
   Activity,
   Boxes,
   Handshake,
+  Eye,
 } from 'lucide-react';
 import type { NavSection } from '../../components/dashboard-layout';
 
@@ -69,18 +70,17 @@ export const getAgentSections = (t: (key: string, fallback?: string) => string):
     heading: t('dashboard:salesCrm', 'Sales & CRM'),
     items: [
       { to: '/agent/leads', label: t('dashboard:leads', 'Leads CRM'), icon: MessageSquare },
-      { to: '/agent/crm', label: t('dashboard:crm', 'CRM'), icon: Activity },
-      { to: '/agent/clients', label: t('dashboard:clients', 'Clients'), icon: Users },
+      { to: '/agent/crm', label: t('dashboard:crm', 'CRM Pipeline'), icon: Activity },
+      { to: '/agent/clients', label: t('dashboard:customers', 'Customers'), icon: Users },
       { to: '/agent/appointments', label: t('dashboard:appointmentsHeader', 'Appointments'), icon: Calendar },
+      { to: '/agent/appointments?tab=site_visits', label: t('dashboard:siteVisits', 'Site Visits'), icon: Eye },
       { to: '/agent/negotiations', label: t('dashboard:negotiations', 'Negotiations'), icon: Tag },
     ],
   },
   {
     heading: t('dashboard:listings', 'Listings'),
     items: [
-      { to: '/agent/properties', label: t('dashboard:assignedProperties', 'Assigned Properties'), icon: Building2 },
-      { to: '/agent/list-property', label: t('dashboard:listProperty', 'List Property'), icon: PlusCircle, end: true },
-      { to: '/agent/my-properties', label: t('dashboard:myListedProperties', 'My Listed Properties'), icon: Layers },
+      { to: '/agent/properties', label: t('dashboard:properties', 'Assigned Properties'), icon: Building2 },
       { to: '/agent/bulk-upload', label: 'Bulk Import', icon: FileText },
     ],
   },

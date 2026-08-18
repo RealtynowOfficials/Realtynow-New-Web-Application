@@ -478,6 +478,8 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
       if (error) throw error;
 
       queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['property', propertyId] });
       toast.addToast('success', 'Property updated successfully');
       onClose();
     } catch (err) {

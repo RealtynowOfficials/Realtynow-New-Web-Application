@@ -124,5 +124,12 @@
   "readyToFind": "[HI] Ready to Find Your Dream Property?",
   "joinThousands": "[HI] Join thousands of satisfied customers who found their perfect home with RealtyNow\\'s AI-powered platform.",
   "faqTitle": "[HI] Frequently Asked Questions",
-  "searchPlaceholder": "[HI] Search properties..."
+  "searchPlaceholder": "[HI] Search properties...",
+  "exploreBuildersTitle": "RealtyNow पर बिल्डर्स खोजें",
+  "exploreBuildersSubtitle": "विश्वसनीय बिल्डरों की खोज करें, उनकी परियोजनाओं को देखें और आत्मविश्वास के साथ अपनी अगली संपत्ति चुनें।",
+  "viewAllBuilders": "सभी बिल्डर्स देखें",
+  "viewBuilder": "बिल्डर देखें",
+  "verifiedBuilder": "सत्यापित बिल्डर",
+  "noBuildersAvailable": "फ़िलहाल कोई बिल्डर उपलब्ध नहीं है।",
+  "unableToLoadBuilders": "इस समय बिल्डर्स लोड नहीं हो पा रहे हैं।"
 }

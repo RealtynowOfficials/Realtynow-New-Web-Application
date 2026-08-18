@@ -1,11 +1,20 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Calendar,
   CheckCircle2,
   XCircle,
   ClipboardList,
   Star,
+  Phone,
+  Mail,
+  MessageCircle,
+  Building2,
+  ExternalLink,
+  User,
+  Clock,
+  MapPin,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
@@ -14,27 +23,9 @@ import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAgentSections } from '../portal/sections';
 import { Card, Skeleton, Badge, Button, EmptyState, Modal, Textarea } from '../../components/ui';
 import { useRealtimeCount } from '../../lib/realtime';
+import { formatDate, buildWhatsAppUrl } from '../../lib/utils';
+import { AgentLeadDetailDrawer } from '../../components/agent/AgentLeadDetailDrawer';
 
-const AGENT_PROPERTIES_EXPORT_COLUMNS = [
-  { key: 'id', label: 'ID' },
-  { key: 'title', label: 'Property' },
-  { key: 'locality_name', label: 'Locality' },
-  { key: 'city_name', label: 'City' },
-  { key: 'price', label: 'Price' },
-  { key: 'status', label: 'Status' },
-  { key: 'view_count', label: 'Views' },
-  { key: 'created_at', label: 'Created' },
-];
-
-interface AgentPropertiesFilterState {
-  status: string;
-  city: string;
-  type: string;
-  minPrice: string;
-  maxPrice: string;
-}
-
-const LEAD_STATUSES = ['new', 'contacted', 'closed', 'spam'] as const;
 const APPT_STATUSES = ['requested', 'confirmed', 'completed', 'cancelled'] as const;
 
 export function AgentAppointments() {
@@ -42,7 +33,12 @@ export function AgentAppointments() {
   const agentSections = getAgentSections(t);
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'all');
+  const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const [visitModal, setVisitModal] = useState<null | {
     appointmentId: string;
     customerId: string;
@@ -58,7 +54,7 @@ export function AgentAppointments() {
       let q = supabase
         .from('appointments')
         .select(
-          '*, property:properties(title, id), customer:profiles!appointments_customer_id_profiles_fkey(first_name, last_name, email, phone)',
+          '*, property:properties(id, title, price, purpose, images, locality_name, city_name), customer:profiles!appointments_customer_id_profiles_fkey(first_name, last_name, email, phone)',
         )
         .eq('agent_id', user!.id)
         .order('scheduled_at', { ascending: false });
@@ -102,115 +98,251 @@ export function AgentAppointments() {
 
   const tabs = ['all', ...APPT_STATUSES];
 
+  const handleOpenLead = (a: any) => {
+    if (a.lead_id) {
+      supabase
+        .from('enquiries')
+        .select('*, property:properties(id, title, price, purpose, images, locality_name, city_name, bedrooms, built_up_area, property_types(name))')
+        .eq('id', a.lead_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setSelectedLead({
+              ...data,
+              property: Array.isArray(data.property) ? data.property[0] : data.property,
+            });
+            setDrawerOpen(true);
+          }
+        });
+    } else {
+      setSelectedLead({
+        id: a.id,
+        name: customerName(a),
+        phone: customerPhone(a),
+        email: customerEmail(a),
+        message: a.notes,
+        lead_status: 'site_visit',
+        status: a.status,
+        property: a.property,
+        created_at: a.created_at || a.scheduled_at,
+        source: a.source || 'site_visit',
+      });
+      setDrawerOpen(true);
+    }
+  };
+
+  const customerName = (a: any) => {
+    if (a.customer?.first_name) {
+      return `${a.customer.first_name} ${a.customer.last_name ?? ''}`.trim();
+    }
+    return a.name || 'Anonymous Customer';
+  };
+
+  const customerPhone = (a: any) => a.customer?.phone || a.phone || '';
+  const customerEmail = (a: any) => a.customer?.email || a.email || '';
+
   return (
-    <DashboardLayout sections={agentSections} title="Appointments" badge="Agent">
-      <PageHeader title="Appointments" subtitle="Manage scheduled property visits." />
-      <div className="mb-4 flex gap-1 rounded-lg border border-navy-200 bg-white p-1 w-fit">
+    <DashboardLayout sections={agentSections} title="Appointments & Visits" badge="Agent">
+      <PageHeader
+        title="Appointments & Visits"
+        subtitle="Manage scheduled property visits and customer appointments."
+      />
+
+      <div className="mb-4 flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t}
-            onClick={() => setStatusFilter(t)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition ${statusFilter === t ? 'bg-navy-700 text-white' : 'text-navy-600 hover:bg-navy-50'}`}
+            onClick={() => {
+              setStatusFilter(t);
+              setSearchParams(t === 'all' ? {} : { status: t });
+            }}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-bold capitalize transition cursor-pointer ${
+              statusFilter === t
+                ? 'bg-navy-900 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-50'
+            }`}
           >
             {t}
           </button>
         ))}
       </div>
-      <Card className="divide-y divide-navy-50">
+
+      <Card className="divide-y divide-slate-100 border border-slate-200/80 shadow-xs">
         {isLoading ? (
           <div className="p-4 space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20" />
+              <Skeleton key={i} className="h-24 rounded-xl" />
             ))}
           </div>
         ) : data && data.length > 0 ? (
-          data.map((a) => (
-            <div key={a.id} className="p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-navy-900">{a.property?.title ?? 'Appointment'}</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-navy-500">
-                    <Calendar className="h-3.5 w-3.5" /> {new Date(a.scheduled_at).toLocaleString('en-IN')}
-                  </p>
-                  {a.customer && (
-                    <p className="mt-1 text-xs text-navy-600">
-                      {a.customer.first_name} {a.customer.last_name} · {a.customer.email} ·{' '}
-                      {a.customer.phone ?? 'No phone'}
-                    </p>
-                  )}
-                  {a.notes && <p className="mt-1.5 text-sm text-navy-600">{a.notes}</p>}
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <Badge
-                    variant={
-                      a.status === 'confirmed'
-                        ? 'success'
-                        : a.status === 'cancelled'
-                          ? 'error'
-                          : a.status === 'completed'
-                            ? 'default'
-                            : 'warning'
-                    }
-                  >
-                    {a.status}
-                  </Badge>
-                  {a.status === 'requested' && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        icon={<CheckCircle2 className="h-4 w-4" />}
-                        onClick={() => updateStatus.mutate({ id: a.id, status: 'confirmed' })}
-                      >
-                        Confirm
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        icon={<XCircle className="h-4 w-4" />}
-                        onClick={() => updateStatus.mutate({ id: a.id, status: 'cancelled' })}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
-                  {a.status === 'confirmed' && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        icon={<ClipboardList className="h-4 w-4" />}
-                        onClick={() =>
-                          setVisitModal({
-                            appointmentId: a.id,
-                            customerId: a.customer_id,
-                            propertyId: a.property_id,
-                            propertyTitle: a.property?.title ?? '',
-                          })
+          data.map((a) => {
+            const name = customerName(a);
+            const phone = customerPhone(a);
+            const email = customerEmail(a);
+
+            return (
+              <div key={a.id} className="p-5 hover:bg-slate-50/60 transition-colors">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  
+                  {/* Left Column: Property & Customer Information */}
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-navy-900 text-base">
+                        {a.property?.title ?? 'Property Appointment'}
+                      </h4>
+                      <Badge
+                        variant={
+                          a.status === 'confirmed'
+                            ? 'success'
+                            : a.status === 'cancelled'
+                              ? 'error'
+                              : a.status === 'completed'
+                                ? 'default'
+                                : 'warning'
                         }
+                        className="uppercase text-[10px] font-bold"
                       >
-                        Log Visit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => updateStatus.mutate({ id: a.id, status: 'cancelled' })}
-                      >
-                        Cancel
-                      </Button>
+                        {a.status}
+                      </Badge>
                     </div>
-                  )}
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                      <span className="flex items-center gap-1 font-semibold text-slate-700">
+                        <Calendar className="h-3.5 w-3.5 text-red-600" />
+                        {new Date(a.scheduled_at).toLocaleString('en-IN', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                      {a.visit_type && (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 font-medium text-[11px] text-slate-700">
+                          {a.visit_type}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Customer Information Card Block */}
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-white border border-slate-200 grid place-items-center shrink-0">
+                          <User className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-navy-900">{name}</p>
+                          <p className="text-[11px] text-slate-500">{phone || email || 'No contact details'}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {phone && (
+                          <>
+                            <a
+                              href={`tel:${phone}`}
+                              className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold flex items-center gap-1"
+                            >
+                              <Phone className="w-3 h-3 text-emerald-600" /> Call
+                            </a>
+                            <a
+                              href={buildWhatsAppUrl(phone, `Hello ${name}, regarding your scheduled visit for ${a.property?.title || 'the property'}:`)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold flex items-center gap-1"
+                            >
+                              <MessageCircle className="w-3 h-3" /> WhatsApp
+                            </a>
+                          </>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleOpenLead(a)}
+                          className="text-xs h-7 px-2.5"
+                        >
+                          View Lead
+                        </Button>
+                      </div>
+                    </div>
+
+                    {a.notes && (
+                      <p className="text-xs text-slate-600 italic bg-amber-50/40 p-2.5 rounded-lg border border-amber-100">
+                        "{a.notes}"
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Right Column: Workflow Actions */}
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    {a.status === 'requested' && (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          icon={<CheckCircle2 className="h-4 w-4" />}
+                          onClick={() => updateStatus.mutate({ id: a.id, status: 'confirmed' })}
+                        >
+                          Confirm Visit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          icon={<XCircle className="h-4 w-4" />}
+                          onClick={() => updateStatus.mutate({ id: a.id, status: 'cancelled' })}
+                        >
+                          Decline
+                        </Button>
+                      </div>
+                    )}
+                    {a.status === 'confirmed' && (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={<ClipboardList className="h-4 w-4" />}
+                          onClick={() =>
+                            setVisitModal({
+                              appointmentId: a.id,
+                              customerId: a.customer_id,
+                              propertyId: a.property_id,
+                              propertyTitle: a.property?.title ?? '',
+                            })
+                          }
+                        >
+                          Log Visit Result
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => updateStatus.mutate({ id: a.id, status: 'cancelled' })}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         ) : (
           <EmptyState
-            icon={<Calendar className="h-6 w-6" />}
-            title="No appointments"
-            description="Scheduled visits will appear here."
+            icon={<Calendar className="h-8 w-8 text-slate-300" />}
+            title="No appointments found"
+            description="Scheduled property visits and appointments assigned to you will appear here."
           />
         )}
       </Card>
+
+      <AgentLeadDetailDrawer
+        lead={selectedLead}
+        isOpen={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setSelectedLead(null);
+        }}
+        onLeadUpdated={() => {
+          queryClient.invalidateQueries({ queryKey: ['agent-appointments'] });
+        }}
+      />
 
       <Modal
         open={!!visitModal}

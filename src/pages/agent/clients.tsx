@@ -69,14 +69,15 @@ export function AgentClients() {
   const { t } = useLanguageContext();
   const agentSections = getAgentSections(t);
   const realtimeTick = useRealtimeCount('enquiries', { column: 'agent_id', value: user?.id ?? '' });
+  const realtimeTickAssigned = useRealtimeCount('enquiries', { column: 'assigned_to', value: user?.id ?? '' });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['agent-clients', user?.id, realtimeTick],
+    queryKey: ['agent-clients', user?.id, realtimeTick, realtimeTickAssigned],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('enquiries')
         .select('id, name, email, phone, status, created_at, customer_id, property:properties(id, title)')
-        .eq('agent_id', user!.id)
+        .or(`agent_id.eq.${user!.id},assigned_to.eq.${user!.id}`)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return ((data ?? []) as any[]).map((e) => ({
@@ -201,6 +202,73 @@ export function AgentClients() {
           error={error instanceof Error ? error.message : null}
           getRowId={(c) => c.key}
           searchKeys={['name', 'email', 'phone']}
+          cardRender={(c) => (
+            <div
+              key={c.key}
+              className="card p-5 hover:shadow-cardHover transition-all flex flex-col justify-between h-full group bg-white border border-slate-200/80 rounded-2xl"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200 flex items-center justify-center font-bold text-navy-900 text-base shadow-2xs shrink-0">
+                      {c.name ? c.name.charAt(0).toUpperCase() : 'C'}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-navy-900 text-base truncate">{c.name}</h4>
+                      <p className="text-xs text-slate-500">{c.enquiryCount} enquir{c.enquiryCount === 1 ? 'y' : 'ies'}</p>
+                    </div>
+                  </div>
+                  <Badge variant={c.latestStatus === 'converted' ? 'success' : c.latestStatus === 'new' ? 'info' : 'default'} className="capitalize shrink-0">
+                    {c.latestStatus}
+                  </Badge>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs text-slate-600">
+                  {c.email && (
+                    <div className="flex items-center gap-2 truncate">
+                      <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <a href={`mailto:${c.email}`} className="truncate hover:text-red-600 hover:underline">
+                        {c.email}
+                      </a>
+                    </div>
+                  )}
+                  {c.phone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <a href={`tel:${c.phone}`} className="hover:text-red-600 hover:underline">
+                        {c.phone}
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {c.properties.length > 0 && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-100">
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Enquired Properties</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {c.properties.slice(0, 3).map((p) => (
+                        <Link
+                          key={p.id}
+                          to={generatePropertyUrl(p.id, p.title)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-navy-800 text-xs font-medium truncate max-w-full"
+                        >
+                          <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{p.title}</span>
+                        </Link>
+                      ))}
+                      {c.properties.length > 3 && (
+                        <span className="text-xs text-slate-400 self-center">+{c.properties.length - 3} more</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                <span>Last contact: {formatDate(c.lastContactAt)}</span>
+              </div>
+            </div>
+          )}
           emptyState={
             <EmptyState
               icon={<Users className="h-6 w-6" />}

@@ -285,7 +285,7 @@ export function BuilderBlocks() {
             value={form.project_id}
             onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value }))}
             error={formErrors.project_id}
-            className="sm:col-span-2"
+            containerClassName="sm:col-span-2"
           >
             <option value="">Select a project</option>
             {(projects ?? []).map((p) => (

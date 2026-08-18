@@ -1,24 +1,28 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Eye,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAgentSections } from '../portal/sections';
-import { Card, Button, Input, Select } from '../../components/ui';
+import { Card, Button, Input, Select, Modal } from '../../components/ui';
 import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column } from '../../components/data-table';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate,  generatePropertyUrl} from '../../lib/utils';
+import { formatPrice, formatDate, generatePropertyUrl } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import type { Property } from '../../lib/types';
 import { ExportMenu } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
+import { useToast } from '../../components/toast';
+import { EditPropertyModal } from '../../components/portal/edit-property-modal';
 
 const AGENT_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -39,15 +43,19 @@ interface AgentPropertiesFilterState {
   maxPrice: string;
 }
 
-const LEAD_STATUSES = ['new', 'contacted', 'closed', 'spam'] as const;
-const APPT_STATUSES = ['requested', 'confirmed', 'completed', 'cancelled'] as const;
-
 export function AgentProperties() {
   const { t } = useLanguageContext();
   const agentSections = getAgentSections(t);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const realtimeTick = useRealtimeCount('properties', { column: 'assigned_agent_id', value: user?.id ?? '' });
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editPropertyId, setEditPropertyId] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<Property | null>(null);
+  const deletingRef = useRef(false);
+
   const [filters, setFilters] = useState<AgentPropertiesFilterState>({
     status: '',
     city: '',
@@ -60,19 +68,46 @@ export function AgentProperties() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['agent-properties', user?.id, realtimeTick],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('properties')
         .select('*, cities(name), localities(name), property_types(name)')
-        .eq('assigned_agent_id', user!.id)
+        .or(`assigned_agent_id.eq.${user!.id},owner_id.eq.${user!.id}`)
         .order('created_at', { ascending: false });
+      if (error) throw error;
       return (data ?? []).map((p) => mapJoined(p as unknown as Record<string, unknown>)) as unknown as Property[];
     },
     enabled: !!user,
   });
 
-  // Filter option lists derived from the already-loaded set — this page's dataset (one
-  // agent's assigned properties) is small enough that a separate cities/types lookup query
-  // isn't worth the round trip.
+  // Delete mutation with double-click guard
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('properties').delete().eq('id', id);
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] });
+      addToast('success', 'Property deleted successfully.');
+      setToDelete(null);
+    },
+    onError: (err) => {
+      console.error('Property delete error:', err);
+      addToast('error', 'Unable to delete this property. Please try again.');
+    },
+    onSettled: () => {
+      deletingRef.current = false;
+    },
+  });
+
+  const handleDeleteConfirm = () => {
+    if (!toDelete || deletingRef.current || deleteMutation.isPending) return;
+    deletingRef.current = true;
+    deleteMutation.mutate(toDelete.id);
+  };
+
+  // Filter option lists derived from the already-loaded set
   const filterOptions = useMemo(() => {
     const cities = new Map<string, string>();
     const types = new Map<string, string>();
@@ -130,6 +165,40 @@ export function AgentProperties() {
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
     { key: 'view_count', header: 'Views', sortable: true },
     { key: 'created_at', header: 'Created', sortable: true, render: (p) => formatDate(p.created_at) },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (p) => (
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Link
+            to={generatePropertyUrl(p)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="View property"
+            aria-label="View property"
+          >
+            <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />} />
+          </Link>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Edit3 className="h-4 w-4" />}
+            title="Edit property"
+            aria-label="Edit property"
+            onClick={() => setEditPropertyId(p.id)}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-error-600 hover:text-error-700"
+            icon={<Trash2 className="h-4 w-4" />}
+            title="Delete property"
+            aria-label="Delete property"
+            onClick={() => setToDelete(p)}
+          />
+        </div>
+      ),
+    },
   ], []);
 
   return (
@@ -213,7 +282,8 @@ export function AgentProperties() {
         loading={isLoading}
         error={error instanceof Error ? error.message : null}
         getRowId={(p) => p.id}
-        searchKeys={['title']}
+        searchPlaceholder={t('agent.searchAssignedProperties', 'Search assigned properties by title, locality, city...')}
+        searchKeys={['title', 'locality_name', 'city_name', 'property_type_name']}
         dateKey="created_at"
         selectedIds={selected}
         onToggleSelect={(id) =>
@@ -251,18 +321,87 @@ export function AgentProperties() {
               <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(p.price, p.purpose)}</p>
               <p className="text-xs text-navy-400 mt-1">Assigned: {formatDate(p.created_at)}</p>
             </div>
-            <div className="mt-4 pt-3 border-t border-navy-100 flex items-center justify-between gap-2">
-              <span className="text-xs text-navy-500 font-medium">👁️ {p.view_count ?? 0} Views</span>
-              <Link to={generatePropertyUrl(p)} target="_blank">
-                <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />}>
-                  View Listing
+            <div className="mt-4 pt-3 border-t border-navy-100 flex flex-wrap items-center justify-between gap-2">
+              <Link to={`/agent/leads?propertyId=${p.id}`}>
+                <Button size="sm" variant="secondary" className="text-xs">
+                  View Leads
                 </Button>
               </Link>
+              <div className="flex items-center gap-1">
+                <Link
+                  to={generatePropertyUrl(p)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View property"
+                  aria-label="View property"
+                >
+                  <Button size="sm" variant="ghost" icon={<Eye className="h-4 w-4" />}>
+                    View
+                  </Button>
+                </Link>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Edit3 className="h-4 w-4" />}
+                  title="Edit property"
+                  aria-label="Edit property"
+                  onClick={() => setEditPropertyId(p.id)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-error-600 hover:text-error-700"
+                  icon={<Trash2 className="h-4 w-4" />}
+                  title="Delete property"
+                  aria-label="Delete property"
+                  onClick={() => setToDelete(p)}
+                >
+                  Delete
+                </Button>
+              </div>
             </div>
           </Card>
         )}
       />
+
+      {/* Delete Property Confirmation Modal */}
+      <Modal
+        open={!!toDelete}
+        onClose={() => !deleteMutation.isPending && setToDelete(null)}
+        title="Delete Property?"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setToDelete(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleteMutation.isPending}
+              onClick={handleDeleteConfirm}
+            >
+              Delete Property
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-navy-800">
+            Are you sure you want to delete <strong className="text-navy-950">"{toDelete?.title}"</strong>?
+          </p>
+          <p className="text-xs text-error-600 font-medium">
+            This action cannot be undone and will permanently remove this property.
+          </p>
+        </div>
+      </Modal>
+
+      {/* Edit Property Modal */}
+      <EditPropertyModal propertyId={editPropertyId} onClose={() => setEditPropertyId(null)} />
     </DashboardLayout>
   );
 }
-

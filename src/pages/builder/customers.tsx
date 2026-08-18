@@ -245,6 +245,54 @@ export function BuilderCustomers() {
         error={error instanceof Error ? error.message : null}
         getRowId={(c) => c.id}
         searchKeys={['name', 'email', 'phone']}
+        cardRender={(c) => (
+          <div
+            key={c.id}
+            className="card p-5 hover:shadow-cardHover transition-all flex flex-col justify-between h-full group bg-white border border-slate-200/80 rounded-2xl"
+          >
+            <div>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200 flex items-center justify-center font-bold text-navy-900 text-base shadow-2xs shrink-0">
+                    {c.name ? c.name.charAt(0).toUpperCase() : 'C'}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-navy-900 text-base leading-tight truncate">{c.name}</h4>
+                    <p className="text-xs font-medium text-slate-500 truncate mt-0.5">{c.email || 'No email'}</p>
+                    {c.phone && <p className="text-xs text-slate-500 truncate mt-0.5">{c.phone}</p>}
+                  </div>
+                </div>
+                {c.kyc_doc_url ? (
+                  <Badge variant="success" className="shrink-0">KYC Verified</Badge>
+                ) : (
+                  <Badge variant="default" className="shrink-0">Pending KYC</Badge>
+                )}
+              </div>
+
+              {c.notes && (
+                <p className="text-xs text-slate-600 line-clamp-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100 mb-3">
+                  {c.notes}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+              <span className="text-[11px] text-slate-400">Added {new Date(c.created_at).toLocaleDateString()}</span>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" icon={<Edit3 className="h-4 w-4" />} onClick={() => openEdit(c)}>
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  icon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => setToDelete(c.id)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
         emptyState={
           <EmptyState
             icon={<Users className="h-6 w-6" />}

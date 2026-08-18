@@ -921,8 +921,9 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
         if (inserted?.id) triggerAiVerification(inserted.id);
       }
       toast.addToast('success', '🎉 Property submitted for admin review!');
+      const targetUrl = profile?.role === 'agent' ? '/agent/properties' : '/portal/my-properties';
       setTimeout(() => {
-        navigate('/portal/my-properties');
+        navigate(targetUrl);
       }, 1200);
     } catch (err: any) {
       toast.addToast('error', err?.message || 'Submission failed');
@@ -2112,12 +2113,27 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
                               </div>
                             ))}
                         </div>
-                        <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex items-start gap-3">
-                          <Check className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                          <p className="text-sm text-green-800 font-medium">
-                            Your listing looks great! Click <strong>Submit</strong> to send it for admin review. It will
-                            go live once approved.
-                          </p>
+                        <div className="bg-green-50 border border-green-100 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <Check className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                            <p className="text-sm text-green-800 font-medium">
+                              Your listing looks great! Click <strong>Submit</strong> or <strong>Next Step</strong> to send it for admin review. It will
+                              go live once approved.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSubmit(onSubmit, onFormError)()}
+                            disabled={saving}
+                            className="shrink-0 h-10 px-5 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-xs shadow-md shadow-green-600/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            {saving ? (
+                              <div className="h-3.5 w-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              <Star className="h-3.5 w-3.5" />
+                            )}
+                            Submit Listing Now
+                          </button>
                         </div>
                       </div>
                     )}

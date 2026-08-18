@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Search, ArrowUpDown, Calendar, LayoutList, LayoutGrid } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, ArrowUpDown, Calendar, LayoutList, LayoutGrid, User, Mail, Phone, Building, FileText } from 'lucide-react';
 import { Button, Input, Skeleton, Badge } from './ui';
 import { cn, formatDate, formatPrice } from '../lib/utils';
 import { StatusBadge } from './property-card';
@@ -436,29 +436,105 @@ export function DataTable<T>({
                 const id = getRowId(row);
                 if (cardRender) return <div key={id}>{cardRender(row)}</div>;
 
-                // Fallback default card render for any object (Properties, Applications, Users)
+                // Smart default card render for different entity types
                 const rec = row as Record<string, any>;
-                const img = rec.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
                 const title = rec.title ?? rec.name ?? rec.full_name ?? `Item #${id.slice(0, 6)}`;
-                const status = rec.status ?? rec.approval_status ?? 'active';
+                const status = rec.status ?? rec.approval_status ?? rec.lead_status ?? 'active';
+                const isPerson = !!(rec.avatar_url || rec.email || rec.phone || rec.role === 'agent' || rec.role === 'builder' || rec.commission_percent !== undefined) && !rec.property_type && !rec.bedrooms && !rec.bhk;
+                const realImage = rec.cover_image ?? rec.image_url ?? rec.images?.[0] ?? null;
+
+                if (isPerson) {
+                  const avatar = rec.avatar_url ?? rec.photo_url ?? null;
+                  const initial = (title && typeof title === 'string') ? title.charAt(0).toUpperCase() : 'U';
+
+                  return (
+                    <div
+                      key={id}
+                      onClick={() => onRowClick?.(row)}
+                      className="card p-5 hover:shadow-cardHover transition-all flex flex-col justify-between cursor-pointer group bg-white border border-slate-200/80 rounded-2xl"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {avatar ? (
+                              <img
+                                src={avatar}
+                                alt={title}
+                                className="h-12 w-12 rounded-full object-cover border-2 border-white shadow-md ring-2 ring-red-100 shrink-0"
+                              />
+                            ) : (
+                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200 flex items-center justify-center font-bold text-navy-900 text-base shadow-2xs shrink-0">
+                                {initial}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-navy-900 text-base truncate">{title}</h4>
+                              {rec.role && <p className="text-xs font-semibold text-red-600 capitalize">{rec.role}</p>}
+                            </div>
+                          </div>
+                          <div className="shrink-0">
+                            <StatusBadge status={status} />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs text-slate-600">
+                          {rec.email && (
+                            <div className="flex items-center gap-2 truncate">
+                              <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">{rec.email}</span>
+                            </div>
+                          )}
+                          {rec.phone && (
+                            <div className="flex items-center gap-2">
+                              <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span>{rec.phone}</span>
+                            </div>
+                          )}
+                          {rec.commission_percent !== undefined && (
+                            <div className="pt-1 flex items-center justify-between font-medium">
+                              <span className="text-slate-400">Commission:</span>
+                              <span className="font-bold text-navy-900">{rec.commission_percent}%</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {rec.created_at && (
+                        <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                          <span>Joined {formatDate(rec.created_at)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
 
                 return (
                   <div
                     key={id}
                     onClick={() => onRowClick?.(row)}
-                    className="card p-4 hover:shadow-cardHover transition-all flex flex-col justify-between cursor-pointer group"
+                    className="card p-4 hover:shadow-cardHover transition-all flex flex-col justify-between cursor-pointer group bg-white border border-slate-200/80 rounded-2xl"
                   >
                     <div>
-                      <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-navy-100">
-                        <img
-                          src={img}
-                          alt=""
-                          className="h-full w-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="absolute top-2 right-2">
+                      {realImage ? (
+                        <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-navy-100">
+                          <img
+                            src={realImage}
+                            alt=""
+                            className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute top-2 right-2">
+                            <StatusBadge status={status} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
+                          <div className="h-10 w-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+                            <Building className="h-5 w-5" />
+                          </div>
                           <StatusBadge status={status} />
                         </div>
-                      </div>
+                      )}
+
                       <h4 className="font-bold text-navy-900 text-base line-clamp-1">{title}</h4>
                       {rec.locality_name && (
                         <p className="text-xs text-navy-500 mt-0.5">

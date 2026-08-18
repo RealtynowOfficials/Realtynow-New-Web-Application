@@ -23,6 +23,7 @@ export type StorageBucket =
   | 'agent-documents'
   | 'customer-documents'
   | 'profile-images'
+  | 'agent-avatars'
   | 'blog-images'
   | 'advertisements'
   | 'company-assets'
@@ -39,7 +40,7 @@ function validateFile(bucket: StorageBucket, file: File) {
   let allowedTypes: string[] = [];
   if (bucket === 'bulk-import-files') {
     allowedTypes = ALLOWED_IMPORT_TYPES;
-  } else if (bucket.endsWith('-images') || bucket === 'profile-images') {
+  } else if (bucket.endsWith('-images') || bucket === 'profile-images' || bucket === 'agent-avatars') {
     allowedTypes = ALLOWED_IMAGE_TYPES;
   } else if (bucket.endsWith('-videos')) {
     allowedTypes = ALLOWED_VIDEO_TYPES;
