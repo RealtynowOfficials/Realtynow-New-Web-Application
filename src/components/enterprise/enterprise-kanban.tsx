@@ -27,14 +27,102 @@ export interface KanbanLeadCard {
   notes?: string;
 }
 
-const STAGES: { key: KanbanLeadCard['stage']; label: string; color: string; bg: string }[] = [
-  { key: 'new', label: 'New Lead', color: 'border-blue-500 text-blue-700', bg: 'bg-blue-50' },
-  { key: 'contacted', label: 'Contacted', color: 'border-indigo-500 text-indigo-700', bg: 'bg-indigo-50' },
-  { key: 'site_visit', label: 'Site Visit Scheduled', color: 'border-amber-500 text-amber-700', bg: 'bg-amber-50' },
-  { key: 'negotiation', label: 'Negotiation', color: 'border-purple-500 text-purple-700', bg: 'bg-purple-50' },
-  { key: 'booking', label: 'Booking In Progress', color: 'border-emerald-500 text-emerald-700', bg: 'bg-emerald-50' },
-  { key: 'sold', label: 'Sold / Closed', color: 'border-green-600 text-green-800', bg: 'bg-green-100' },
-  { key: 'closed', label: 'Archived', color: 'border-slate-400 text-slate-600', bg: 'bg-slate-100' },
+const STAGES: {
+  key: KanbanLeadCard['stage'];
+  label: string;
+  headerGradient: string;
+  headerBadge: string;
+  columnBg: string;
+  cardLeftBorder: string;
+  dropZoneBorder: string;
+  dropZoneBg: string;
+  dropZoneText: string;
+  dotColor: string;
+}[] = [
+  {
+    key: 'new',
+    label: 'New Lead',
+    headerGradient: 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white',
+    headerBadge: 'bg-white/20 text-white border border-white/30',
+    columnBg: 'bg-blue-50/40 border-blue-200/90',
+    cardLeftBorder: 'border-l-4 border-l-blue-600',
+    dropZoneBorder: 'border-blue-300',
+    dropZoneBg: 'bg-blue-50/60',
+    dropZoneText: 'text-blue-600',
+    dotColor: 'bg-blue-300',
+  },
+  {
+    key: 'contacted',
+    label: 'Contacted',
+    headerGradient: 'bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 text-white',
+    headerBadge: 'bg-white/25 text-white border border-white/30',
+    columnBg: 'bg-amber-50/40 border-amber-200/90',
+    cardLeftBorder: 'border-l-4 border-l-amber-500',
+    dropZoneBorder: 'border-amber-300',
+    dropZoneBg: 'bg-amber-50/60',
+    dropZoneText: 'text-amber-700',
+    dotColor: 'bg-amber-200',
+  },
+  {
+    key: 'site_visit',
+    label: 'Site Visit Scheduled',
+    headerGradient: 'bg-gradient-to-r from-purple-600 via-purple-700 to-fuchsia-600 text-white',
+    headerBadge: 'bg-white/20 text-white border border-white/30',
+    columnBg: 'bg-purple-50/40 border-purple-200/90',
+    cardLeftBorder: 'border-l-4 border-l-purple-600',
+    dropZoneBorder: 'border-purple-300',
+    dropZoneBg: 'bg-purple-50/60',
+    dropZoneText: 'text-purple-700',
+    dotColor: 'bg-purple-300',
+  },
+  {
+    key: 'negotiation',
+    label: 'Negotiation',
+    headerGradient: 'bg-gradient-to-r from-orange-500 via-orange-600 to-rose-500 text-white',
+    headerBadge: 'bg-white/20 text-white border border-white/30',
+    columnBg: 'bg-orange-50/40 border-orange-200/90',
+    cardLeftBorder: 'border-l-4 border-l-orange-500',
+    dropZoneBorder: 'border-orange-300',
+    dropZoneBg: 'bg-orange-50/60',
+    dropZoneText: 'text-orange-700',
+    dotColor: 'bg-orange-200',
+  },
+  {
+    key: 'booking',
+    label: 'Booking In Progress',
+    headerGradient: 'bg-gradient-to-r from-teal-600 via-teal-700 to-cyan-700 text-white',
+    headerBadge: 'bg-white/20 text-white border border-white/30',
+    columnBg: 'bg-teal-50/40 border-teal-200/90',
+    cardLeftBorder: 'border-l-4 border-l-teal-600',
+    dropZoneBorder: 'border-teal-300',
+    dropZoneBg: 'bg-teal-50/60',
+    dropZoneText: 'text-teal-700',
+    dotColor: 'bg-teal-300',
+  },
+  {
+    key: 'sold',
+    label: 'Sold / Closed',
+    headerGradient: 'bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-600 text-white',
+    headerBadge: 'bg-white/20 text-white border border-white/30',
+    columnBg: 'bg-emerald-50/40 border-emerald-200/90',
+    cardLeftBorder: 'border-l-4 border-l-emerald-600',
+    dropZoneBorder: 'border-emerald-300',
+    dropZoneBg: 'bg-emerald-50/60',
+    dropZoneText: 'text-emerald-700',
+    dotColor: 'bg-emerald-200',
+  },
+  {
+    key: 'closed',
+    label: 'Archived',
+    headerGradient: 'bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 text-white',
+    headerBadge: 'bg-white/20 text-white border border-white/30',
+    columnBg: 'bg-slate-100/60 border-slate-300/80',
+    cardLeftBorder: 'border-l-4 border-l-slate-700',
+    dropZoneBorder: 'border-slate-300',
+    dropZoneBg: 'bg-slate-100',
+    dropZoneText: 'text-slate-600',
+    dotColor: 'bg-slate-400',
+  },
 ];
 
 interface EnterpriseKanbanProps {
@@ -127,14 +215,17 @@ export function EnterpriseKanban({ initialLeads, onLeadStageChange, onLeadClick,
               key={stage.key}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, stage.key)}
-              className="flex flex-col bg-slate-50 border border-slate-200 rounded-2xl p-3 min-h-[450px]"
+              className={`flex flex-col ${stage.columnBg} border rounded-2xl p-2.5 min-h-[480px] shadow-xs overflow-hidden`}
             >
-              {/* Stage Header */}
+              {/* Stage Header with Business Color Gradient and Contrasting White Text */}
               <div
-                className={`p-2.5 rounded-xl border-l-4 ${stage.color} ${stage.bg} flex items-center justify-between mb-3 shadow-sm`}
+                className={`p-3 rounded-xl ${stage.headerGradient} flex items-center justify-between mb-3 shadow-sm`}
               >
-                <span className="font-bold text-xs text-black">{stage.label}</span>
-                <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-white text-black border border-slate-200 shadow-xs">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className={`w-2 h-2 rounded-full ${stage.dotColor} shadow-xs shrink-0 animate-pulse`} />
+                  <span className="font-extrabold text-xs tracking-wide truncate">{stage.label}</span>
+                </div>
+                <span className={`text-xs font-mono font-black px-2 py-0.5 rounded-full ${stage.headerBadge} shadow-2xs shrink-0`}>
                   {stageLeads.length}
                 </span>
               </div>
@@ -142,7 +233,7 @@ export function EnterpriseKanban({ initialLeads, onLeadStageChange, onLeadClick,
               {/* Cards Container */}
               <div className="flex-1 space-y-3 overflow-y-auto max-h-[600px] pr-1">
                 {stageLeads.length === 0 ? (
-                  <div className="h-32 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400 text-xs font-semibold">
+                  <div className={`h-32 border-2 border-dashed ${stage.dropZoneBorder} ${stage.dropZoneBg} ${stage.dropZoneText} rounded-xl flex items-center justify-center text-xs font-bold`}>
                     Drop lead here
                   </div>
                 ) : (
@@ -152,10 +243,10 @@ export function EnterpriseKanban({ initialLeads, onLeadStageChange, onLeadClick,
                       draggable
                       onDragStart={(e) => handleDragStart(e, lead.id)}
                       onClick={() => handleOpenLead(lead)}
-                      className="bg-white border border-slate-200 hover:border-red-500 rounded-xl p-3.5 shadow-sm hover:shadow-md transition-all cursor-pointer group hover:scale-[1.01]"
+                      className={`bg-white border border-slate-200/90 ${stage.cardLeftBorder} hover:border-slate-300 rounded-xl p-3.5 shadow-xs hover:shadow-md transition-all cursor-pointer group hover:scale-[1.01]`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <span className="text-xs font-bold text-black group-hover:text-red-600 transition-colors line-clamp-1">
+                        <span className="text-xs font-bold text-navy-900 group-hover:text-red-600 transition-colors line-clamp-1">
                           {lead.title}
                         </span>
                         {lead.priority && (

@@ -210,6 +210,7 @@ const BuilderAiAssistant = lazy(() => import('./pages/builder/ai-assistant').the
 function RootLayout() {
   return (
     <ErrorBoundary>
+      <ScrollToTop />
       <Outlet />
       <CompareFloatingPanel />
       <AIAssistant />
@@ -223,7 +224,6 @@ function PublicRoute() {
   return (
     <PublicLayout>
       <ErrorBoundary>
-        <ScrollToTop />
         <Suspense fallback={<PageLoader />}>
           <Outlet />
         </Suspense>

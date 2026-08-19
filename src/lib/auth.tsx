@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 import { queryClient } from './queryClient';
 import type { Profile, UserRole } from './types';
 
+import { ensureUserProfile } from './profile-utils';
+
 type OtpLoginIntent = 'customer' | 'agent' | 'builder' | 'partner';
 
 interface AuthContextValue {
@@ -27,12 +29,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [prevRole, setPrevRole] = useState<UserRole | null>(null);
 
   const loadProfile = useCallback(async (uid: string) => {
+    let profileData: Profile | null = null;
     const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
     if (error) {
       console.warn('profile load error', error.message);
-      return null;
+    } else {
+      profileData = data as Profile | null;
     }
-    const profileData = data as Profile | null;
+
+    // Auto-heal missing profile for authenticated user
+    if (!profileData) {
+      profileData = await ensureUserProfile(uid);
+    }
+
     setProfile(profileData);
     return profileData;
   }, []);

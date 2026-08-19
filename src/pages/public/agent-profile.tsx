@@ -11,6 +11,7 @@ import {
   Home as HomeIcon, ChevronRight, ShieldCheck, Sparkles, Bed, Ruler, Car,
 } from 'lucide-react';
 import type { Profile, Property } from '../../lib/types';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 
 interface AgentReview {
   id: string;
@@ -158,7 +159,7 @@ export function AgentProfilePage() {
   return (
     <div className="min-h-screen bg-white pb-24 sm:pb-16">
       {/* Breadcrumb */}
-      <div className="pt-24 pb-2">
+      <div className="py-3.5">
         <div className="container-wide">
           <nav className="flex items-center gap-1.5 text-xs text-slate-400">
             <Link to="/" className="hover:text-slate-700 transition-colors">Home</Link>
@@ -354,8 +355,9 @@ export function AgentProfilePage() {
             <div className="grid lg:grid-cols-2 rounded-3xl overflow-hidden border border-slate-200 shadow-sm">
               <div className="relative h-64 lg:h-full min-h-[280px] overflow-hidden group">
                 <img
-                  src={featured.images?.[0] || '/placeholder-property.jpg'}
+                  src={getPropertyCoverImage(featured)}
                   alt={featured.title}
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                   className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
               </div>

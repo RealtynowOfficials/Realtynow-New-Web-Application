@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Edit3, Percent, Plus, Tag, Trash2 } from 'lucide-react';
+import { Edit3, Percent, Plus, Tag, Trash2, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
@@ -13,6 +14,7 @@ import { useToast } from '../../components/toast';
 import { useRealtimeCount } from '../../lib/realtime';
 import { logBuilderAudit } from '../../lib/builder-audit';
 import { formatDate, formatPrice } from '../../lib/utils';
+import { BuilderWorkflowBar } from '../../components/builder/BuilderWorkflowBar';
 import type { BuilderPricingRule } from '../../lib/types';
 
 type PricingRow = BuilderPricingRule & {
@@ -263,6 +265,16 @@ export function BuilderPricing() {
         actions={[{ label: 'Add Pricing Rule', icon: <Plus className="h-4 w-4" />, primary: true, onClick: openCreate }]}
       />
 
+      {/* Contextual Workflow Progression */}
+      <BuilderWorkflowBar
+        currentStage="pricing"
+        counts={{
+          projects: projects?.length,
+          blocks: towers?.length,
+          pricingRules: rules?.length,
+        }}
+      />
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatCard label="Total Rules" value={stats.total} icon={<Tag className="h-5 w-5" />} accent="navy" />
         <StatCard label="Unit Types" value={stats.unitTypes} icon={<Tag className="h-5 w-5" />} accent="gold" />
@@ -303,16 +315,31 @@ export function BuilderPricing() {
           })
         }
         emptyState={
-          <EmptyState
-            icon={<Tag className="h-6 w-6" />}
-            title="No pricing rules yet"
-            description="Set base pricing and discounts for unit types across your projects."
-            action={
-              <Button size="sm" onClick={openCreate}>
-                Add Pricing Rule
-              </Button>
-            }
-          />
+          !projects || projects.length === 0 ? (
+            <EmptyState
+              icon={<Building2 className="h-6 w-6" />}
+              title="No projects yet"
+              description="Create your first project before setting pricing rules."
+              action={
+                <Link to="/builder/projects">
+                  <Button size="sm" icon={<Plus className="h-4 w-4" />}>
+                    Create Project
+                  </Button>
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<Tag className="h-6 w-6" />}
+              title="No pricing rules yet"
+              description="Set base pricing and discounts for unit types across your projects."
+              action={
+                <Button size="sm" onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
+                  Add Pricing Rule
+                </Button>
+              }
+            />
+          )
         }
       />
 

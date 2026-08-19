@@ -13,6 +13,7 @@ import { Badge, Button, EmptyState, Input, Modal, Select, Spinner } from '../../
 import { useToast } from '../../components/toast';
 import { useRealtimeCount } from '../../lib/realtime';
 import { logBuilderAudit } from '../../lib/builder-audit';
+import { BuilderWorkflowBar } from '../../components/builder/BuilderWorkflowBar';
 import type { BuilderFloor, BuilderTowerStatus } from '../../lib/types';
 
 type FloorRow = BuilderFloor & { builder_towers: { name: string; project_id?: string; builder_projects?: { name: string } | null } | null };
@@ -346,12 +347,44 @@ export function BuilderFloors() {
     [],
   );
 
+  const [filterProjectId, setFilterProjectId] = useState<string>('all');
+  const [filterTowerId, setFilterTowerId] = useState<string>('all');
+
+  // Filtered towers based on main project filter
+  const filterTowersList = useMemo(() => {
+    if (!towers) return [];
+    if (filterProjectId === 'all') return towers;
+    return towers.filter((tw) => tw.project_id === filterProjectId);
+  }, [towers, filterProjectId]);
+
+  // Filtered floors based on active filters
+  const filteredFloors = useMemo(() => {
+    let list = floors ?? [];
+    if (filterProjectId !== 'all') {
+      list = list.filter((f) => f.builder_towers?.project_id === filterProjectId);
+    }
+    if (filterTowerId !== 'all') {
+      list = list.filter((f) => f.tower_id === filterTowerId);
+    }
+    return list;
+  }, [floors, filterProjectId, filterTowerId]);
+
   return (
     <DashboardLayout sections={builderSections} title="Floors" badge="Builder">
       <PageHeader
         title="Floors"
         subtitle="Manage floors within your blocks and towers."
         actions={[{ label: 'Add Floor', icon: <Plus className="h-4 w-4" />, primary: true, onClick: openCreate }]}
+      />
+
+      {/* Contextual Workflow Progression */}
+      <BuilderWorkflowBar
+        currentStage="floors"
+        counts={{
+          projects: projects?.length,
+          blocks: towers?.length,
+          floors: floors?.length,
+        }}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
@@ -366,9 +399,107 @@ export function BuilderFloors() {
         <StatCard label="Planned" value={stats.planned} icon={<Layers className="h-5 w-5" />} accent="navy" />
       </div>
 
+      {/* Dependency Warning Banners */}
+      {!projectsLoading && (!projects || projects.length === 0) ? (
+        <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 text-amber-900 shadow-xs mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Building2 className="w-8 h-8 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-extrabold text-base text-amber-950">1. Create a Project First</h3>
+              <p className="text-xs text-amber-800 mt-1 max-w-xl">
+                Floors must belong to a Block/Tower inside a Project. You currently have no projects created.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/builder/projects"
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Project</span>
+          </Link>
+        </div>
+      ) : !towersLoading && (!towers || towers.length === 0) ? (
+        <div className="p-6 rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 text-blue-950 shadow-xs mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Layers className="w-8 h-8 text-blue-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-extrabold text-base text-blue-950">2. Create a Block / Tower</h3>
+              <p className="text-xs text-blue-800 mt-1 max-w-xl">
+                Floors are organized under Blocks or Towers (e.g. Tower A, Block 1). Create your first Block/Tower to start placing floors.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/builder/blocks"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Block / Tower</span>
+          </Link>
+        </div>
+      ) : null}
+
+      {/* Project & Tower Filter Drilldown */}
+      {towers && towers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-slate-50 border border-slate-200/80 rounded-2xl">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+            <span>Filter Inventory:</span>
+          </div>
+
+          {projects && projects.length > 1 && (
+            <div className="w-48">
+              <Select
+                value={filterProjectId}
+                onChange={(e) => {
+                  setFilterProjectId(e.target.value);
+                  setFilterTowerId('all');
+                }}
+                className="py-1 text-xs"
+              >
+                <option value="all">All Projects ({projects.length})</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+
+          <div className="w-48">
+            <Select
+              value={filterTowerId}
+              onChange={(e) => setFilterTowerId(e.target.value)}
+              className="py-1 text-xs"
+            >
+              <option value="all">All Blocks / Towers ({filterTowersList.length})</option>
+              {filterTowersList.map((tw) => (
+                <option key={tw.id} value={tw.id}>
+                  {tw.name} {tw.builder_projects?.name ? `(${tw.builder_projects.name})` : ''}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {(filterProjectId !== 'all' || filterTowerId !== 'all') && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterProjectId('all');
+                setFilterTowerId('all');
+              }}
+              className="text-xs font-bold text-red-600 hover:text-red-700 cursor-pointer"
+            >
+              Reset Filter
+            </button>
+          )}
+        </div>
+      )}
+
       <DataTable
         columns={columns}
-        rows={floors ?? []}
+        rows={filteredFloors}
         loading={isLoading || towersLoading || projectsLoading}
         error={error instanceof Error ? error.message : null}
         getRowId={(row) => row.id}
@@ -389,16 +520,44 @@ export function BuilderFloors() {
           })
         }
         emptyState={
-          <EmptyState
-            icon={<Layers className="h-6 w-6" />}
-            title="No floors yet"
-            description="Add floors to a block/tower to start placing units on them."
-            action={
-              <Button size="sm" onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
-                Add Floor
-              </Button>
-            }
-          />
+          !projects || projects.length === 0 ? (
+            <EmptyState
+              icon={<Building2 className="h-6 w-6" />}
+              title="No projects yet"
+              description="Create a project to begin adding towers and floors."
+              action={
+                <Link to="/builder/projects">
+                  <Button size="sm" icon={<Plus className="h-4 w-4" />}>
+                    Create Project
+                  </Button>
+                </Link>
+              }
+            />
+          ) : !towers || towers.length === 0 ? (
+            <EmptyState
+              icon={<Layers className="h-6 w-6" />}
+              title="No blocks / towers found"
+              description="Create a block/tower first to start organizing floors on it."
+              action={
+                <Link to="/builder/blocks">
+                  <Button size="sm" icon={<Plus className="h-4 w-4" />}>
+                    Create Block / Tower
+                  </Button>
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<Layers className="h-6 w-6" />}
+              title="No floors yet"
+              description="Add floors to a block/tower to start placing units on them."
+              action={
+                <Button size="sm" onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
+                  Add Floor
+                </Button>
+              }
+            />
+          )
         }
       />
 

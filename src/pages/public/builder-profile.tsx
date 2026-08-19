@@ -140,7 +140,7 @@ export function BuilderProfilePage() {
 
   return (
     <div className="min-h-screen bg-white pb-16">
-      <div className="pt-24 pb-2">
+      <div className="py-3.5">
         <div className="container-wide">
           <nav className="flex items-center gap-1.5 text-xs text-slate-400">
             <Link to="/" className="hover:text-slate-700 transition-colors">Home</Link>

@@ -7,6 +7,7 @@ import Autoplay from 'embla-carousel-autoplay';
 import { Bed, Bath, Maximize, MapPin, Heart, Share2, Check, CheckCircle2, ChevronLeft, ChevronRight, Car, Calendar, Home, Eye, Star, Send, ShieldCheck, Bot, Play, X, Building, Images, Layers, Flag, Box, Navigation2, Clock, Compass, User, Edit3, Trash2, Dumbbell, Waves, Wifi, Zap, Trees, Building2, Camera, Flame, PhoneCall, Gamepad2, CloudRain, Cpu, Sun, UserCheck, Headphones, Laptop, Wind, Utensils, Sparkles, ArrowUp } from 'lucide-react';
 import { fetchProperty, trackPropertyView } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
+import { ensureUserProfile } from '../../lib/profile-utils';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { SharePropertyModal } from '../../components/share-property-modal';
@@ -15,6 +16,7 @@ import { RatingStars } from '../../components/property-card';
 import { formatCompactPrice, formatNumber, cn, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
 import { isCompared, toggleCompareProperty } from '../../lib/compare';
 import { toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
+import { getSafePropertyImages, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { useToast } from '../../components/toast';
 import { useSEO } from '../../hooks/use-seo';
 import { VirtualTourViewer } from '../../components/virtual-tour/virtual-tour-viewer';
@@ -519,13 +521,27 @@ export function PropertyDetailPage() {
   const reviewMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Please sign in to leave a review');
-      const { error } = await supabase
-        .from('reviews')
-        .upsert(
-          { property_id: id, user_id: user.id, rating: reviewForm.rating, title: reviewForm.title || null, comment: reviewForm.comment },
-          { onConflict: 'property_id,user_id' },
-        );
-      if (error) throw error;
+      await ensureUserProfile(user.id);
+      const executeReview = async () => {
+        const { error } = await supabase
+          .from('reviews')
+          .upsert(
+            { property_id: id, user_id: user.id, rating: reviewForm.rating, title: reviewForm.title || null, comment: reviewForm.comment },
+            { onConflict: 'property_id,user_id' },
+          );
+        if (error) throw error;
+      };
+
+      try {
+        await executeReview();
+      } catch (err: any) {
+        if (err?.message?.includes('profiles_fkey') || err?.code === '23503') {
+          await ensureUserProfile(user.id);
+          await executeReview();
+        } else {
+          throw err;
+        }
+      }
     },
     onSuccess: () => {
       const wasEdit = !!reviewForm.id;
@@ -571,21 +587,8 @@ export function PropertyDetailPage() {
     onError: (err: any) => addToast('error', err.message || 'Failed to submit report'),
   });
 
-  let parsedImages = property?.images;
-  if (typeof parsedImages === 'string') {
-    try {
-      parsedImages = JSON.parse(parsedImages);
-    } catch {
-      parsedImages = [parsedImages as unknown as string];
-    }
-  } else if (parsedImages && !Array.isArray(parsedImages)) {
-    // Just in case it's some other weird object
-    parsedImages = [parsedImages as any];
-  }
-  const images = Array.isArray(parsedImages) && parsedImages.length > 0 
-    ? parsedImages 
-    : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
-  const coverImage = property?.cover_image_url || images[0];
+  const images = getSafePropertyImages(property);
+  const coverImage = property?.cover_image_url || images[0] || DEFAULT_PROPERTY_IMAGE;
   const agentName = agent ? `${agent.first_name ?? ''} ${agent.last_name ?? ''}`.trim() : 'Agent';
 
   // AI-generated JSON-LD (generatePropertySeo edge function, written on submit/resubmit)
@@ -709,6 +712,7 @@ export function PropertyDetailPage() {
                 <img
                   src={img}
                   alt={`${property.title} photo ${i + 1}`}
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                   className="h-full w-full object-cover object-center"
                   loading={i === 0 ? 'eager' : 'lazy'}
                 />
@@ -1291,7 +1295,11 @@ export function PropertyDetailPage() {
                   {!!tours?.length && (
                     <div className="rounded-3xl border border-navy-100 overflow-hidden bg-white shadow-sm">
                       <div className="aspect-video bg-navy-900 relative flex items-center justify-center">
-                        <img src={images[0]} className="absolute inset-0 h-full w-full object-cover opacity-50" />
+                        <img
+                          src={images[0]}
+                          onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                          className="absolute inset-0 h-full w-full object-cover opacity-50"
+                        />
                         <button onClick={() => setShowVirtualTour(true)} className="relative z-10 h-16 w-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center hover:scale-110 transition-transform shadow-2xl border border-white/30 text-white">
                           <Box className="h-8 w-8" />
                         </button>
@@ -1324,7 +1332,11 @@ export function PropertyDetailPage() {
             {/* 15. LEAD CTA SECTION */}
             <section className="rounded-3xl bg-navy-900 p-8 md:p-12 text-center text-white shadow-2xl relative overflow-hidden">
                <div className="absolute inset-0 opacity-20">
-                 <img src={images[0]} className="h-full w-full object-cover" />
+                 <img
+                   src={images[0]}
+                   onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                   className="h-full w-full object-cover"
+                 />
                  <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-navy-900 mix-blend-multiply" />
                </div>
                <div className="relative z-10 space-y-6 max-w-2xl mx-auto">
@@ -1578,7 +1590,13 @@ export function PropertyDetailPage() {
               <ChevronLeft className="h-7 sm:h-8 w-7 sm:w-8 stroke-[2.5]" />
             </button>
           )}
-          <img src={images[activeImg]} alt={`Property image ${activeImg + 1}`} className="max-h-[85vh] max-w-[90vw] object-contain shadow-2xl rounded-2xl" onClick={(e) => e.stopPropagation()} />
+          <img
+            src={images[activeImg] || DEFAULT_PROPERTY_IMAGE}
+            alt={`Property image ${activeImg + 1}`}
+            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+            className="max-h-[85vh] max-w-[90vw] object-contain shadow-2xl rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
           {images.length > 1 && (
             <button
               type="button"
@@ -1601,7 +1619,12 @@ export function PropertyDetailPage() {
                   activeImg === i ? 'border-red-600 scale-105 shadow-2xl ring-2 ring-red-600/50' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-102'
                 )}
               >
-                <img src={img} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={img}
+                  alt=""
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                  className="h-full w-full object-cover"
+                />
               </button>
             ))}
           </div>

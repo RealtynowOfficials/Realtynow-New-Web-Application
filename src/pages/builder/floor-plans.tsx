@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { LayoutGrid, Plus, Edit3, Trash2, ImageOff, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n';
@@ -11,6 +12,7 @@ import { uploadFile } from '../../lib/storage';
 import { logBuilderAudit } from '../../lib/builder-audit';
 import { useToast } from '../../components/toast';
 import { useRealtimeCount } from '../../lib/realtime';
+import { BuilderWorkflowBar } from '../../components/builder/BuilderWorkflowBar';
 import type { BuilderFloorPlan, BuilderProject, BuilderTower } from '../../lib/types';
 
 interface FloorPlanForm {
@@ -226,6 +228,16 @@ export function BuilderFloorPlans() {
         }
       />
 
+      {/* Contextual Workflow Progression */}
+      <BuilderWorkflowBar
+        currentStage="floor-plans"
+        counts={{
+          projects: projects?.length,
+          blocks: towers?.length,
+          floorPlans: floorPlans?.length,
+        }}
+      />
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatCard label="Total Floor Plans" value={stats.total} icon={<LayoutGrid className="h-5 w-5" />} accent="navy" />
         <StatCard label="Unit Types" value={stats.unitTypes} icon={<Building2 className="h-5 w-5" />} accent="gold" />
@@ -247,16 +259,31 @@ export function BuilderFloorPlans() {
         </div>
       ) : !floorPlans?.length ? (
         <Card>
-          <EmptyState
-            icon={<LayoutGrid className="h-6 w-6" />}
-            title="No floor plans yet"
-            description="Add your first floor plan to showcase unit layouts to buyers."
-            action={
-              <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate} disabled={!projects?.length}>
-                Add Floor Plan
-              </Button>
-            }
-          />
+          {!projects?.length ? (
+            <EmptyState
+              icon={<Building2 className="h-6 w-6" />}
+              title="No projects yet"
+              description="Create your first project before uploading floor plans."
+              action={
+                <Link to="/builder/projects">
+                  <Button icon={<Plus className="h-4 w-4" />}>
+                    Create Project
+                  </Button>
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<LayoutGrid className="h-6 w-6" />}
+              title="No floor plans yet"
+              description="Add your first floor plan to showcase unit layouts to buyers."
+              action={
+                <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate} disabled={!projects?.length}>
+                  Add Floor Plan
+                </Button>
+              }
+            />
+          )}
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

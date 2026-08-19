@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Edit3, Package } from 'lucide-react';
+import { Edit3, Package, Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
@@ -13,6 +14,7 @@ import { useToast } from '../../components/toast';
 import { useRealtimeCount } from '../../lib/realtime';
 import { logBuilderAudit } from '../../lib/builder-audit';
 import { formatPrice } from '../../lib/utils';
+import { BuilderWorkflowBar } from '../../components/builder/BuilderWorkflowBar';
 import type { BuilderUnit, BuilderUnitStatus } from '../../lib/types';
 
 type InventoryRow = BuilderUnit & {
@@ -183,7 +185,21 @@ export function BuilderInventory() {
 
   return (
     <DashboardLayout sections={builderSections} title="Inventory" badge="Builder">
-      <PageHeader title="Inventory" subtitle="A portfolio-wide view of every unit across your projects." />
+      <PageHeader
+        title="Inventory"
+        subtitle="A portfolio-wide view of every unit across your projects."
+        actions={[{ label: 'Add Unit', icon: <Plus className="h-4 w-4" />, primary: true, to: '/builder/units' }]}
+      />
+
+      {/* Contextual Workflow Progression */}
+      <BuilderWorkflowBar
+        currentStage="inventory"
+        counts={{
+          projects: projects?.length,
+          blocks: towers?.length,
+          units: units?.length,
+        }}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatCard label="Total Units" value={stats.total} icon={<Package className="h-5 w-5" />} accent="navy" />
@@ -234,6 +250,13 @@ export function BuilderInventory() {
             icon={<Package className="h-6 w-6" />}
             title="No inventory yet"
             description="Units you create in the Units page will show up here across all your projects."
+            action={
+              <Link to="/builder/units">
+                <Button size="sm" icon={<Plus className="h-4 w-4" />}>
+                  Go to Units
+                </Button>
+              </Link>
+            }
           />
         }
       />

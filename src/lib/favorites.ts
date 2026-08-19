@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { ensureUserProfile } from './profile-utils';
 import { useQuery } from '@tanstack/react-query';
 
 const FAVORITES_KEY = 'realtynow_favorite_ids';
@@ -41,6 +42,7 @@ export async function toggleFavoriteProperty(propertyId: string, userId?: string
       window.dispatchEvent(new Event('realtynow-favorites-updated'));
       return false;
     } else {
+      await ensureUserProfile(userId);
       await supabase.from('favorites').insert({ user_id: userId, property_id: propertyId });
       window.dispatchEvent(new Event('realtynow-favorites-updated'));
       return true;
@@ -59,6 +61,7 @@ export async function syncLocalFavoritesToDb(userId: string) {
   const localIds = getLocalFavoriteIds();
   if (localIds.length === 0) return;
 
+  await ensureUserProfile(userId);
   for (const propertyId of localIds) {
     // Ignore errors for duplicates
     await supabase.from('favorites').insert({ user_id: userId, property_id: propertyId }).select('id').maybeSingle();

@@ -18,6 +18,7 @@ import { mapJoined } from '../../lib/join-helpers';
 import { formatPrice, formatDate, generatePropertyUrl } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import type { Property } from '../../lib/types';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { ExportMenu } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
@@ -141,8 +142,9 @@ export function AgentProperties() {
       render: (p) => (
         <div className="flex items-center gap-3">
           <img
-            src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            src={getPropertyCoverImage(p)}
             alt=""
+            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
             className="h-10 w-14 rounded object-cover"
           />
           <div className="min-w-0">
@@ -306,8 +308,9 @@ export function AgentProperties() {
             <div>
               <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-navy-100">
                 <img
-                  src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+                  src={getPropertyCoverImage(p)}
                   alt=""
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                   className="h-full w-full object-cover"
                 />
                 <div className="absolute top-2 right-2">

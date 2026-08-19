@@ -60,6 +60,8 @@ import { LocationCategoryDiscovery } from '../../components/location-category-di
 import { parsePropertySearchQuery, fetchLocationCategoryDiscovery, fetchSearchCategoryCounts, type LocationDiscoveryResult } from '../../lib/search-engine';
 import type { CategorySlug } from '../../lib/categories';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
+import { isCompared, toggleCompareProperty, getCompareIds } from '../../lib/compare';
+import { getSafePropertyImages, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { AdvancedFilters } from '../../components/advanced-filters';
 import { useSEO } from '../../hooks/use-seo';
 import { PostPropertyLink } from '../../components/post-property-link';
@@ -101,6 +103,7 @@ interface HorizontalCardProps {
 }
 
 function HorizontalCard({ property: p, onSave, onCompare, saved = false, compared = false, isAiRecommended = false }: HorizontalCardProps) {
+  const { user } = useAuth();
   const { t } = useLanguageContext();
   const { addToast } = useToast();
   const navigate = useNavigate();
@@ -110,17 +113,37 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [visitModalOpen, setVisitModalOpen] = useState(false);
 
-  let parsedImages = p.images;
-  if (typeof parsedImages === 'string') {
+  const [localCompared, setLocalCompared] = useState(() => isCompared(p.id));
+  const isCurrentlyCompared = compared || localCompared;
+
+  useEffect(() => {
+    const handleSync = () => setLocalCompared(isCompared(p.id));
+    window.addEventListener('realtynow-compare-updated', handleSync);
+    return () => window.removeEventListener('realtynow-compare-updated', handleSync);
+  }, [p.id]);
+
+  const handleCompareClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     try {
-      parsedImages = JSON.parse(parsedImages);
-    } catch {
-      parsedImages = [parsedImages as unknown as string];
+      const isNowCompared = await toggleCompareProperty(p.id, user?.id);
+      setLocalCompared(isNowCompared);
+      onCompare?.(p.id);
+      addToast(
+        'success',
+        isNowCompared
+          ? t('notifications.addedToCompare', 'Added to compare list')
+          : t('notifications.removedFromCompare', 'Removed from compare list'),
+      );
+    } catch (err) {
+      addToast(
+        'error',
+        err instanceof Error ? err.message : t('notifications.errorCompare', 'Could not update compare list'),
+      );
     }
-  } else if (parsedImages && !Array.isArray(parsedImages)) {
-    parsedImages = [parsedImages as any];
-  }
-  const images = Array.isArray(parsedImages) && parsedImages.length > 0 ? parsedImages : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
+  };
+
+  const images = getSafePropertyImages(p);
 
   const investScore = useMemo(() => Math.floor(60 + Math.random() * 35), [p.id]);
   const pricePerSqft = p.built_up_area && p.price ? Math.round(p.price / p.built_up_area) : null;
@@ -204,13 +227,14 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
       >
         {/* ── LEFT: IMAGE GALLERY ── */}
         <div
-          className="relative w-full sm:w-[40%] shrink-0 overflow-hidden aspect-[4/3] sm:aspect-auto min-h-[220px]"
+          className="relative w-full sm:w-[40%] shrink-0 overflow-hidden aspect-[4/3] sm:aspect-auto min-h-[220px] bg-slate-100"
           onMouseEnter={() => setImgHovered(true)}
           onMouseLeave={() => setImgHovered(false)}
         >
           <img
-            src={images[activeImg]}
+            src={images[activeImg] || images[0] || DEFAULT_PROPERTY_IMAGE}
             alt={p.title}
+            onError={(e) => handleImageError(e, images[0] || DEFAULT_PROPERTY_IMAGE)}
             className={cn('h-full w-full object-cover transition-transform duration-500', imgHovered ? 'scale-105' : 'scale-100')}
             loading="lazy"
           />
@@ -245,19 +269,16 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
                 });
               }}
               title="Share Property"
-              className="grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110 text-slate-600 hover:text-slate-900"
+              className="grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110 text-slate-600 hover:text-slate-900 cursor-pointer"
             >
               <Share2 className="h-4 w-4" />
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCompare?.(p.id);
-              }}
-              title={t('property.addToCompare', 'Compare')}
+              onClick={handleCompareClick}
+              title={isCurrentlyCompared ? t('property.removeFromCompare', 'Remove from compare') : t('property.addToCompare', 'Compare')}
               className={cn(
-                'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
-                compared ? 'text-blue-600' : 'text-slate-600',
+                'grid h-8 w-8 place-items-center rounded-full shadow-md backdrop-blur-sm transition hover:scale-110 cursor-pointer',
+                isCurrentlyCompared ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white/90 text-slate-600 hover:text-slate-900',
               )}
             >
               <GitCompare className="h-4 w-4" />
@@ -269,7 +290,7 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
               }}
               title={t('property.saveProperty', 'Save')}
               className={cn(
-                'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110',
+                'grid h-8 w-8 place-items-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition hover:scale-110 cursor-pointer',
                 saved ? 'text-[#d8232a]' : 'text-slate-600',
               )}
             >
@@ -511,16 +532,52 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
 function GridCard({
   property: p,
   onSave,
-  saved,
+  onCompare,
+  saved = false,
+  compared = false,
 }: {
   property: Property & { city_name?: string; locality_name?: string; property_type_name?: string };
   onSave?: (id: string) => void;
+  onCompare?: (id: string) => void;
   saved?: boolean;
+  compared?: boolean;
 }) {
+  const { user } = useAuth();
+  const { t } = useLanguageContext();
   const { addToast } = useToast();
   const navigate = useNavigate();
-  const images = p.images?.length ? p.images : ['https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'];
+  const images = getSafePropertyImages(p);
   const reraNumber = (p as { rera_number?: string | null }).rera_number ?? null;
+
+  const [localCompared, setLocalCompared] = useState(() => isCompared(p.id));
+  const isCurrentlyCompared = compared || localCompared;
+
+  useEffect(() => {
+    const handleSync = () => setLocalCompared(isCompared(p.id));
+    window.addEventListener('realtynow-compare-updated', handleSync);
+    return () => window.removeEventListener('realtynow-compare-updated', handleSync);
+  }, [p.id]);
+
+  const handleCompareClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const isNowCompared = await toggleCompareProperty(p.id, user?.id);
+      setLocalCompared(isNowCompared);
+      onCompare?.(p.id);
+      addToast(
+        'success',
+        isNowCompared
+          ? t('notifications.addedToCompare', 'Added to compare list')
+          : t('notifications.removedFromCompare', 'Removed from compare list'),
+      );
+    } catch (err) {
+      addToast(
+        'error',
+        err instanceof Error ? err.message : t('notifications.errorCompare', 'Could not update compare list'),
+      );
+    }
+  };
 
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -541,8 +598,9 @@ function GridCard({
     >
       <div className="relative aspect-video overflow-hidden bg-slate-100">
         <img
-          src={images[0]}
+          src={images[0] || DEFAULT_PROPERTY_IMAGE}
           alt={p.title}
+          onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
           className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
           loading="lazy"
         />
@@ -556,16 +614,26 @@ function GridCard({
             onClick={() => onSave?.(p.id)}
             aria-label={saved ? 'Remove from favorites' : 'Add to favorites'}
             className={cn(
-              'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110',
+              'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110 cursor-pointer',
               saved ? 'bg-white text-red-500' : 'bg-white/90 text-slate-600 hover:bg-white',
             )}
           >
             <Heart className={cn('h-3.5 w-3.5', saved && 'fill-red-500')} />
           </button>
           <button
+            onClick={handleCompareClick}
+            aria-label={isCurrentlyCompared ? 'Remove from compare' : 'Add to compare'}
+            className={cn(
+              'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110 cursor-pointer',
+              isCurrentlyCompared ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white/90 text-slate-600 hover:bg-white',
+            )}
+          >
+            <GitCompare className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={handleShare}
             aria-label="Share this property"
-            className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-white"
+            className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur transition hover:scale-110 hover:bg-white cursor-pointer"
           >
             <Share2 className="h-3.5 w-3.5" />
           </button>
@@ -1002,7 +1070,13 @@ export function SearchPage() {
     [user, dbFavoriteIds, guestFavoriteIds],
   );
 
-  const [comparedIds, setComparedIds] = useState<Set<string>>(new Set());
+  const [comparedIds, setComparedIds] = useState<Set<string>>(() => new Set(getCompareIds()));
+
+  useEffect(() => {
+    const handleSync = () => setComparedIds(new Set(getCompareIds()));
+    window.addEventListener('realtynow-compare-updated', handleSync);
+    return () => window.removeEventListener('realtynow-compare-updated', handleSync);
+  }, []);
   const [isVoiceSearchInitiated, setIsVoiceSearchInitiated] = useState(false);
   const [selectedMapPropertyId, setSelectedMapPropertyId] = useState<string | null>(null);
   const [hoveredMapPropertyId, setHoveredMapPropertyId] = useState<string | null>(null);
@@ -1310,12 +1384,22 @@ export function SearchPage() {
       addToast('error', err instanceof Error ? err.message : 'Could not update favorites');
     }
   };
-  const toggleCompare = (id: string) => {
-    setComparedIds((prev) => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
+  const toggleCompare = async (id: string) => {
+    try {
+      const isNowCompared = await toggleCompareProperty(id, user?.id);
+      setComparedIds(new Set(getCompareIds()));
+      addToast(
+        'success',
+        isNowCompared
+          ? t('notifications.addedToCompare', 'Added to compare list')
+          : t('notifications.removedFromCompare', 'Removed from compare list'),
+      );
+    } catch (err) {
+      addToast(
+        'error',
+        err instanceof Error ? err.message : t('notifications.errorCompare', 'Could not update compare list'),
+      );
+    }
   };
 
   const cityName = useMemo(() => {
@@ -1704,7 +1788,9 @@ export function SearchPage() {
                           <GridCard
                             property={p as any}
                             onSave={toggleSave}
+                            onCompare={toggleCompare}
                             saved={currentFavoriteIds.has(p.id)}
+                            compared={comparedIds.has(p.id)}
                           />
                         </div>
                       ))}
@@ -1805,7 +1891,13 @@ export function SearchPage() {
                               compared={comparedIds.has(p.id)}
                             />
                           ) : (
-                            <GridCard property={p as any} onSave={toggleSave} saved={currentFavoriteIds.has(p.id)} />
+                            <GridCard
+                              property={p as any}
+                              onSave={toggleSave}
+                              onCompare={toggleCompare}
+                              saved={currentFavoriteIds.has(p.id)}
+                              compared={comparedIds.has(p.id)}
+                            />
                           )}
                         </div>
                       ))}
@@ -1983,6 +2075,32 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
     () => new Set(user ? dbFavoriteIds || [] : guestFavoriteIds),
     [user, dbFavoriteIds, guestFavoriteIds],
   );
+
+  const [comparedIds, setComparedIds] = useState<Set<string>>(() => new Set(getCompareIds()));
+
+  useEffect(() => {
+    const handleSync = () => setComparedIds(new Set(getCompareIds()));
+    window.addEventListener('realtynow-compare-updated', handleSync);
+    return () => window.removeEventListener('realtynow-compare-updated', handleSync);
+  }, []);
+
+  const toggleCompare = async (id: string) => {
+    try {
+      const isNowCompared = await toggleCompareProperty(id, user?.id);
+      setComparedIds(new Set(getCompareIds()));
+      addToast(
+        'success',
+        isNowCompared
+          ? t('notifications.addedToCompare', 'Added to compare list')
+          : t('notifications.removedFromCompare', 'Removed from compare list'),
+      );
+    } catch (err) {
+      addToast(
+        'error',
+        err instanceof Error ? err.message : t('notifications.errorCompare', 'Could not update compare list'),
+      );
+    }
+  };
 
   const toggleSave = async (id: string) => {
     const isCurrentlySaved = currentFavoriteIds.has(id);
@@ -2271,7 +2389,9 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
                     <HorizontalCard
                       property={p as any}
                       onSave={toggleSave}
+                      onCompare={toggleCompare}
                       saved={currentFavoriteIds.has(p.id)}
+                      compared={comparedIds.has(p.id)}
                     />
                   </div>
                 ))}

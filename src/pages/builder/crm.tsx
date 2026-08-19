@@ -68,63 +68,34 @@ const ACTIVITY_LABEL: Record<BuilderLeadActivityType, string> = {
   status_change: 'Status Change',
 };
 
+import { ProfessionalCrmTable } from '../../components/crm/ProfessionalCrmTable';
+
 function CrmLeadList() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const { data: leads, isLoading, error } = useQuery({
+  const { data: leads, isLoading, error, refetch } = useQuery({
     queryKey: ['builder-crm-leads', user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('builder_leads')
-        .select('*')
+        .select('*, builder_projects(id, name, status, cover_image, cities(name), localities(name))')
         .eq('builder_id', user!.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data ?? []) as BuilderLead[];
+      return (data ?? []) as any[];
     },
     enabled: !!user,
   });
 
-  const columns = useMemo<Column<BuilderLead>[]>(
-    () => [
-      {
-        key: 'name',
-        header: 'Lead Name',
-        sortable: true,
-        render: (l) => (
-          <div>
-            <p className="font-medium text-navy-900">{l.name}</p>
-            <p className="text-xs text-navy-500">{l.email || l.phone || 'No contact info'}</p>
-          </div>
-        ),
-      },
-      {
-        key: 'status',
-        header: 'Status',
-        render: (l) => (
-          <Badge variant={l.status === 'won' ? 'success' : l.status === 'lost' ? 'error' : 'info'} className="capitalize">
-            {l.status.replace('_', ' ')}
-          </Badge>
-        ),
-      },
-      { key: 'created_at', header: 'Received On', sortable: true, render: (l) => formatDate(l.created_at) },
-    ],
-    [],
-  );
-
   return (
-    <DataTable
-      columns={columns}
-      rows={leads ?? []}
-      loading={isLoading}
+    <ProfessionalCrmTable
+      leads={leads ?? []}
+      isLoading={isLoading}
       error={error instanceof Error ? error.message : null}
-      getRowId={(l) => l.id}
-      searchKeys={['name', 'email', 'phone']}
-      onRowClick={(l) => navigate(`/builder/crm/${l.id}`)}
-      emptyState={
-        <EmptyState icon={<MessageSquare className="h-6 w-6" />} title="No leads yet" description="Leads you receive will show up here." />
-      }
+      sourceType="builder"
+      onRefresh={() => refetch()}
+      onViewActivity={(leadId) => navigate(`/builder/crm/${leadId}`)}
     />
   );
 }

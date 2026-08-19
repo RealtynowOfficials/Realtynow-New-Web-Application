@@ -35,7 +35,7 @@ export function BuildersPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+    <div className="min-h-screen bg-slate-50 pt-6 sm:pt-8 pb-12">
       <div className="container-wide">
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-1.5">

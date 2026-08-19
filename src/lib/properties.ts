@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { checkListingLimit } from './listing-limits';
+import { ensureUserProfile } from './profile-utils';
 import type { Property, PropertyStatus } from './types';
 
 export interface PropertyFilters {
@@ -664,6 +665,17 @@ export async function savePropertyDraft(draftId: string | null, payload: any, su
     throw new Error('Cannot create an empty draft property');
   }
 
+  // Ensure owner profile exists in public.profiles table so foreign key constraint is satisfied
+  if (payload.owner_id) {
+    await ensureUserProfile(payload.owner_id);
+  } else {
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData?.user?.id) {
+      await ensureUserProfile(userData.user.id);
+      payload.owner_id = userData.user.id;
+    }
+  }
+
   // Monthly listing limit enforcement for new drafts
   if (!draftId) {
     const { data: userData } = await supabase.auth.getUser();
@@ -674,40 +686,53 @@ export async function savePropertyDraft(draftId: string | null, payload: any, su
       }
     }
   }
-  if (draftId) {
-    const { data, error } = await supabase
-      .from('properties')
-      .update({
-        ...payload,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', draftId)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  } else if (submissionId) {
-    const { data, error } = await supabase
-      .from('properties')
-      .upsert(
-        { ...payload, submission_id: submissionId },
-        { onConflict: 'submission_id' }
-      )
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  } else {
-    // Fallback if no submissionId is provided (e.g., from older callers)
-    const { data, error } = await supabase
-      .from('properties')
-      .insert({
-        ...payload,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+
+  const executeSave = async () => {
+    if (draftId) {
+      const { data, error } = await supabase
+        .from('properties')
+        .update({
+          ...payload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', draftId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else if (submissionId) {
+      const { data, error } = await supabase
+        .from('properties')
+        .upsert(
+          { ...payload, submission_id: submissionId },
+          { onConflict: 'submission_id' }
+        )
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else {
+      const { data, error } = await supabase
+        .from('properties')
+        .insert({
+          ...payload,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    }
+  };
+
+  try {
+    return await executeSave();
+  } catch (err: any) {
+    // If foreign key constraint failed, heal profile and retry once
+    if (err?.message?.includes('profiles_fkey') || err?.code === '23503') {
+      await ensureUserProfile(payload.owner_id);
+      return await executeSave();
+    }
+    throw err;
   }
 }
 

@@ -107,6 +107,121 @@ async function verifyMsg91AccessToken(
   return { mobile };
 }
 
+// Helper to locate an existing user in profiles or auth.users across all phone variations and formats
+async function resolveExistingUser(
+  admin: any,
+  mobile: string,
+): Promise<{ userId?: string; profile?: any }> {
+  const last10 = mobile.slice(-10);
+  const phoneVariations = [
+    mobile,
+    `+${mobile}`,
+    last10,
+    `+91${last10}`,
+    `+91 ${last10}`,
+    `+91-${last10}`,
+    `0${last10}`,
+  ];
+
+  // 1. Search profiles table with exact variations
+  const { data: profilesByIn } = await admin
+    .from("profiles")
+    .select("id, role, status, phone, first_name, last_name")
+    .in("phone", phoneVariations)
+    .limit(1);
+
+  if (profilesByIn && profilesByIn.length > 0) {
+    return { userId: profilesByIn[0].id, profile: profilesByIn[0] };
+  }
+
+  // 2. Search profiles with fuzzy ilike (%last10%)
+  const { data: profilesFuzzy } = await admin
+    .from("profiles")
+    .select("id, role, status, phone, first_name, last_name")
+    .ilike("phone", `%${last10}%`)
+    .limit(1);
+
+  if (profilesFuzzy && profilesFuzzy.length > 0) {
+    return { userId: profilesFuzzy[0].id, profile: profilesFuzzy[0] };
+  }
+
+  const syntheticEmail = syntheticEmailForMobile(mobile);
+
+  // 3. Direct SQL lookup against auth.users (source of truth), via a
+  // SECURITY DEFINER RPC — see migration 0111. The listUsers()-based scan
+  // below (kept as a fallback) has been observed in production to miss a
+  // user that provably existed with an exact matching phone and synthetic
+  // email, so this direct query is the primary path.
+  try {
+    const { data: rpcUserId } = await admin.rpc("find_auth_user_id_by_phone", { p_mobile: mobile });
+    if (rpcUserId) {
+      const { data: prof } = await admin
+        .from("profiles")
+        .select("id, role, status, phone, first_name, last_name")
+        .eq("id", rpcUserId)
+        .maybeSingle();
+      return { userId: rpcUserId, profile: prof ?? null };
+    }
+  } catch (err) {
+    console.warn("find_auth_user_id_by_phone RPC failed:", err);
+  }
+
+  // 4. Fallback: search auth.users by phone or synthetic email via the
+  // Admin API's user list (kept for resilience; see note above).
+  try {
+    const { data: userList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (userList?.users) {
+      const match = userList.users.find((u: any) => {
+        const uPhoneDigits = (u.phone ?? '').replace(/[^\d]/g, '');
+        const uMetaDigits = u.user_metadata?.phone ? String(u.user_metadata.phone).replace(/[^\d]/g, '') : '';
+        return (
+          uPhoneDigits === mobile ||
+          uPhoneDigits === `91${last10}` ||
+          uPhoneDigits === last10 ||
+          u.phone === `+${mobile}` ||
+          u.phone === `+91${last10}` ||
+          u.email === syntheticEmail ||
+          uMetaDigits.endsWith(last10)
+        );
+      });
+
+      if (match) {
+        const { data: prof } = await admin
+          .from("profiles")
+          .select("id, role, status, phone, first_name, last_name")
+          .eq("id", match.id)
+          .maybeSingle();
+
+        return { userId: match.id, profile: prof ?? null };
+      }
+    }
+  } catch (err) {
+    console.warn("Error listing auth users:", err);
+  }
+
+  return {};
+}
+
+// createUser() can lose a race against a near-simultaneous verify call for
+// the same phone (double-tap, retry-after-timeout, etc.): the loser's
+// createUser fails with a phone-conflict, but an immediate resolveExistingUser
+// retry can still miss the winner's just-committed row. Retrying the lookup
+// a couple more times with a short delay resolves the race instead of
+// surfacing Supabase's raw "phone already registered" error to the user.
+async function resolveExistingUserWithRetry(
+  admin: any,
+  mobile: string,
+  attempts = 3,
+  delayMs = 300,
+): Promise<{ userId?: string; profile?: any }> {
+  for (let i = 0; i < attempts; i++) {
+    const rec = await resolveExistingUser(admin, mobile);
+    if (rec.userId) return rec;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return {};
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -136,15 +251,10 @@ serve(async (req) => {
     if ("error" in verified) return error(verified.error, verified.status);
     const { mobile } = verified;
 
-    // Find an existing profile by phone (check variations: 91XXXXXXXXXX, +91XXXXXXXXXX, XXXXXXXXXX).
-    const phoneVariations = [mobile, `+${mobile}`, mobile.replace(/^91/, '')];
-    const { data: existingProfile } = await admin
-      .from("profiles")
-      .select("id, role, status, phone")
-      .in("phone", phoneVariations)
-      .maybeSingle();
-
-    let userId = existingProfile?.id as string | undefined;
+    // Find an existing profile / user across profiles and auth.users
+    const resolved = await resolveExistingUser(admin, mobile);
+    let userId = resolved.userId;
+    let existingProfile = resolved.profile;
     let isNewUser = false;
     const isAuthorizedAdmin = isAuthorizedAdminMobile(mobile);
 
@@ -159,24 +269,36 @@ serve(async (req) => {
           user_metadata: { role: "admin" },
         });
         if (createErr || !created?.user) {
-          return error(createErr?.message ?? "Could not create admin account", 500);
+          const rec = await resolveExistingUserWithRetry(admin, mobile);
+          if (rec.userId) {
+            userId = rec.userId;
+            existingProfile = rec.profile;
+          } else {
+            console.error("[otp-auth] admin createUser failed and could not be recovered:", createErr?.message);
+            return error("Could not sign in with this mobile number. Please try again in a moment.", 500);
+          }
+        } else {
+          userId = created.user.id;
+          isNewUser = true;
         }
-        userId = created.user.id;
-        isNewUser = true;
       }
 
       // Ensure profile role is 'admin' and status is 'active'
       await admin
         .from("profiles")
-        .update({
-          role: "admin",
-          status: "active",
-          phone: mobile,
-          is_mobile_verified: true,
-          otp_verified_at: new Date().toISOString(),
-          last_login: new Date().toISOString(),
-        })
-        .eq("id", userId);
+        .upsert(
+          {
+            id: userId,
+            role: "admin",
+            status: "active",
+            phone: mobile,
+            is_mobile_verified: true,
+            otp_verified_at: new Date().toISOString(),
+            last_login: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
 
       // Ensure corresponding row in admins table
       await admin
@@ -288,11 +410,55 @@ serve(async (req) => {
         password: tempPassword,
         user_metadata: { role: "customer" },
       });
-      if (createErr || !created?.user) {
-        return error(createErr?.message ?? "Could not create account", 500);
+
+      if (createErr) {
+        const errMsg = (createErr.message || "").toLowerCase();
+        if (
+          errMsg.includes("already") ||
+          errMsg.includes("registered") ||
+          errMsg.includes("exists") ||
+          errMsg.includes("duplicate")
+        ) {
+          // Recover existing auth user seamlessly
+          const rec = await resolveExistingUserWithRetry(admin, mobile);
+          if (rec.userId) {
+            userId = rec.userId;
+            existingProfile = rec.profile;
+          } else {
+            console.error("[otp-auth] customer createUser failed and could not be recovered:", createErr.message);
+            return error("Could not sign in with this mobile number. Please try again in a moment.", 400);
+          }
+        } else {
+          return error(createErr.message ?? "Could not create account", 500);
+        }
+      } else if (created?.user) {
+        userId = created.user.id;
+        isNewUser = true;
       }
-      userId = created.user.id;
-      isNewUser = true;
+    }
+
+    // Ensure profile row exists in public.profiles with active phone
+    const { error: profileUpsertErr } = await admin.from("profiles").upsert(
+      {
+        id: userId!,
+        phone: mobile,
+        role: existingProfile?.role || "customer",
+        status: existingProfile?.status || "active",
+        first_name: existingProfile?.first_name || "User",
+        last_name: existingProfile?.last_name || "",
+        is_mobile_verified: true,
+        otp_verified_at: new Date().toISOString(),
+        last_login: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+    if (profileUpsertErr) {
+      // Don't dead-end here — the auth user already exists and a session can
+      // still be minted below. But this MUST be visible (previously it was
+      // swallowed entirely), since a failure here is exactly what leaves an
+      // orphaned auth.users row with no matching profiles row.
+      console.error("[otp-auth] profiles upsert failed for user", userId, ":", profileUpsertErr.message);
     }
 
     // Rotate a fresh throwaway password and immediately consume it to mint
@@ -317,11 +483,6 @@ serve(async (req) => {
     if (signInErr || !signInData?.session) {
       return error(signInErr?.message ?? "Could not sign in", 500);
     }
-
-    await admin
-      .from("profiles")
-      .update({ is_mobile_verified: true, otp_verified_at: new Date().toISOString(), last_login: new Date().toISOString() })
-      .eq("id", userId!);
 
     return json({
       success: true,

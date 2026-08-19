@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { ensureUserProfile } from './profile-utils';
 import type { Profile, Property, Enquiry, Appointment, Blog } from './types';
 
 export async function withErrorHandling<T>(fn: () => Promise<T>, context = 'API request'): Promise<T> {
@@ -21,7 +22,7 @@ export async function fetchProperties(filters?: Record<string, unknown>) {
         }
       });
     }
-    const { data, error } = await q;
+    const { data, error } = await q.order('created_at', { ascending: false });
     if (error) throw error;
     return data as Property[];
   }, 'fetchProperties');
@@ -37,9 +38,23 @@ export async function fetchPropertyById(id: string) {
 
 export async function createProperty(property: Partial<Property>) {
   return withErrorHandling(async () => {
-    const { data, error } = await supabase.from('properties').insert(property).select().single();
-    if (error) throw error;
-    return data as Property;
+    if (property.owner_id) {
+      await ensureUserProfile(property.owner_id);
+    }
+    const executeInsert = async () => {
+      const { data, error } = await supabase.from('properties').insert(property).select().single();
+      if (error) throw error;
+      return data as Property;
+    };
+    try {
+      return await executeInsert();
+    } catch (err: any) {
+      if (err?.message?.includes('profiles_fkey') || err?.code === '23503') {
+        await ensureUserProfile(property.owner_id);
+        return await executeInsert();
+      }
+      throw err;
+    }
   }, 'createProperty');
 }
 

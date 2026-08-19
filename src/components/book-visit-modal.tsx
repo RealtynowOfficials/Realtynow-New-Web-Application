@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, MapPin, CheckCircle2, Video, Home as HomeIcon, Send } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { ensureUserProfile } from '../lib/profile-utils';
 import { Modal, Button, Input, Textarea } from './ui';
 import { useToast } from './toast';
 import { normalizePhoneNumber } from '../lib/utils';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../lib/property-images';
 
 export interface BookVisitModalProps {
   isOpen: boolean;
@@ -96,6 +98,9 @@ export const BookVisitModal: React.FC<BookVisitModalProps> = ({
     setErrorMsg('');
 
     try {
+      if (user?.id) {
+        await ensureUserProfile(user.id);
+      }
       const normalizedPhone = normalizePhoneNumber(phone);
       const agentId = property.assigned_agent_id || property.owner_id || null;
 
@@ -201,7 +206,7 @@ export const BookVisitModal: React.FC<BookVisitModalProps> = ({
     }
   };
 
-  const thumbnail = property.cover_image_url || property.images?.[0] || 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
+  const thumbnail = getPropertyCoverImage(property as any);
 
   return (
     <Modal open={isOpen} onClose={onClose} title="Book a Property Visit" size="md">
@@ -228,7 +233,12 @@ export const BookVisitModal: React.FC<BookVisitModalProps> = ({
           {/* Property Context Header */}
           <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-slate-50 border border-slate-200">
             <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-200 shrink-0">
-              <img src={thumbnail} alt={property.title} className="w-full h-full object-cover" />
+              <img
+                src={thumbnail}
+                alt={property.title}
+                onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <h4 className="font-bold text-navy-900 text-sm truncate">{property.title}</h4>

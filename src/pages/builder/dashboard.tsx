@@ -1,9 +1,22 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
-import { Card, Skeleton, Badge } from '../../components/ui';
-import { Building2, MessageSquare, Briefcase, TrendingUp } from 'lucide-react';
+import { Card, Skeleton, Badge, Button } from '../../components/ui';
+import {
+  Building2,
+  MessageSquare,
+  Briefcase,
+  TrendingUp,
+  Layers,
+  Grid3x3,
+  Boxes,
+  Tag,
+  ArrowRight,
+  CheckCircle2,
+  ChevronRight,
+} from 'lucide-react';
 import { getBuilderSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n';
 import { formatDate } from '../../lib/utils';
@@ -17,17 +30,51 @@ export function BuilderDashboard() {
     queryKey: ['builder-dashboard-stats', user?.id],
     queryFn: async () => {
       if (!user) return null;
-      
+
       const [projectsRes, leadsRes, wonLeadsRes] = await Promise.all([
         supabase.from('builder_projects').select('id', { count: 'exact' }).eq('builder_id', user.id),
         supabase.from('builder_leads').select('id', { count: 'exact' }).eq('builder_id', user.id).eq('status', 'new'),
         supabase.from('builder_leads').select('id', { count: 'exact' }).eq('builder_id', user.id).eq('status', 'won'),
       ]);
 
+      const projectIds = (projectsRes.data || []).map((p) => p.id);
+      let blocksCount = 0;
+      let unitsCount = 0;
+      let bookingsCount = 0;
+
+      if (projectIds.length > 0) {
+        const { data: towerRows, count: towersCount } = await supabase
+          .from('builder_towers')
+          .select('id', { count: 'exact' })
+          .in('project_id', projectIds);
+        blocksCount = towersCount || 0;
+
+        const towerIds = (towerRows || []).map((t) => t.id);
+        if (towerIds.length > 0) {
+          const { data: unitRows, count: totalUnits } = await supabase
+            .from('builder_units')
+            .select('id', { count: 'exact' })
+            .in('tower_id', towerIds);
+          unitsCount = totalUnits || 0;
+
+          const unitIds = (unitRows || []).map((u) => u.id);
+          if (unitIds.length > 0) {
+            const { count: totalBookings } = await supabase
+              .from('builder_bookings')
+              .select('id', { count: 'exact' })
+              .in('unit_id', unitIds);
+            bookingsCount = totalBookings || 0;
+          }
+        }
+      }
+
       return {
         projects: projectsRes.count || 0,
         newLeads: leadsRes.count || 0,
         wonLeads: wonLeadsRes.count || 0,
+        blocks: blocksCount,
+        units: unitsCount,
+        bookings: bookingsCount,
       };
     },
     enabled: !!user,
@@ -106,6 +153,101 @@ export function BuilderDashboard() {
             />
           </>
         )}
+      </div>
+
+      {/* Portfolio & Sales Setup Flow Guide */}
+      <div className="mt-8 bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 className="text-base font-extrabold text-navy-950 flex items-center gap-2">
+              <span>🏗️</span> Portfolio & Sales Workflow
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Connected lifecycle from project design to customer booking
+            </p>
+          </div>
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:block">
+            Connected ERP Stages
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Step 1: Projects */}
+          <Link
+            to="/builder/projects"
+            className="p-4 rounded-2xl border border-slate-100 bg-slate-50/70 hover:bg-red-50/50 hover:border-red-200 transition group flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold text-xs">
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-black text-navy-900">1. Projects</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-red-600 transition" />
+            </div>
+            <p className="text-xs text-slate-500">
+              {stats?.projects ? `${stats.projects} projects active` : 'Create your first project'}
+            </p>
+          </Link>
+
+          {/* Step 2: Blocks & Floors */}
+          <Link
+            to="/builder/blocks"
+            className="p-4 rounded-2xl border border-slate-100 bg-slate-50/70 hover:bg-blue-50/50 hover:border-blue-200 transition group flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-black text-navy-900">2. Blocks & Towers</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition" />
+            </div>
+            <p className="text-xs text-slate-500">
+              {stats?.blocks ? `${stats.blocks} towers configured` : 'Add towers & floors'}
+            </p>
+          </Link>
+
+          {/* Step 3: Units & Pricing */}
+          <Link
+            to="/builder/units"
+            className="p-4 rounded-2xl border border-slate-100 bg-slate-50/70 hover:bg-amber-50/50 hover:border-amber-200 transition group flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center font-bold text-xs">
+                  <Boxes className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-black text-navy-900">3. Units & Pricing</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition" />
+            </div>
+            <p className="text-xs text-slate-500">
+              {stats?.units ? `${stats.units} units in inventory` : 'Place units & prices'}
+            </p>
+          </Link>
+
+          {/* Step 4: Leads & Bookings */}
+          <Link
+            to="/builder/bookings"
+            className="p-4 rounded-2xl border border-slate-100 bg-slate-50/70 hover:bg-emerald-50/50 hover:border-emerald-200 transition group flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                  <Briefcase className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-black text-navy-900">4. Bookings & Sales</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition" />
+            </div>
+            <p className="text-xs text-slate-500">
+              {stats?.bookings ? `${stats.bookings} bookings logged` : 'Manage deal closures'}
+            </p>
+          </Link>
+        </div>
       </div>
       
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">

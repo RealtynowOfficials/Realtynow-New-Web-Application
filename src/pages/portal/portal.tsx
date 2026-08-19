@@ -18,6 +18,7 @@ import { fetchComparedProperties, toggleCompareProperty, clearCompareList } from
 import { RemindersWidget } from '../../components/reminders-widget';
 import { motion } from 'framer-motion';
 import type { Property } from '../../lib/types';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 
 export function PortalDashboard() {
   const { t } = useLanguageContext();
@@ -391,8 +392,9 @@ export function PortalCompare() {
                     <div className="space-y-2">
                       <div className="relative aspect-[4/3] rounded-lg overflow-hidden bg-navy-100">
                         <img
-                          src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+                          src={getPropertyCoverImage(p)}
                           alt={p.title}
+                          onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                           className="h-full w-full object-cover"
                         />
                         <button

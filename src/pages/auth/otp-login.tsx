@@ -24,7 +24,7 @@ import { useToast } from '../../components/toast';
 import { Input } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
 import { cn } from '../../lib/utils';
-import { initMsg91Widget, sendMsg91Otp, verifyMsg91Otp, retryMsg91Otp, getPersistentCaptchaContainer } from '../../lib/msg91';
+import { initMsg91Widget, sendMsg91Otp, verifyMsg91Otp, retryMsg91Otp, MSG91_CAPTCHA_CONTAINER_ID } from '../../lib/msg91';
 import { formatIndianMobileForDisplay } from '../../lib/phone';
 
 const OTP_LENGTH = 4;
@@ -223,24 +223,12 @@ export function OtpLoginPage() {
   // clicked.
   const [partnerShowSignIn, setPartnerShowSignIn] = useState(false);
 
-  const captchaMountRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (step !== 'mobile') return;
-    
-    // Append the persistent captcha container to the DOM
-    if (captchaMountRef.current) {
-      const container = getPersistentCaptchaContainer();
-      captchaMountRef.current.appendChild(container);
-    }
-
-    // Pre-warm the widget so the H-Captcha checkbox is already rendered and
-    // solvable before the user clicks "Send OTP", rather than only starting
-    // init on click (which would leave sendOtp waiting on an unsolved captcha).
     initMsg91Widget().catch((err) => {
       console.error('[MSG91] pre-init failed', err);
     });
-  }, [step]);
+  }, [step, tab]);
 
   useEffect(() => {
     if (step !== 'otp') return;
@@ -825,9 +813,8 @@ export function OtpLoginPage() {
                     )}
                   </div>
 
-                  {/* MSG91 renders its captcha challenge here — must stay visible/interactive,
-                      it may require a click to resolve depending on the widget's dashboard config */}
-                  <div ref={captchaMountRef} className="flex justify-center min-h-[80px]" />
+                  {/* Hidden background container for MSG91 SDK */}
+                  <div id={MSG91_CAPTCHA_CONTAINER_ID} className="hidden" />
 
                   {/* ── Terms & Privacy Policy Consent Checkbox ── */}
                   <label
@@ -882,18 +869,36 @@ export function OtpLoginPage() {
                     </span>
                   </label>
 
-                  <button type="submit" disabled={sending || !agreedToTerms} className={primaryBtnClass}>
-                    {sending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> {t('auth.sendingOtp', 'Sending OTP…')}
-                      </>
-                    ) : (
-                      <>
-                        {t('auth.sendOtp', 'Send OTP')}
-                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                      </>
-                    )}
-                  </button>
+                  {(() => {
+                    const isSendOtpEnabled =
+                      agreedToTerms &&
+                      mobile.replace(/\D/g, '').length === 10 &&
+                      !sending;
+
+                    return (
+                      <button
+                        type="submit"
+                        disabled={!isSendOtpEnabled}
+                        className={cn(
+                          'group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl py-3.5 text-sm font-bold transition-all duration-300',
+                          isSendOtpEnabled
+                            ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-600 bg-[length:200%_100%] text-white shadow-lg shadow-red-600/25 hover:bg-[position:100%_0] hover:shadow-xl hover:shadow-red-600/35 active:scale-[0.98] cursor-pointer'
+                            : 'bg-navy-100 text-navy-400 cursor-not-allowed opacity-60 pointer-events-none shadow-none',
+                        )}
+                      >
+                        {sending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" /> {t('auth.sendingOtp', 'Sending OTP…')}
+                          </>
+                        ) : (
+                          <>
+                            {t('auth.sendOtp', 'Send OTP')}
+                            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()}
                 </form>
 
                 

@@ -28,6 +28,7 @@ import { supabase } from '../../lib/supabase';
 import { formatCompactPrice, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
 import { normalizeSearchQuery } from '../../lib/properties';
 import type { Property } from '../../lib/types';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 
 // ── Smart Search Live Results ────────────────────────────────
 interface SmartSearchResult {
@@ -122,8 +123,7 @@ async function doLiveSearch(
 
 // ── Property Result Card ─────────────────────────────────────
 function SmartResultCard({ property: p }: { property: Property }) {
-  const images = Array.isArray(p.images) ? p.images : [];
-  const img = (p as any).cover_image_url || images[0] || 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
+  const img = getPropertyCoverImage(p);
   const where = [(p as any).locality_name, (p as any).city_name].filter(Boolean).join(', ');
   const price = formatCompactPrice(getPropertyPrice(p), p.purpose);
 
@@ -135,7 +135,12 @@ function SmartResultCard({ property: p }: { property: Property }) {
       className="group flex gap-3 rounded-xl border border-slate-800 bg-slate-950 hover:border-red-500/40 hover:bg-slate-900 transition-all p-3"
     >
       <div className="relative w-24 h-20 shrink-0 rounded-lg overflow-hidden bg-slate-800">
-        <img src={img} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        <img
+          src={img}
+          alt={p.title}
+          onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
         <span className={`absolute top-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${p.purpose === 'Rent' ? 'bg-blue-600' : 'bg-red-600'} text-white`}>
           {p.purpose === 'Rent' ? 'RENT' : 'SALE'}
         </span>

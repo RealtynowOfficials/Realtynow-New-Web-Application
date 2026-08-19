@@ -1,6 +1,7 @@
 import { supabase } from '../../../lib/supabase';
 import { markDraftSubmitted } from '../../../lib/listing-drafts';
 import { triggerAiVerification, triggerPropertySeoGeneration } from '../../../lib/properties';
+import { ensureUserProfile } from '../../../lib/profile-utils';
 import type { ListingPurpose, WorkflowField } from '../../../lib/listing-config';
 
 interface PublishParams {
@@ -78,12 +79,31 @@ export async function publishDraft({ draftId, ownerId, purpose, answers, allFiel
   payload.features = features;
   payload.submission_id = draftId;
 
-  const { data, error } = await supabase
-    .from('properties')
-    .upsert(payload, { onConflict: 'submission_id' })
-    .select('id')
-    .single();
-  if (error) throw error;
+  if (ownerId) {
+    await ensureUserProfile(ownerId);
+  }
+
+  const executeUpsert = async () => {
+    const { data, error } = await supabase
+      .from('properties')
+      .upsert(payload, { onConflict: 'submission_id' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data;
+  };
+
+  let data: { id: string } | null = null;
+  try {
+    data = (await executeUpsert()) as { id: string };
+  } catch (err: any) {
+    if (err?.message?.includes('profiles_fkey') || err?.code === '23503') {
+      await ensureUserProfile(ownerId);
+      data = (await executeUpsert()) as { id: string };
+    } else {
+      throw err;
+    }
+  }
 
   const propertyId = (data as { id: string }).id;
   await markDraftSubmitted(draftId, propertyId);

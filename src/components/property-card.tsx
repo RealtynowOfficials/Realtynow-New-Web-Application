@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../lib/favorites';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../lib/property-images';
 
 export function PropertyCard({ property, compact, isAiRecommended = false }: { property: Property; compact?: boolean, isAiRecommended?: boolean }) {
   const { user } = useAuth();
@@ -42,17 +43,7 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
   }, [property.id, user]);
   
   const isCurrentlyFavorited = user ? favorited : localFavorited;
-  let parsedImages = property.images;
-  if (typeof parsedImages === 'string') {
-    try {
-      parsedImages = JSON.parse(parsedImages);
-    } catch {
-      parsedImages = [parsedImages as unknown as string];
-    }
-  } else if (parsedImages && !Array.isArray(parsedImages)) {
-    parsedImages = [parsedImages as any];
-  }
-  const img = property.cover_image_url || (Array.isArray(parsedImages) && parsedImages.length > 0 ? parsedImages[0] : 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg');
+  const img = getPropertyCoverImage(property);
   const reraNumber = (property as { rera_number?: string | null }).rera_number ?? null;
 
   useEffect(() => {
@@ -143,6 +134,7 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
               src={img}
               alt={property.title}
               loading="lazy"
+              onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
               className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
             />
             <div className="absolute left-2.5 top-2.5 flex flex-col items-start gap-1.5">
@@ -170,8 +162,8 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
                     : t('common:addToCompare', 'Add to compare')
                 }
                 className={cn(
-                  'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110',
-                  compared ? 'bg-navy-700 text-white' : 'bg-white/90 text-navy-600 hover:bg-white',
+                  'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110 cursor-pointer',
+                  compared ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white/90 text-navy-600 hover:bg-white',
                 )}
               >
                 <GitCompare className="h-3.5 w-3.5" />

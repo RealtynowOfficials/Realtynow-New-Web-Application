@@ -13,6 +13,8 @@ import { useRealtimeCount } from '../../lib/realtime';
 import { getAdminSections } from '../portal/sections';
 import { Modal, Select, Button } from '../../components/ui';
 import { useToast } from '../../components/toast';
+import { UnifiedLeadDetailModal } from '../../components/crm/UnifiedLeadDetailModal';
+import { ProfessionalCrmTable } from '../../components/crm/ProfessionalCrmTable';
 
 type LeadStatus = 'new' | 'assigned' | 'contacted' | 'site_visit' | 'negotiation' | 'won' | 'lost' | 'closed' | 'spam';
 
@@ -65,10 +67,11 @@ const PRIORITY_CONFIG = {
 const PIPELINE_STAGES: LeadStatus[] = ['new', 'assigned', 'contacted', 'site_visit', 'negotiation', 'won'];
 
 // ─── Lead Card Component ──────────────────────────────────────────────────────
-function LeadCard({ lead, onStatusChange, onAssign }: {
+function LeadCard({ lead, onStatusChange, onAssign, onOpenLead }: {
   lead: Lead;
   onStatusChange: (id: string, status: LeadStatus) => void;
   onAssign: (lead: Lead) => void;
+  onOpenLead: (lead: Lead) => void;
 }) {
   const cfg = STAGE_CONFIG[lead.lead_status];
   const prio = PRIORITY_CONFIG[lead.priority];
@@ -81,12 +84,13 @@ function LeadCard({ lead, onStatusChange, onAssign }: {
         e.dataTransfer.setData('leadId', lead.id);
         e.dataTransfer.effectAllowed = 'move';
       }}
-      className={`bg-slate-800/60 border rounded-xl p-4 hover:bg-slate-800/90 transition-all duration-200 cursor-grab active:cursor-grabbing group ${isOverdue ? 'border-red-500/50' : 'border-slate-700/50'}`}
+      onClick={() => onOpenLead(lead)}
+      className={`bg-slate-800/60 border rounded-xl p-4 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer active:cursor-grabbing group ${isOverdue ? 'border-red-500/50' : 'border-slate-700/50 hover:border-red-500/40'}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
-          <p className="text-white font-semibold text-sm truncate">{lead.name || 'Anonymous'}</p>
+          <p className="text-white font-semibold text-sm truncate group-hover:text-red-400 transition-colors">{lead.name || 'Anonymous'}</p>
           <div className="flex items-center gap-2 mt-1">
             <span className={`inline-flex items-center gap-1 text-xs font-medium ${prio.color}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${prio.dot}`}></span>
@@ -95,7 +99,11 @@ function LeadCard({ lead, onStatusChange, onAssign }: {
             {isOverdue && <span className="text-xs text-red-400 font-medium flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Overdue</span>}
           </div>
         </div>
-        <button onClick={() => onAssign(lead)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/40 text-blue-400">
+        <button
+          onClick={(e) => { e.stopPropagation(); onAssign(lead); }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/40 text-blue-400"
+          title="Assign Lead"
+        >
           <Edit2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -103,7 +111,11 @@ function LeadCard({ lead, onStatusChange, onAssign }: {
       {/* Contact */}
       <div className="space-y-1.5 mb-3">
         {lead.phone && (
-          <a href={`tel:${lead.phone}`} className="flex items-center gap-2 text-xs text-slate-400 hover:text-blue-400 transition-colors">
+          <a
+            href={`tel:${lead.phone}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 text-xs text-slate-400 hover:text-blue-400 transition-colors"
+          >
             <Phone className="w-3 h-3 shrink-0" />{lead.phone}
           </a>
         )}
@@ -135,7 +147,7 @@ function LeadCard({ lead, onStatusChange, onAssign }: {
 
       {/* Quick status actions */}
       {lead.lead_status === 'new' && (
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => onStatusChange(lead.id, 'contacted')}
             className="flex-1 text-xs py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 transition-colors font-medium flex items-center justify-center gap-1"
@@ -149,11 +161,12 @@ function LeadCard({ lead, onStatusChange, onAssign }: {
 }
 
 // ─── Pipeline Column ──────────────────────────────────────────────────────────
-function PipelineColumn({ stage, leads, onStatusChange, onAssign }: {
+function PipelineColumn({ stage, leads, onStatusChange, onAssign, onOpenLead }: {
   stage: LeadStatus;
   leads: Lead[];
   onStatusChange: (id: string, status: LeadStatus) => void;
   onAssign: (lead: Lead) => void;
+  onOpenLead: (lead: Lead) => void;
 }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const cfg = STAGE_CONFIG[stage];
@@ -193,7 +206,13 @@ function PipelineColumn({ stage, leads, onStatusChange, onAssign }: {
           <div className="text-center py-8 text-slate-600 text-sm">No leads here</div>
         ) : (
           leads.map(lead => (
-            <LeadCard key={lead.id} lead={lead} onStatusChange={onStatusChange} onAssign={onAssign} />
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              onStatusChange={onStatusChange}
+              onAssign={onAssign}
+              onOpenLead={onOpenLead}
+            />
           ))
         )}
       </div>
@@ -208,6 +227,7 @@ export function AdminCRMDashboard() {
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [assigneeId, setAssigneeId] = useState('');
   const qc = useQueryClient();
   const { addToast } = useToast();
@@ -264,7 +284,7 @@ export function AdminCRMDashboard() {
           id, name, email, phone, message, lead_status, priority, source,
           budget_min, budget_max, assigned_to, follow_up_at, contact_count,
           conversion_value, created_at, updated_at,
-          property:property_id(id, title),
+          property:property_id(id, title, price, locality_name, city_name, property_types(name)),
           assignee:assigned_to(id, first_name, last_name, phone, email)
         `)
         .order('created_at', { ascending: false })
@@ -397,87 +417,36 @@ export function AdminCRMDashboard() {
               leads={leadsByStage[stage] ?? []}
               onStatusChange={handleStatusChange}
               onAssign={handleAssign}
+              onOpenLead={(lead) => setDetailLead(lead)}
             />
           ))}
         </div>
       )}
 
-      {/* List View */}
+      {/* List / Table View */}
       {viewMode === 'list' && (
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="border-b border-slate-700/50">
-              <tr className="text-left">
-                <th className="px-4 py-3 text-slate-400 font-medium">Lead</th>
-                <th className="px-4 py-3 text-slate-400 font-medium">Status</th>
-                <th className="px-4 py-3 text-slate-400 font-medium">Priority</th>
-                <th className="px-4 py-3 text-slate-400 font-medium">Budget</th>
-                <th className="px-4 py-3 text-slate-400 font-medium">Follow-Up</th>
-                <th className="px-4 py-3 text-slate-400 font-medium">Source</th>
-                <th className="px-4 py-3 text-slate-400 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/30">
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
-                      <td key={j} className="px-4 py-3"><div className="h-4 bg-slate-700/50 rounded animate-pulse" /></td>
-                    ))}
-                  </tr>
-                ))
-              ) : leads.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No leads found</td></tr>
-              ) : leads.map(lead => {
-                const cfg = STAGE_CONFIG[lead.lead_status];
-                const prio = PRIORITY_CONFIG[lead.priority];
-                const isOverdue = lead.follow_up_at && new Date(lead.follow_up_at) < new Date() && !['won','lost','closed'].includes(lead.lead_status);
-                return (
-                  <tr key={lead.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-white font-medium">{lead.name || 'Anonymous'}</p>
-                        <p className="text-slate-500 text-xs">{lead.phone || lead.email}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color} border ${cfg.border}`}>
-                        {cfg.icon}{cfg.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`flex items-center gap-1.5 text-xs font-medium ${prio.color}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${prio.dot}`}></span>
-                        {prio.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 text-xs">
-                      {lead.budget_max ? formatPrice(lead.budget_max) : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs ${isOverdue ? 'text-red-400 font-medium' : 'text-slate-400'}`}>
-                        {lead.follow_up_at ? formatDate(lead.follow_up_at) : '—'}
-                        {isOverdue && ' ⚠️'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs capitalize">{lead.source || 'website'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <a href={`tel:${lead.phone}`} className="p-1.5 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/40 transition-colors">
-                          <PhoneCall className="w-3.5 h-3.5" />
-                        </a>
-                        <button onClick={() => handleAssign(lead)} className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 transition-colors">
-                          <UserCheck className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <ProfessionalCrmTable
+          leads={leads}
+          isLoading={isLoading}
+          sourceType="admin"
+          onRefresh={() => {
+            qc.invalidateQueries({ queryKey: ['crm-leads'] });
+            qc.invalidateQueries({ queryKey: ['crm-stats'] });
+          }}
+        />
       )}
+
+      {/* Unified Lead Detail & Stage Stepper Modal */}
+      <UnifiedLeadDetailModal
+        lead={detailLead}
+        isOpen={!!detailLead}
+        onClose={() => setDetailLead(null)}
+        sourceType="admin"
+        onLeadUpdated={() => {
+          qc.invalidateQueries({ queryKey: ['crm-leads'] });
+          qc.invalidateQueries({ queryKey: ['crm-stats'] });
+        }}
+      />
 
       <Modal
         open={!!selectedLead}

@@ -18,19 +18,31 @@ const SEND_TIMEOUT_MS = 15_000;
 // MSG91 renders its captcha challenge into this DOM element when
 // exposeMethods is true. Without a captchaRenderId, MSG91 has nowhere to
 // run the captcha and every sendOtp call fails with "Invalid Captcha Token".
-// We create a persistent DOM element in memory so we never double-initialize
-// MSG91 even if React unmounts and remounts the placeholder.
 export const MSG91_CAPTCHA_CONTAINER_ID = 'msg91-captcha-container';
 
-let persistentCaptchaContainer: HTMLElement | null = null;
+/**
+ * Finds or ensures the captcha container element is in the document DOM.
+ */
+export async function ensureCaptchaContainer(): Promise<HTMLElement> {
+  let el = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
+  if (el) return el;
 
-export function getPersistentCaptchaContainer(): HTMLElement {
-  if (!persistentCaptchaContainer) {
-    persistentCaptchaContainer = document.createElement('div');
-    persistentCaptchaContainer.id = MSG91_CAPTCHA_CONTAINER_ID;
-    persistentCaptchaContainer.className = 'flex justify-center';
+  // Poll for up to 1500ms while React mounts the DOM node
+  const start = Date.now();
+  while (!el && Date.now() - start < 1500) {
+    await new Promise((r) => setTimeout(r, 50));
+    el = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
   }
-  return persistentCaptchaContainer;
+
+  if (!el) {
+    el = document.createElement('div');
+    el.id = MSG91_CAPTCHA_CONTAINER_ID;
+    el.className = 'flex justify-center items-center min-h-[78px] my-2';
+    const form = document.querySelector('form') || document.body;
+    form.appendChild(el);
+  }
+
+  return el;
 }
 
 interface Msg91SendSuccess {
@@ -163,25 +175,13 @@ function waitForExposedMethods(timeoutMs: number): Promise<void> {
 // using) — they don't reliably fire just because init finished. So instead
 // of trusting them, we call initSendOTP (fire-and-forget) and poll for
 // window.sendOtp to actually exist, which is the real precondition we need.
-export function initMsg91Widget(forceRemount = false): Promise<void> {
-  // If we already have a successful promise, we only return it if the captcha
-  // iframe is actually still in the DOM. If the user navigated between pages,
-  // the container was destroyed and recreated, so MSG91 must be re-initialized
-  // into the new container element.
-  if (initPromise && !forceRemount) {
-    // Still starting up — never let a second caller (e.g. React Strict Mode's
-    // double effect-invocation in dev) trigger a second initSendOTP call
-    // before the first one's iframe even exists. MSG91's widget isn't
-    // re-entrant: two overlapping init calls leave a stray captcha instance
-    // that the visible one isn't actually wired to, so sendOtp hangs forever
-    // waiting on a challenge nobody can complete.
-    // waiting on a challenge nobody can complete.
-    if (!initSettled) return initPromise;
-    if (persistentCaptchaContainer && persistentCaptchaContainer.hasAttribute('data-msg91-initialized')) {
-      return initPromise;
-    }
-  }
+let lastInitError: string | null = null;
 
+export function getMsg91InitError(): string | null {
+  return lastInitError;
+}
+
+export function initMsg91Widget(forceRemount = false): Promise<void> {
   const widgetId = import.meta.env.VITE_MSG91_WIDGET_ID as string | undefined;
   const tokenAuth = import.meta.env.VITE_MSG91_TOKEN_AUTH as string | undefined;
   if (!widgetId || !tokenAuth) {
@@ -190,30 +190,39 @@ export function initMsg91Widget(forceRemount = false): Promise<void> {
     );
   }
 
+  if (initPromise && !forceRemount && initSettled) {
+    const container = document.getElementById(MSG91_CAPTCHA_CONTAINER_ID);
+    if (container && container.children.length > 0) {
+      return initPromise;
+    }
+  }
+
   initSettled = false;
-  const run = loadWidgetScript().then(() => {
+  const run = loadWidgetScript().then(async () => {
     if (!window.initSendOTP) {
       console.error('[MSG91] window.initSendOTP is not defined after script load');
       throw new Error('MSG91 widget script loaded but initSendOTP is unavailable');
     }
-    console.log('[MSG91] calling initSendOTP with widgetId:', widgetId);
-    
-    const container = getPersistentCaptchaContainer();
-    if (!container.hasAttribute('data-msg91-initialized')) {
-      // Clear any existing children just in case, though it should be empty
-      container.innerHTML = '';
-      container.setAttribute('data-msg91-initialized', 'true');
-      
-      window.initSendOTP({
-        widgetId,
-        tokenAuth,
-        exposeMethods: true,
-        captchaRenderId: MSG91_CAPTCHA_CONTAINER_ID,
-        success: (data: unknown) => console.log('[MSG91] initSendOTP success callback', data),
-        failure: (err: unknown) => console.warn('[MSG91] initSendOTP failure callback', extractErrorMessage(err, 'unknown')),
-      });
-    }
-    
+
+    const container = await ensureCaptchaContainer();
+    console.log('[MSG91] calling initSendOTP with widgetId:', widgetId, 'into container:', container.id);
+
+    window.initSendOTP({
+      widgetId,
+      tokenAuth,
+      exposeMethods: true,
+      captchaRenderId: MSG91_CAPTCHA_CONTAINER_ID,
+      success: (data: unknown) => {
+        lastInitError = null;
+        console.log('[MSG91] initSendOTP success callback', data);
+      },
+      failure: (err: unknown) => {
+        const msg = extractErrorMessage(err, 'unknown');
+        lastInitError = msg;
+        console.warn('[MSG91] initSendOTP failure callback', msg);
+      },
+    });
+
     return waitForExposedMethods(INIT_TIMEOUT_MS);
   });
 
@@ -243,7 +252,14 @@ export async function sendMsg91Otp(mobileE164: string): Promise<string> {
       },
       (err) => {
         console.error('[MSG91] sendOtp failure', err);
-        reject(new Error(extractErrorMessage(err, 'Failed to send OTP. Please try again.')));
+        const errMsg = extractErrorMessage(err, '');
+        if (lastInitError === 'IPBlocked' || errMsg.includes('IPBlocked') || errMsg.includes('Blocked')) {
+          reject(new Error('Security Block: Your IP or domain is not whitelisted in MSG91. Please check allowed origins in your MSG91 widget dashboard.'));
+        } else if (errMsg.toLowerCase().includes('captcha')) {
+          reject(new Error('Security verification required. Please complete the captcha check above.'));
+        } else {
+          reject(new Error(errMsg || 'Failed to send OTP. Please try again.'));
+        }
       },
     );
   });

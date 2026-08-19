@@ -74,6 +74,7 @@ import { useLocationContext } from '../../contexts/location-context';
 
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { useAuth } from '../../lib/auth';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { PostPropertyLink } from '../../components/post-property-link';
 import { ContactAgentModal } from '../../components/contact-agent-modal';
 import { BookVisitModal } from '../../components/book-visit-modal';
@@ -168,9 +169,10 @@ export function HomePropertyCard({
       >
         <div className="relative aspect-video w-full overflow-hidden bg-slate-100">
           <img
-            src={property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            src={getPropertyCoverImage(property)}
             alt={property.title}
             loading="lazy"
+            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
             className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
           />
           {badge && (
@@ -3771,6 +3773,7 @@ function LuxuryAdBannersSection() {
                 <img
                   src={ad.image}
                   alt={ad.title}
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                   className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
@@ -3922,6 +3925,7 @@ function ThreeColumnAdBannersSection() {
                 <img
                   src={ad.image}
                   alt={ad.title}
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                   className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />

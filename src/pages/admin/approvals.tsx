@@ -16,6 +16,7 @@ import { formatPrice, formatDate, cn, generatePropertyUrl } from '../../lib/util
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
 import type { Property, AiVerification } from '../../lib/types';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { ExportMenuAsync } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
@@ -149,8 +150,9 @@ function PropertyReviewCard({ property, onReview }: { property: PendingProperty;
     <Card className="p-4">
       <div className="flex gap-3">
         <img
-          src={property.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+          src={getPropertyCoverImage(property as any)}
           alt=""
+          onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
           className="h-20 w-28 shrink-0 rounded-lg object-cover"
         />
         <div className="flex-1 min-w-0">
@@ -377,8 +379,9 @@ export function AdminApprovals() {
       render: (p) => (
         <div className="flex items-center gap-3">
           <img
-            src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            src={getPropertyCoverImage(p)}
             alt=""
+            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
             className="h-10 w-14 rounded object-cover"
           />
           <div>
@@ -499,8 +502,9 @@ export function AdminApprovals() {
               <div>
                 <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-navy-100">
                   <img
-                    src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+                    src={getPropertyCoverImage(p)}
                     alt=""
+                    onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                     className="h-full w-full object-cover"
                   />
                   <div className="absolute top-2 right-2">
@@ -620,9 +624,12 @@ export function AdminApprovals() {
       >
         {selected && (
           <div className="max-h-[70vh] overflow-y-auto pr-2">
-            {selected.images?.[0] && (
-              <img src={selected.images[0]} alt="" className="mb-4 aspect-video w-full rounded-lg object-cover" />
-            )}
+            <img
+              src={getPropertyCoverImage(selected as any)}
+              alt=""
+              onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+              className="mb-4 aspect-video w-full rounded-lg object-cover"
+            />
 
             <div className="mb-4 rounded-xl border border-navy-100 bg-navy-50/60 p-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1288,8 +1295,9 @@ export function AdminProperties() {
       render: (p) => (
         <div className="flex items-center gap-3">
           <img
-            src={p.images?.[0] ?? 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+            src={getPropertyCoverImage(p as any)}
             alt=""
+            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
             className="h-10 w-14 rounded object-cover"
           />
           <div>

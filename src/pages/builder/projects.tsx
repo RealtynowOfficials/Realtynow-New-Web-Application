@@ -31,6 +31,7 @@ import { useToast } from '../../components/toast';
 import { formatDate } from '../../lib/utils';
 import { logBuilderAudit } from '../../lib/builder-audit';
 import { uploadFile } from '../../lib/storage';
+import { BuilderWorkflowBar } from '../../components/builder/BuilderWorkflowBar';
 import type { BuilderProject, BuilderProjectStatus } from '../../lib/types';
 
 const STATUS_OPTIONS: BuilderProjectStatus[] = ['upcoming', 'ongoing', 'completed'];
@@ -345,8 +346,16 @@ export function BuilderProjects() {
         }
       />
 
+      {/* Contextual Workflow Progression */}
+      <BuilderWorkflowBar
+        currentStage="projects"
+        counts={{
+          projects: data?.length,
+        }}
+      />
+
       {/* KPI Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mt-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatCard
           label="Total Developments"
           value={stats.total}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Building2, Edit3, Plus, Trash2 } from 'lucide-react';
+import { Building2, Edit3, Plus, Trash2, Layers } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
@@ -12,6 +13,7 @@ import { Badge, Button, EmptyState, Input, Modal, Select } from '../../component
 import { useToast } from '../../components/toast';
 import { useRealtimeCount } from '../../lib/realtime';
 import { logBuilderAudit } from '../../lib/builder-audit';
+import { BuilderWorkflowBar } from '../../components/builder/BuilderWorkflowBar';
 import type { BuilderTower, BuilderTowerStatus } from '../../lib/types';
 
 type TowerRow = BuilderTower & { builder_projects: { name: string } | null };
@@ -207,12 +209,31 @@ export function BuilderBlocks() {
     [],
   );
 
+  const [filterProjectId, setFilterProjectId] = useState<string>('all');
+
+  const filteredTowers = useMemo(() => {
+    let list = towers ?? [];
+    if (filterProjectId !== 'all') {
+      list = list.filter((t) => t.project_id === filterProjectId);
+    }
+    return list;
+  }, [towers, filterProjectId]);
+
   return (
     <DashboardLayout sections={builderSections} title="Blocks" badge="Builder">
       <PageHeader
         title="Blocks / Towers"
         subtitle="Manage the towers within your projects."
         actions={[{ label: 'Add Block', icon: <Plus className="h-4 w-4" />, primary: true, onClick: openCreate }]}
+      />
+
+      {/* Contextual Workflow Progression */}
+      <BuilderWorkflowBar
+        currentStage="blocks"
+        counts={{
+          projects: projects?.length,
+          blocks: towers?.length,
+        }}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
@@ -227,9 +248,61 @@ export function BuilderBlocks() {
         <StatCard label="Planned" value={stats.planned} icon={<Building2 className="h-5 w-5" />} accent="navy" />
       </div>
 
+      {/* Dependency Warning Banner if No Projects Exist */}
+      {!projects || projects.length === 0 ? (
+        <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 text-amber-900 shadow-xs mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Building2 className="w-8 h-8 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-extrabold text-base text-amber-950">1. Create a Project First</h3>
+              <p className="text-xs text-amber-800 mt-1 max-w-xl">
+                Blocks and towers must belong to a specific Project. Create your first project to get started.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/builder/projects"
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Project</span>
+          </Link>
+        </div>
+      ) : null}
+
+      {/* Project Filter Drilldown */}
+      {projects && projects.length > 1 && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-slate-50 border border-slate-200/80 rounded-2xl">
+          <span className="text-xs font-bold text-slate-500">Filter Project:</span>
+          <div className="w-64">
+            <Select
+              value={filterProjectId}
+              onChange={(e) => setFilterProjectId(e.target.value)}
+              className="py-1 text-xs"
+            >
+              <option value="all">All Projects ({projects.length})</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {filterProjectId !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setFilterProjectId('all')}
+              className="text-xs font-bold text-red-600 hover:text-red-700 cursor-pointer"
+            >
+              Reset Filter
+            </button>
+          )}
+        </div>
+      )}
+
       <DataTable
         columns={columns}
-        rows={towers ?? []}
+        rows={filteredTowers}
         loading={isLoading}
         error={error instanceof Error ? error.message : null}
         getRowId={(row) => row.id}
@@ -250,16 +323,31 @@ export function BuilderBlocks() {
           })
         }
         emptyState={
-          <EmptyState
-            icon={<Building2 className="h-6 w-6" />}
-            title="No blocks yet"
-            description="Add your first tower or block to start organizing floors and units."
-            action={
-              <Button size="sm" onClick={openCreate}>
-                Add Block
-              </Button>
-            }
-          />
+          !projects || projects.length === 0 ? (
+            <EmptyState
+              icon={<Building2 className="h-6 w-6" />}
+              title="No projects yet"
+              description="Create your first project before adding towers."
+              action={
+                <Link to="/builder/projects">
+                  <Button size="sm" icon={<Plus className="h-4 w-4" />}>
+                    Create Project
+                  </Button>
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<Layers className="h-6 w-6" />}
+              title="No blocks / towers yet"
+              description="Add your first tower or block to start organizing floors and units."
+              action={
+                <Button size="sm" onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
+                  Add Block
+                </Button>
+              }
+            />
+          )
         }
       />
 

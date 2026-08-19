@@ -359,17 +359,33 @@ export function BuilderBookings() {
       if (editing && editing !== 'new') {
         const { error } = await supabase.from('builder_bookings').update(payload).eq('id', editing.id);
         if (error) throw error;
+
+        // If unit changed, release the old unit
+        if (editing.unit_id && editing.unit_id !== form.unit_id) {
+          await supabase.from('builder_units').update({ status: 'available' }).eq('id', editing.unit_id);
+        }
+
+        // Synchronize new unit status
         if (form.status === 'confirmed') {
           await supabase.from('builder_units').update({ status: 'booked' }).eq('id', form.unit_id);
+        } else if (form.status === 'completed') {
+          await supabase.from('builder_units').update({ status: 'sold' }).eq('id', form.unit_id);
+        } else if (form.status === 'cancelled') {
+          await supabase.from('builder_units').update({ status: 'available' }).eq('id', form.unit_id);
         }
+
         await logBuilderAudit('update', 'builder_bookings', editing.id, payload);
         addToast('success', 'Booking updated successfully');
       } else {
         const { data: inserted, error } = await supabase.from('builder_bookings').insert(payload).select('id').single();
         if (error) throw error;
+
         if (form.status === 'confirmed') {
           await supabase.from('builder_units').update({ status: 'booked' }).eq('id', form.unit_id);
+        } else if (form.status === 'completed') {
+          await supabase.from('builder_units').update({ status: 'sold' }).eq('id', form.unit_id);
         }
+
         await logBuilderAudit('create', 'builder_bookings', inserted?.id ?? null, payload);
         addToast('success', 'Booking created successfully');
       }
@@ -377,6 +393,8 @@ export function BuilderBookings() {
       setEditing(null);
       queryClient.invalidateQueries({ queryKey: ['builder-bookings'] });
       queryClient.invalidateQueries({ queryKey: ['builder-bookings-unit-scope'] });
+      queryClient.invalidateQueries({ queryKey: ['builder-units'] });
+      queryClient.invalidateQueries({ queryKey: ['builder-inventory'] });
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to save booking');
     } finally {
@@ -385,16 +403,24 @@ export function BuilderBookings() {
   };
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('builder_bookings').delete().eq('id', id);
+    mutationFn: async (rowId: string) => {
+      // Find the booking before deleting to release the unit
+      const bookingToDelete = bookings?.find((b) => b.id === rowId);
+      const { error } = await supabase.from('builder_bookings').delete().eq('id', rowId);
       if (error) throw error;
-      return id;
+      if (bookingToDelete?.unit_id) {
+        await supabase.from('builder_units').update({ status: 'available' }).eq('id', bookingToDelete.unit_id);
+      }
+      return rowId;
     },
     onSuccess: async (id) => {
       await logBuilderAudit('delete', 'builder_bookings', id);
       queryClient.invalidateQueries({ queryKey: ['builder-bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['builder-bookings-unit-scope'] });
+      queryClient.invalidateQueries({ queryKey: ['builder-units'] });
+      queryClient.invalidateQueries({ queryKey: ['builder-inventory'] });
       setToDelete(null);
-      addToast('success', 'Booking deleted');
+      addToast('success', 'Booking deleted and unit released');
     },
     onError: (err) => addToast('error', err instanceof Error ? err.message : 'Failed to delete booking'),
   });

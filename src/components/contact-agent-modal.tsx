@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, MapPin, Send, CheckCircle2, User, Phone, Mail, MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { ensureUserProfile } from '../lib/profile-utils';
 import { Modal, Button, Input, Textarea } from './ui';
 import { useToast } from './toast';
 import { normalizePhoneNumber } from '../lib/utils';
@@ -143,6 +144,9 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
     setErrorMsg('');
 
     try {
+      if (user?.id) {
+        await ensureUserProfile(user.id);
+      }
       const normalizedPhone = normalizePhoneNumber(phone);
       const agentId = agent?.id || property.assigned_agent_id || property.owner_id || null;
 

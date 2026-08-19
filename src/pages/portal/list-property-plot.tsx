@@ -13,6 +13,7 @@ import { LocationAutocomplete, type SelectedPlace } from '../../components/locat
 import { FieldLabel, InputField, TextAreaField, SectionTitle, compressImage } from './property-form-shared';
 import { uploadFile, type StorageBucket } from '../../lib/storage';
 import { savePropertyDraft } from '../../lib/properties';
+import { ensureUserProfile } from '../../lib/profile-utils';
 import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
 import { ServiceUnavailable } from '../../components/service-unavailable';
 import { cn } from '../../lib/utils';
@@ -323,15 +324,33 @@ export function OpenPlotWizard() {
     }
     setSubmitting(true);
     try {
-      const payload = { ...buildPayload(), status: 'submitted' as const, approval_status: 'Pending' as const, is_live: false };
-      if (draftId) {
-        const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
-        if (error) throw error;
-      } else {
-        const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
-        if (error) throw error;
-        setDraftId(inserted?.id ?? null);
+      if (user?.id) {
+        await ensureUserProfile(user.id);
       }
+      const payload = { ...buildPayload(), status: 'submitted' as const, approval_status: 'Pending' as const, is_live: false };
+
+      const executeSubmit = async () => {
+        if (draftId) {
+          const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
+          if (error) throw error;
+        } else {
+          const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
+          if (error) throw error;
+          setDraftId(inserted?.id ?? null);
+        }
+      };
+
+      try {
+        await executeSubmit();
+      } catch (err: any) {
+        if (err?.message?.includes('profiles_fkey') || err?.code === '23503') {
+          await ensureUserProfile(user?.id);
+          await executeSubmit();
+        } else {
+          throw err;
+        }
+      }
+
       toast.addToast('success', '🎉 Plot submitted for admin review!');
       setTimeout(() => navigate(profile?.role === 'agent' ? '/agent/my-properties' : '/portal/my-properties'), 1200);
     } catch (err: any) {

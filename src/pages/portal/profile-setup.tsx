@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
+import { ensureUserProfile } from '../../lib/profile-utils';
 import { Button } from '../../components/ui';
 import { uploadFile } from '../../lib/storage';
 import type { KycIdType } from '../../lib/types';
@@ -101,6 +102,7 @@ export function ProfileSetupPage() {
     setSaving(true);
     setError(null);
     try {
+      await ensureUserProfile(user.id);
       let avatar_url = profile?.avatar_url ?? null;
       if (avatarFile) {
         const r = await uploadFile('profile-images', avatarFile, `${user.id}/avatar`);
@@ -109,14 +111,18 @@ export function ProfileSetupPage() {
       }
       const { error: e } = await supabase
         .from('profiles')
-        .update({
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          phone: phone.trim() || null,
-          bio: bio.trim() || null,
-          avatar_url,
-        })
-        .eq('id', user.id);
+        .upsert(
+          {
+            id: user.id,
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            phone: phone.trim() || null,
+            bio: bio.trim() || null,
+            avatar_url,
+            status: 'active',
+          },
+          { onConflict: 'id' }
+        );
       if (e) throw new Error(e.message);
       await refreshProfile();
       return true;

@@ -4,15 +4,6 @@
  * Saves and restores window.scrollY across React Router navigations so that
  * pressing browser Back/Forward returns the user to the exact scroll position
  * they were at — instead of jumping to the top.
- *
- * Strategy
- * --------
- * • On every PUSH/REPLACE navigation we record scrollY in sessionStorage,
- *   keyed by window.history.state.key (unique per history entry).
- * • On POP navigation (Back/Forward) we defer scroll restoration until
- *   the page has had a chance to render content (using rAF + small delay).
- * • We intentionally do NOT restore scroll when navigating via Navbar links,
- *   logo clicks, or fresh page loads — only Back/Forward pops.
  */
 
 const SCROLL_STORAGE_KEY = 'rn_scroll_positions';
@@ -31,7 +22,6 @@ function readMap(): Record<string, number> {
 
 function writeMap(map: Record<string, number>): void {
   try {
-    // Trim old entries to keep storage lean
     const keys = Object.keys(map);
     if (keys.length > MAX_ENTRIES) {
       const trimmed: Record<string, number> = {};
@@ -49,12 +39,14 @@ function writeMap(map: Record<string, number>): void {
 
 /**
  * React Router (via the browser History API) assigns a unique random `key`
- * to every history entry via `window.history.state.key`.  We use this as the
- * storage key so Back and Forward to the *same* path still get distinct
- * scroll positions.
+ * to every history entry via `window.history.state.key`.
+ * We ONLY use valid, non-initial router keys. Root / undefined keys are excluded
+ * to ensure initial page loads and page refreshes never restore stale scroll.
  */
-function historyKey(): string {
-  return (window.history.state?.key as string | undefined) ?? 'root';
+function historyKey(): string | null {
+  const key = window.history.state?.key as string | undefined;
+  if (!key || key === 'root' || key === 'default') return null;
+  return key;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -62,6 +54,7 @@ function historyKey(): string {
 /** Save the current scrollY under the current history entry key. */
 export function saveScrollPosition(): void {
   const key = historyKey();
+  if (!key) return;
   const map = readMap();
   map[key] = window.scrollY;
   writeMap(map);
@@ -70,6 +63,7 @@ export function saveScrollPosition(): void {
 /** Get the saved scrollY for the current history entry (or undefined). */
 export function getSavedScrollPosition(): number | undefined {
   const key = historyKey();
+  if (!key) return undefined;
   const map = readMap();
   return map[key];
 }
@@ -77,27 +71,31 @@ export function getSavedScrollPosition(): number | undefined {
 /** Delete the saved scroll for the current history entry (e.g. after restoring). */
 export function clearSavedScrollPosition(): void {
   const key = historyKey();
+  if (!key) return;
   const map = readMap();
   delete map[key];
   writeMap(map);
 }
 
+/** Clear all saved scroll positions (called on initial load or refresh). */
+export function clearAllSavedScrollPositions(): void {
+  try {
+    sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Restore scroll to `scrollY` only after the layout has settled.
- * Uses two rAF frames + a microtask to wait for React to flush DOM.
- *
- * @param scrollY - target scroll position
- * @param onDone  - optional callback after restore
+ * Uses two rAF frames to wait for React to flush DOM.
  */
 export function restoreScrollPosition(scrollY: number, onDone?: () => void): void {
-  // Guard: don't restore to top (that's the default, no need to force it)
   if (scrollY <= 0) {
     onDone?.();
     return;
   }
 
-  // Use two rAF frames to wait past React's commit phase and any
-  // synchronous layout reflows, then apply scroll instantly (no janky smooth).
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       window.scrollTo({ top: scrollY, behavior: 'instant' });

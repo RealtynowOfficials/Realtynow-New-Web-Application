@@ -31,7 +31,8 @@ import { DataTable, type Column } from '../../components/data-table';
 import { formatDate, formatPrice, generatePropertyUrl, buildWhatsAppUrl } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
 import { AgentKanbanBoard } from '../../components/agent/AgentKanbanBoard';
-import { AgentLeadDetailDrawer, CRM_LEAD_STAGES } from '../../components/agent/AgentLeadDetailDrawer';
+import { UnifiedLeadDetailModal, AGENT_CRM_STAGES } from '../../components/crm/UnifiedLeadDetailModal';
+import { ProfessionalCrmTable } from '../../components/crm/ProfessionalCrmTable';
 
 export function AgentLeads() {
   const { t } = useLanguageContext();
@@ -544,132 +545,18 @@ export function AgentLeads() {
           onOpenLead={handleOpenLead}
         />
       ) : (
-        <DataTable
-          columns={columns}
-          rows={filteredLeads}
-          loading={isLoading}
-          getRowId={(l) => l.id}
-          searchable={true}
-          searchPlaceholder="Search leads by customer name, phone, email, property title..."
-          searchKeys={['name', 'email', 'phone', 'message']}
-          dateKey="created_at"
-          onRowClick={(row) => handleOpenLead(row)}
-          cardRender={(l) => {
-            const currentStatus = l.lead_status || l.status || 'new';
-            return (
-              <Card
-                className="p-5 flex flex-col justify-between h-full border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition-all cursor-pointer group"
-                onClick={() => handleOpenLead(l)}
-              >
-                <div>
-                  {/* Top Bar */}
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200 grid place-items-center shrink-0">
-                        <span className="text-sm font-bold text-slate-700">
-                          {l.name ? l.name.charAt(0).toUpperCase() : 'C'}
-                        </span>
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-navy-900 text-base leading-tight group-hover:text-red-600 transition-colors">
-                          {l.name || 'Anonymous Customer'}
-                        </h4>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          {formatDate(l.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge
-                      variant={
-                        currentStatus === 'won'
-                          ? 'success'
-                          : currentStatus === 'lost'
-                            ? 'error'
-                            : currentStatus === 'new'
-                              ? 'info'
-                              : 'default'
-                      }
-                      className="uppercase text-[10px] font-bold shrink-0"
-                    >
-                      {currentStatus.replace('_', ' ')}
-                    </Badge>
-                  </div>
-
-                  {/* Interested Property Card */}
-                  {l.property && (
-                    <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 mb-3 flex items-center gap-3">
-                      <img
-                        src={l.property.images?.[0] || 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
-                        alt={l.property.title}
-                        className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-xs text-navy-900 truncate">
-                          {l.property.title}
-                        </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
-                          {formatPrice(l.property.price, l.property.purpose)} • {l.property.locality_name || l.property.city_name || ''}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Customer Message */}
-                  {l.message && (
-                    <div className="p-3 bg-amber-50/40 border border-amber-100 rounded-xl text-xs text-slate-700 italic mb-3 line-clamp-2">
-                      "{l.message}"
-                    </div>
-                  )}
-
-                  {/* Contact Info Rows */}
-                  <div className="space-y-1.5 text-xs text-slate-600 mb-4">
-                    {l.phone && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                        <span className="font-medium text-slate-800">{l.phone}</span>
-                      </div>
-                    )}
-                    {l.email && (
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate text-slate-700">{l.email}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card Action Footer */}
-                <div
-                  className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleOpenLead(l)}
-                    className="w-full text-xs font-semibold"
-                  >
-                    View Lead
-                  </Button>
-                  {l.phone && (
-                    <a
-                      href={buildWhatsAppUrl(l.phone, `Hello ${l.name || ''}, regarding your enquiry on RealtyNow:`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition flex items-center gap-1 shrink-0 border border-emerald-200"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                    </a>
-                  )}
-                </div>
-              </Card>
-            );
+        <ProfessionalCrmTable
+          leads={filteredLeads}
+          isLoading={isLoading}
+          sourceType="agent"
+          onRefresh={() => {
+            queryClient.invalidateQueries({ queryKey: ['agent-leads'] });
           }}
         />
       )}
 
-      {/* Slide-over Lead Details CRM Drawer */}
-      <AgentLeadDetailDrawer
+      {/* Unified Lead Detail & Stage Stepper Modal */}
+      <UnifiedLeadDetailModal
         lead={selectedLead}
         isOpen={drawerOpen}
         onClose={() => {
@@ -679,6 +566,7 @@ export function AgentLeads() {
         onLeadUpdated={() => {
           queryClient.invalidateQueries({ queryKey: ['agent-leads'] });
         }}
+        sourceType="agent"
       />
     </DashboardLayout>
   );

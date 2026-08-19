@@ -19,6 +19,7 @@ import {
   Compass,
 } from 'lucide-react';
 import type { Property } from '../lib/types';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../lib/property-images';
 
 // Fix for default marker icon in leaflet with bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -216,10 +217,7 @@ export function PropertyMap({
           const isHovered = p.id === hoveredPropertyId;
           const icon = createPricePinIcon(p, isSelected, isHovered);
 
-          const coverImage =
-            p.images?.[0] ||
-            (p as any).cover_image_url ||
-            'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
+          const coverImage = getPropertyCoverImage(p);
 
           const fullPrice = formatPrice(p.price, p.purpose);
           const isRent = ['Rent', 'Lease', 'PG', 'CoLiving'].includes(p.purpose || '');
@@ -254,6 +252,7 @@ export function PropertyMap({
                     <img
                       src={coverImage}
                       alt={p.title}
+                      onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                       className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
                       loading="lazy"
                     />

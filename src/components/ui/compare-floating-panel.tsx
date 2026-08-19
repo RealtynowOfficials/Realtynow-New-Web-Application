@@ -4,9 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GitCompare, X, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { getCompareIds, clearCompareList, fetchComparedProperties } from '../../lib/compare';
 import { useAuth } from '../../lib/auth';
-import type { Property } from '../../lib/types';
 import { formatCompactPrice } from '../../lib/utils';
 import { Button } from '../ui';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 
 const SESSION_DISMISSED_KEY = 'realtynow_compare_panel_dismissed';
 
@@ -160,13 +160,10 @@ export function CompareFloatingPanel() {
                       className="flex gap-2.5 bg-gray-50 rounded-xl p-2 min-w-[190px] max-w-[220px] border border-gray-200 items-center shrink-0"
                     >
                       <img
-                        src={p.images?.[0] || 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+                        src={getPropertyCoverImage(p)}
                         className="w-11 h-11 rounded-lg object-cover bg-gray-200 shrink-0"
                         alt=""
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src =
-                            'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
-                        }}
+                        onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-gray-900 truncate leading-tight" title={p.title}>

@@ -34,6 +34,7 @@ import { useToast } from '../../hooks/useToast';
 import { LocationAutocomplete, type SelectedPlace } from '../../components/location-autocomplete';
 import { supabase } from '../../lib/supabase';
 import { triggerAiVerification } from '../../lib/properties';
+import { ensureUserProfile } from '../../lib/profile-utils';
 import { uploadFile, deleteFile, type StorageBucket } from '../../lib/storage';
 import { cn } from '../../lib/utils';
 import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
@@ -905,21 +906,39 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
   const onSubmit = async () => {
     setSaving(true);
     try {
+      if (user?.id) {
+        await ensureUserProfile(user.id);
+      }
       const payload = {
         ...buildPayload(),
         status: 'submitted' as const,
         approval_status: 'Pending' as const,
         is_live: false,
       };
-      if (draftId) {
-        const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
-        if (error) throw error;
-        triggerAiVerification(draftId);
-      } else {
-        const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
-        if (error) throw error;
-        if (inserted?.id) triggerAiVerification(inserted.id);
+
+      const executeSubmit = async () => {
+        if (draftId) {
+          const { error } = await supabase.from('properties').update(payload).eq('id', draftId);
+          if (error) throw error;
+          triggerAiVerification(draftId);
+        } else {
+          const { data: inserted, error } = await supabase.from('properties').insert(payload).select('id').single();
+          if (error) throw error;
+          if (inserted?.id) triggerAiVerification(inserted.id);
+        }
+      };
+
+      try {
+        await executeSubmit();
+      } catch (err: any) {
+        if (err?.message?.includes('profiles_fkey') || err?.code === '23503') {
+          await ensureUserProfile(user?.id);
+          await executeSubmit();
+        } else {
+          throw err;
+        }
       }
+
       toast.addToast('success', '🎉 Property submitted for admin review!');
       const targetUrl = profile?.role === 'agent' ? '/agent/properties' : '/portal/my-properties';
       setTimeout(() => {

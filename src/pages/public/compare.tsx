@@ -9,8 +9,7 @@ import { formatCompactPrice, formatPrice, generatePropertyUrl, getPropertyPrice 
 import type { Property } from '../../lib/types';
 import { useToast } from '../../components/toast';
 import { Spinner } from '../../components/ui';
-
-const FALLBACK_IMG = 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
+import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 
 export function ComparePage() {
   const { t } = useLanguageContext();
@@ -174,12 +173,10 @@ export function ComparePage() {
                         {/* Image */}
                         <div className="relative w-full bg-gray-100 rounded-xl overflow-hidden" style={{ height: 160 }}>
                           <img
-                            src={p.images?.[0] || FALLBACK_IMG}
+                            src={getPropertyCoverImage(p)}
                             alt={p.title}
                             className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = FALLBACK_IMG;
-                            }}
+                            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                           />
                           {/* Remove btn */}
                           <button
