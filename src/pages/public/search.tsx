@@ -49,7 +49,8 @@ import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../components/toast';
-import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
 import { sharePropertyNativeOrCopy } from '../../lib/share-service';
 import type { Property } from '../../lib/types';
 import { getCategoryMeta, normalizeCategorySlug } from '../../lib/categories';
@@ -61,7 +62,8 @@ import { parsePropertySearchQuery, fetchLocationCategoryDiscovery, fetchSearchCa
 import type { CategorySlug } from '../../lib/categories';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { isCompared, toggleCompareProperty, getCompareIds } from '../../lib/compare';
-import { getSafePropertyImages, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
+import { getSafePropertyImages, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
+import { PropertyImage } from '../../components/property-image';
 import { AdvancedFilters } from '../../components/advanced-filters';
 import { useSEO } from '../../hooks/use-seo';
 import { PostPropertyLink } from '../../components/post-property-link';
@@ -231,12 +233,10 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
           onMouseEnter={() => setImgHovered(true)}
           onMouseLeave={() => setImgHovered(false)}
         >
-          <img
+          <PropertyImage
             src={images[activeImg] || images[0] || DEFAULT_PROPERTY_IMAGE}
             alt={p.title}
-            onError={(e) => handleImageError(e, images[0] || DEFAULT_PROPERTY_IMAGE)}
-            className={cn('h-full w-full object-cover transition-transform duration-500', imgHovered ? 'scale-105' : 'scale-100')}
-            loading="lazy"
+            className={cn('transition-transform duration-500', imgHovered ? 'scale-105' : 'scale-100')}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 pointer-events-none" />
 
@@ -343,10 +343,31 @@ function HorizontalCard({ property: p, onSave, onCompare, saved = false, compare
               )}
             </div>
             <div className="text-right shrink-0">
-              <p className="font-display text-xl sm:text-2xl font-extrabold text-[#172033]">
-                {formatCompactPrice(getPropertyPrice(p), p.purpose)}
-              </p>
-              {pricePerSqft && <p className="text-[11px] text-[#667085] mt-0.5 font-medium">₹{formatNumber(pricePerSqft)}/sq.ft</p>}
+              {(() => {
+                const pricing = getPropertyPricingDisplay(p, { compactConstructed: true });
+                if (pricing.isLand) {
+                  return (
+                    <>
+                      <p className="font-display text-xl sm:text-2xl font-extrabold text-[#172033]">
+                        {pricing.primaryPrice}
+                      </p>
+                      {pricing.totalEstimatedPrice && (
+                        <p className="text-[11px] text-[#667085] mt-0.5 font-medium">Est. Total: {pricing.totalEstimatedPrice}</p>
+                      )}
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <p className="font-display text-xl sm:text-2xl font-extrabold text-[#172033]">
+                      {pricing.primaryPrice}
+                    </p>
+                    {pricePerSqft ? (
+                      <p className="text-[11px] text-[#667085] mt-0.5 font-medium">₹{formatNumber(pricePerSqft)}/sq.ft</p>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -597,12 +618,10 @@ function GridCard({
       onClick={() => navigate(generatePropertyUrl(p))}
     >
       <div className="relative aspect-video overflow-hidden bg-slate-100">
-        <img
+        <PropertyImage
           src={images[0] || DEFAULT_PROPERTY_IMAGE}
           alt={p.title}
-          onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
-          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
-          loading="lazy"
+          className="transition-transform duration-500 ease-out group-hover:scale-110"
         />
         {reraNumber && (
           <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold text-slate-700 shadow-sm backdrop-blur">
@@ -645,19 +664,35 @@ function GridCard({
         )}
       </div>
       <div className="flex flex-1 flex-col p-3.5">
-        <p className="font-display text-base font-extrabold text-slate-900">
-          {formatCompactPrice(getPropertyPrice(p), p.purpose)}
-        </p>
-        <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 truncate">{p.title}</h3>
-        <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-          <MapPin className="h-3 w-3 shrink-0 text-red-400" />
-          <span className="truncate">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
-        </p>
-        {p.bedrooms != null && (
-          <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-            <Bed className="h-3 w-3 text-slate-400" /> {p.bedrooms} BHK
-          </span>
-        )}
+        {(() => {
+          const pricing = getPropertyPricingDisplay(p, { compactConstructed: true });
+          return (
+            <>
+              <p className="font-display text-base font-extrabold text-slate-900 flex items-baseline gap-1.5 flex-wrap">
+                {pricing.primaryPrice}
+                {pricing.isLand && pricing.totalEstimatedPrice && (
+                  <span className="text-[11px] font-medium text-slate-500">
+                    (Est: {pricing.totalEstimatedPrice})
+                  </span>
+                )}
+              </p>
+              <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 truncate">{p.title}</h3>
+              <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+                <MapPin className="h-3 w-3 shrink-0 text-red-400" />
+                <span className="truncate">{[p.locality_name, p.city_name].filter(Boolean).join(', ')}</span>
+              </p>
+              {p.bedrooms != null ? (
+                <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                  <Bed className="h-3 w-3 text-slate-400" /> {p.bedrooms} BHK
+                </span>
+              ) : pricing.areaDisplay ? (
+                <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 text-[11px] font-semibold">
+                  {pricing.areaDisplay}
+                </span>
+              ) : null}
+            </>
+          );
+        })()}
       </div>
     </motion.article>
   );
@@ -1444,7 +1479,7 @@ export function SearchPage() {
         <div className="container-page py-3">
           <div className="flex flex-wrap items-center gap-3">
             {/* Search Input */}
-            <div ref={searchContainerRef} className="relative flex-1 min-w-[200px] max-w-md">
+            <div ref={searchContainerRef} className="relative flex-1 min-w-0 sm:min-w-[200px] max-w-md w-full sm:w-auto">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
@@ -2033,15 +2068,6 @@ export function SearchPage() {
           </div>
         </div>
       </div>
-      
-      {/* Mobile Floating CTA */}
-      <div className="fixed bottom-6 right-6 lg:hidden z-40">
-        <PostPropertyLink to="/portal/list-property"
-          className="flex h-14 items-center justify-center rounded-full bg-red-600 px-6 font-bold text-white shadow-xl hover:bg-red-700 transition"
-        >
-          Post Property FREE
-        </PostPropertyLink>
-      </div>
     </div>
   );
 }
@@ -2463,15 +2489,6 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
             )}
           </div>
         </div>
-      </div>
-      
-      {/* Mobile Floating CTA */}
-      <div className="fixed bottom-6 right-6 lg:hidden z-40">
-        <PostPropertyLink to="/portal/list-property"
-          className="flex h-14 items-center justify-center rounded-full bg-red-600 px-6 font-bold text-white shadow-xl hover:bg-red-700 transition"
-        >
-          Post Property FREE
-        </PostPropertyLink>
       </div>
     </div>
   );

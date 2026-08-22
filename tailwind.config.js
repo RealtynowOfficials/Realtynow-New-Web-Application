@@ -4,6 +4,13 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      screens: {
+        xs: '320px',
+        'sm-phone': '375px',
+        'md-phone': '430px',
+        '3xl': '1600px',
+        '4xl': '1920px',
+      },
       colors: {
         // Brand — Red primary (#b61f24 at 600)
         primary: {

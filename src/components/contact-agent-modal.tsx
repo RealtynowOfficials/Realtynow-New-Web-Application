@@ -160,8 +160,8 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
         p_message: message.trim() || null,
       });
 
-      if (error) {
-        console.warn('submit_contact_lead RPC returned error, attempting direct insert:', error);
+      if (error || (data && (data as any)?.success === false)) {
+        console.warn('submit_contact_lead RPC returned error or false, attempting direct insert:', error || data);
 
         // 2. Direct insert with full fields
         const insertPayload: Record<string, any> = {

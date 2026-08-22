@@ -93,7 +93,7 @@ export const LiveChatDrawer: React.FC<LiveChatDrawerProps> = ({
 
       if (lower.includes('list') || lower.includes('post') || lower.includes('sell')) {
         reply =
-          'You can list properties by going to "List Property" in your portal. Free accounts can publish up to 2 active properties every month!';
+          'You can list properties by going to "List Property" in your portal. Free accounts can publish up to 5 active properties every month!';
       } else if (lower.includes('verif') || lower.includes('approval') || lower.includes('review')) {
         reply =
           'Our verification team reviews all listings within 4-12 hours to verify title details, coordinates, and photo quality.';

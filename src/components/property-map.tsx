@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import { formatCompactPrice, formatPrice, generatePropertyUrl, buildWhatsAppUrl, cn } from '../lib/utils';
+import { getPropertyPricingDisplay } from '../lib/plot-pricing';
 import { resolvePropertyCoordinates, ResolvedCoordinates, CITY_COORDINATES } from '../lib/geo-coordinates';
 import {
   MapPin,
@@ -55,7 +56,8 @@ function createPricePinIcon(
   const isLuxury = p.is_luxury || p.price >= 30000000;
   const isFeatured = p.is_featured;
 
-  const displayPrice = formatCompactPrice(p.price, p.purpose);
+  const pricing = getPropertyPricingDisplay(p, { compactConstructed: true });
+  const displayPrice = pricing.primaryPrice;
 
   let themeClass = 'bg-white text-slate-900 border-slate-300 shadow-md';
   let badgeColor = 'bg-slate-700';
@@ -219,7 +221,8 @@ export function PropertyMap({
 
           const coverImage = getPropertyCoverImage(p);
 
-          const fullPrice = formatPrice(p.price, p.purpose);
+          const pricing = getPropertyPricingDisplay(p);
+          const fullPrice = pricing.primaryPrice;
           const isRent = ['Rent', 'Lease', 'PG', 'CoLiving'].includes(p.purpose || '');
           const localityLabel = [p.locality_name || coords.locality, p.city_name || coords.city]
             .filter(Boolean)
@@ -284,11 +287,15 @@ export function PropertyMap({
                           {fullPrice}
                         </span>
                       </div>
-                      {p.built_up_area && (
+                      {pricing.areaDisplay ? (
+                        <span className="text-xs font-semibold text-slate-200 drop-shadow">
+                          {pricing.areaDisplay}
+                        </span>
+                      ) : p.built_up_area ? (
                         <span className="text-xs font-semibold text-slate-200 drop-shadow">
                           {p.built_up_area} sq.ft
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 

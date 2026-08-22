@@ -16,7 +16,9 @@ import { supabase } from '../lib/supabase';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../lib/favorites';
-import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../lib/property-images';
+import { getPropertyCoverImage } from '../lib/property-images';
+import { PropertyImage } from './property-image';
+import { getPropertyPricingDisplay, getPriceUnitLabel } from '../lib/plot-pricing';
 
 export function PropertyCard({ property, compact, isAiRecommended = false }: { property: Property; compact?: boolean, isAiRecommended?: boolean }) {
   const { user } = useAuth();
@@ -130,12 +132,10 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
       <div className="flex h-full flex-col">
         <Link to={generatePropertyUrl(property)} className="block">
           <div className="relative aspect-video overflow-hidden bg-navy-100">
-            <img
+            <PropertyImage
               src={img}
               alt={property.title}
-              loading="lazy"
-              onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
-              className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+              className="transition-transform duration-500 ease-out group-hover:scale-110"
             />
             <div className="absolute left-2.5 top-2.5 flex flex-col items-start gap-1.5">
               {reraNumber && (
@@ -201,24 +201,40 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
                 <Sparkles className="h-3 w-3 text-purple-500" /> AI Recommended
               </div>
             )}
-            <p className="font-display text-base font-extrabold text-navy-900">
-              {formatCompactPrice(getPropertyPrice(property), property.purpose)}
-            </p>
-            <h3 className="mt-0.5 line-clamp-1 text-sm font-semibold text-navy-800 group-hover:text-navy-900">
-              {property.title}
-            </h3>
-            <p className="mt-1 flex items-center gap-1 text-xs text-navy-500">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-navy-400" />
-              <span className="line-clamp-1">
-                {property.locality_name ? `${property.locality_name}, ` : ''}
-                {property.city_name ?? 'India'}
-              </span>
-            </p>
-            {property.bedrooms != null && (
-              <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-navy-50 px-2 py-1 text-[11px] font-semibold text-navy-600">
-                <Bed className="h-3 w-3 text-navy-400" /> {property.bedrooms} {t('common:bhk', 'BHK')}
-              </span>
-            )}
+            {(() => {
+              const pricing = getPropertyPricingDisplay(property, { compactConstructed: true });
+              return (
+                <>
+                  <p className="font-display text-base font-extrabold text-navy-900 flex items-baseline gap-1.5 flex-wrap">
+                    {pricing.primaryPrice}
+                    {pricing.isLand && pricing.totalEstimatedPrice && (
+                      <span className="text-[11px] font-medium text-slate-500">
+                        (Est: {pricing.totalEstimatedPrice})
+                      </span>
+                    )}
+                  </p>
+                  <h3 className="mt-0.5 line-clamp-1 text-sm font-semibold text-navy-800 group-hover:text-navy-900">
+                    {property.title}
+                  </h3>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-navy-500">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-navy-400" />
+                    <span className="line-clamp-1">
+                      {property.locality_name ? `${property.locality_name}, ` : ''}
+                      {property.city_name ?? 'India'}
+                    </span>
+                  </p>
+                  {property.bedrooms != null ? (
+                    <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-navy-50 px-2 py-1 text-[11px] font-semibold text-navy-600">
+                      <Bed className="h-3 w-3 text-navy-400" /> {property.bedrooms} {t('common:bhk', 'BHK')}
+                    </span>
+                  ) : pricing.areaDisplay ? (
+                    <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 text-[11px] font-semibold">
+                      {pricing.areaDisplay}
+                    </span>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         </Link>
 

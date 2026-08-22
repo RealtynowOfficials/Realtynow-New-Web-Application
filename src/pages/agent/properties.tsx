@@ -16,6 +16,7 @@ import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column } from '../../components/data-table';
 import { mapJoined } from '../../lib/join-helpers';
 import { formatPrice, formatDate, generatePropertyUrl } from '../../lib/utils';
+import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
 import { useRealtimeCount } from '../../lib/realtime';
 import type { Property } from '../../lib/types';
 import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
@@ -162,7 +163,19 @@ export function AgentProperties() {
       key: 'price',
       header: 'Price',
       sortable: true,
-      render: (p) => <span className="font-semibold">{formatPrice(p.price, p.purpose)}</span>,
+      render: (p) => {
+        const pricing = getPropertyPricingDisplay(p);
+        return (
+          <span className="font-semibold text-navy-900">
+            {pricing.primaryPrice}
+            {pricing.isLand && pricing.totalEstimatedPrice && (
+              <span className="block text-xs font-normal text-navy-500">
+                Total: {pricing.totalEstimatedPrice}
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
     { key: 'view_count', header: 'Views', sortable: true },
@@ -322,6 +335,9 @@ export function AgentProperties() {
                 {p.locality_name ?? '—'}, {p.city_name ?? '—'}
               </p>
               <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(p.price, p.purpose)}</p>
+              {p.price_per_unit != null && (
+                <p className="text-xs font-semibold text-navy-500">{formatPrice(p.price_per_unit)} / {getPriceUnitLabel(p.area_unit)}</p>
+              )}
               <p className="text-xs text-navy-400 mt-1">Assigned: {formatDate(p.created_at)}</p>
             </div>
             <div className="mt-4 pt-3 border-t border-navy-100 flex flex-wrap items-center justify-between gap-2">

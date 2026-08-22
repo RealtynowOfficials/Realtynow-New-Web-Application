@@ -4,9 +4,11 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
+export const RENT_LIKE_PURPOSES = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'];
+
 export function getPropertyPrice(p?: { purpose?: string | null; price?: number | null; rent_amount?: number | null }): number | null {
   if (!p) return null;
-  const isRent = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'].includes(p.purpose || '');
+  const isRent = RENT_LIKE_PURPOSES.includes(p.purpose || '');
   if (isRent) {
     return p.rent_amount && p.rent_amount > 0 ? p.rent_amount : null;
   }
@@ -15,7 +17,7 @@ export function getPropertyPrice(p?: { purpose?: string | null; price?: number |
 
 export function formatPrice(value: number | null | undefined, purpose?: string): string {
   if (value == null) return '—';
-  const isRent = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'].includes(purpose || '');
+  const isRent = RENT_LIKE_PURPOSES.includes(purpose || '');
   const formatter = new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -27,7 +29,7 @@ export function formatPrice(value: number | null | undefined, purpose?: string):
 
 export function formatCompactPrice(value: number | null | undefined, purpose?: string): string {
   if (value == null) return '—';
-  const isRent = ['Rent', 'Lease', 'PG', 'CoLiving', 'Hostel', 'Short Stay', 'Vacation Rental'].includes(purpose || '');
+  const isRent = RENT_LIKE_PURPOSES.includes(purpose || '');
   let formatted = `₹${value}`;
   if (value >= 10000000) formatted = `₹${(value / 10000000).toFixed(2)} Cr`;
   else if (value >= 100000) formatted = `₹${(value / 100000).toFixed(2)} L`;

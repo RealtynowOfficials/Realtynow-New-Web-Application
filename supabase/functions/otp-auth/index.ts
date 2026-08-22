@@ -313,6 +313,13 @@ serve(async (req) => {
           },
           { onConflict: "id" },
         );
+
+      // The "ensure profile row exists" upsert further below re-applies
+      // `existingProfile?.role || "customer"` unconditionally — without this,
+      // a brand-new admin phone (existingProfile still null/stale from the
+      // initial lookup above) gets its role upserted to "admin" here, then
+      // immediately overwritten back to "customer" by that later step.
+      existingProfile = { ...existingProfile, role: "admin", status: "active" };
     } else if (PROFESSIONAL_INTENTS.includes(intent as ProfessionalIntent)) {
       const professionalIntent = intent as ProfessionalIntent;
       // Agent / Builder / Partner tabs: never auto-create, and the
@@ -402,38 +409,81 @@ serve(async (req) => {
           403,
         );
       }
-    } else if (!userId) {
-      const tempPassword = randomPassword();
-      const { data: created, error: createErr } = await admin.auth.admin.createUser({
-        phone: mobile,
-        phone_confirm: true,
-        password: tempPassword,
-        user_metadata: { role: "customer" },
-      });
+    } else {
+      // Buyer/Owner tab (the default intent whenever it's not admin and not
+      // one of the professional intents). This branch previously had no
+      // role check at all — an existing agent/builder/admin phone signing in
+      // here fell straight through to the "ensure profile row exists" upsert
+      // below, which *preserves* whatever role already exists, silently
+      // authenticating them under their real role and landing them in the
+      // wrong portal instead of telling them to use the right one. Mirror
+      // the exact same guard the agent/builder/partner branch above already
+      // has, so no account can ever be driven into the wrong portal by
+      // picking the wrong login tab.
+      if (existingProfile && existingProfile.role !== "customer") {
+        return json(
+          {
+            error: "This mobile number is registered under a different account type.",
+            success: false,
+            code: "ROLE_MISMATCH",
+            actualRole: existingProfile.role,
+          },
+          403,
+        );
+      }
+      if (existingProfile?.status === "suspended") {
+        return json(
+          { error: "Your account has been suspended. Please contact RealtyNow support.", success: false, code: "ACCOUNT_SUSPENDED" },
+          403,
+        );
+      }
 
-      if (createErr) {
-        const errMsg = (createErr.message || "").toLowerCase();
-        if (
-          errMsg.includes("already") ||
-          errMsg.includes("registered") ||
-          errMsg.includes("exists") ||
-          errMsg.includes("duplicate")
-        ) {
-          // Recover existing auth user seamlessly
-          const rec = await resolveExistingUserWithRetry(admin, mobile);
-          if (rec.userId) {
-            userId = rec.userId;
-            existingProfile = rec.profile;
+      if (!userId) {
+        const tempPassword = randomPassword();
+        const { data: created, error: createErr } = await admin.auth.admin.createUser({
+          phone: mobile,
+          phone_confirm: true,
+          password: tempPassword,
+          user_metadata: { role: "customer" },
+        });
+
+        if (createErr) {
+          const errMsg = (createErr.message || "").toLowerCase();
+          if (
+            errMsg.includes("already") ||
+            errMsg.includes("registered") ||
+            errMsg.includes("exists") ||
+            errMsg.includes("duplicate")
+          ) {
+            // Recover existing auth user seamlessly
+            const rec = await resolveExistingUserWithRetry(admin, mobile);
+            if (rec.userId) {
+              userId = rec.userId;
+              existingProfile = rec.profile;
+              // The account we just recovered could belong to a
+              // non-customer role too — re-check before proceeding.
+              if (existingProfile && existingProfile.role !== "customer") {
+                return json(
+                  {
+                    error: "This mobile number is registered under a different account type.",
+                    success: false,
+                    code: "ROLE_MISMATCH",
+                    actualRole: existingProfile.role,
+                  },
+                  403,
+                );
+              }
+            } else {
+              console.error("[otp-auth] customer createUser failed and could not be recovered:", createErr.message);
+              return error("Could not sign in with this mobile number. Please try again in a moment.", 400);
+            }
           } else {
-            console.error("[otp-auth] customer createUser failed and could not be recovered:", createErr.message);
-            return error("Could not sign in with this mobile number. Please try again in a moment.", 400);
+            return error(createErr.message ?? "Could not create account", 500);
           }
-        } else {
-          return error(createErr.message ?? "Could not create account", 500);
+        } else if (created?.user) {
+          userId = created.user.id;
+          isNewUser = true;
         }
-      } else if (created?.user) {
-        userId = created.user.id;
-        isNewUser = true;
       }
     }
 
@@ -505,7 +555,7 @@ serve(async (req) => {
     const mobile = rawMobile ? normalizeIndianMobile(rawMobile) : null;
     if (!mobile) return json({ authorized: false });
 
-    // 1. Check centralized list (Manager + Developer 9963509329 + env vars)
+    // 1. Check centralized list (sole authorized admin number + env vars)
     const isAuthorized = isAuthorizedAdminMobile(mobile);
 
     // 2. Check if an active admin profile already exists in DB
@@ -594,6 +644,7 @@ serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization");
     let callerId: string | null = null;
+    let isBootstrap = false;
 
     if (authHeader) {
       const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -615,10 +666,17 @@ serve(async (req) => {
         .in("role", ["admin", "super_admin"])
         .not("phone", "is", null);
       if ((count ?? 0) > 0) return error("Authentication required", 401);
+      isBootstrap = true;
     }
 
     const mobile = normalizeIndianMobile(phoneRaw);
     if (!mobile) return error("Invalid mobile number");
+
+    // The zero-admin bootstrap path above has no caller session to check —
+    // it exists only so the very first admin can be created. Restrict it to
+    // the one phone number authorized as admin, so it can never be used to
+    // self-provision an admin account for an arbitrary number.
+    if (isBootstrap && !isAuthorizedAdminMobile(mobile)) return error("Authentication required", 401);
 
     const { data: existingProfile } = await admin.from("profiles").select("id").eq("phone", mobile).maybeSingle();
     if (existingProfile) return error("A profile with this mobile number already exists", 409);

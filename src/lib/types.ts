@@ -96,6 +96,8 @@ export interface Property {
   title: string;
   description: string | null;
   property_type_id: string | null;
+  property_sub_type?: string | null;
+  listing_category?: string | null;
   purpose: PropertyPurpose;
   city_id: string | null;
   locality_id: string | null;
@@ -116,6 +118,8 @@ export interface Property {
   built_up_area: number | null;
   carpet_area: number | null;
   plot_area: number | null;
+  area_unit: string | null;
+  price_per_unit: number | null;
   facing: string | null;
   furnishing: Furnishing | null;
   parking: number;

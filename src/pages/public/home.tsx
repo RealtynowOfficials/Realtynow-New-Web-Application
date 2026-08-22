@@ -75,6 +75,8 @@ import { useLocationContext } from '../../contexts/location-context';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { useAuth } from '../../lib/auth';
 import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
+import { PropertyImage } from '../../components/property-image';
+import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
 import { PostPropertyLink } from '../../components/post-property-link';
 import { ContactAgentModal } from '../../components/contact-agent-modal';
 import { BookVisitModal } from '../../components/book-visit-modal';
@@ -168,12 +170,10 @@ export function HomePropertyCard({
         className="block flex-1"
       >
         <div className="relative aspect-video w-full overflow-hidden bg-slate-100">
-          <img
+          <PropertyImage
             src={getPropertyCoverImage(property)}
             alt={property.title}
-            loading="lazy"
-            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
-            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+            className="transition-transform duration-500 ease-out group-hover:scale-110"
           />
           {badge && (
             <span
@@ -219,24 +219,40 @@ export function HomePropertyCard({
         </div>
 
         <div className="flex flex-col p-3.5">
-          <p className="font-display text-base font-extrabold text-slate-900">
-            {formatCompactPrice(getPropertyPrice(property), property.purpose)}
-          </p>
-          <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
-            {property.title}
-          </h3>
-          <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-            <MapPin className="h-3 w-3 shrink-0" />
-            <span className="line-clamp-1">
-              {property.locality_name ? `${property.locality_name}, ` : ''}
-              {property.city_name ?? 'Hyderabad'}
-            </span>
-          </p>
-          {property.bedrooms != null && (
-            <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-              <Bed className="h-3 w-3 text-slate-400" /> {property.bedrooms} BHK
-            </span>
-          )}
+          {(() => {
+            const pricing = getPropertyPricingDisplay(property, { compactConstructed: true });
+            return (
+              <>
+                <p className="font-display text-base font-extrabold text-slate-900 flex items-baseline gap-1.5 flex-wrap">
+                  {pricing.primaryPrice}
+                  {pricing.isLand && pricing.totalEstimatedPrice && (
+                    <span className="text-[11px] font-medium text-slate-500">
+                      (Est: {pricing.totalEstimatedPrice})
+                    </span>
+                  )}
+                </p>
+                <h3 className="mt-0.5 font-display text-sm font-bold text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
+                  {property.title}
+                </h3>
+                <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  <span className="line-clamp-1">
+                    {property.locality_name ? `${property.locality_name}, ` : ''}
+                    {property.city_name ?? 'Hyderabad'}
+                  </span>
+                </p>
+                {property.bedrooms != null ? (
+                  <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                    <Bed className="h-3 w-3 text-slate-400" /> {property.bedrooms} BHK
+                  </span>
+                ) : pricing.areaDisplay ? (
+                  <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 text-[11px] font-semibold">
+                    {pricing.areaDisplay}
+                  </span>
+                ) : null}
+              </>
+            );
+          })()}
         </div>
       </Link>
 
@@ -673,7 +689,7 @@ function HeroSection() {
       onMouseLeave={() => setIsHovering(false)}
       onWheel={onWheel}
     >
-      <div className="relative h-[360px] sm:h-[390px] lg:h-[420px] max-h-[420px] w-full">
+      <div className="relative h-[360px] sm:h-[400px] lg:h-[440px] max-h-[460px] w-full">
         {/* Sliding track — cover background image */}
         <div className="h-full w-full overflow-hidden" ref={emblaRef}>
           <div className="flex h-full">
@@ -973,7 +989,7 @@ function useTypingPlaceholder(phrases: string[], active: boolean) {
 function AISmartSearch() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { detectLocation } = useLocationContext();
+  const { detectLocation, openPermissionGuide } = useLocationContext();
   const [tab, setTab] = useState<(typeof SEARCH_TABS)[number]>('Buy');
   const [query, setQuery] = useState('');
   const [listening, setListening] = useState(false);
@@ -1059,9 +1075,10 @@ function AISmartSearch() {
         console.warn('Geolocation error:', err);
         setLocating(false);
         if (err.code === 1) {
-          toast.addToast('error', 'Location permission denied. Please allow location access in your browser settings.');
+          openPermissionGuide();
+          toast.addToast('info', 'Please enable location in browser settings, or select your city.');
         } else {
-          toast.addToast('error', 'Failed to fetch live location. Please try again.');
+          toast.addToast('error', 'Failed to fetch live location. Please select your city manually.');
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -1222,15 +1239,15 @@ function AISmartSearch() {
 
   return (
     <div className="container-wide relative z-30 -mt-10 sm:-mt-14">
-      <div className="relative mx-auto w-[92%] sm:w-[85%] lg:w-[78%] max-w-5xl">
+      <div className="relative mx-auto w-[96%] sm:w-[90%] lg:w-[84%] max-w-5xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15, duration: 0.5 }}
           className="w-full rounded-[2rem] border border-slate-200/90 bg-white/95 p-3 sm:p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl"
         >
-          {/* Tabs */}
-          <div className="flex flex-wrap items-center gap-1 sm:gap-2 pb-2.5 border-b border-slate-100 px-1">
+          {/* Tabs with smooth horizontal snap-scroll on mobile */}
+          <div className="flex items-center gap-1 sm:gap-2 pb-2.5 border-b border-slate-100 px-1 overflow-x-auto no-scrollbar snap-x">
             {SEARCH_TABS.map((tItem) => (
               <button
                 key={tItem}
@@ -1241,7 +1258,7 @@ function AISmartSearch() {
                   }
                 }}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-200',
+                  'flex shrink-0 snap-center items-center gap-1.5 rounded-xl px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-200',
                   tab === tItem
                     ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-500/25 scale-[1.02]'
                     : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-900'

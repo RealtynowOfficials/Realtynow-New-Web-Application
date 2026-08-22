@@ -11,9 +11,11 @@ import { ensureUserProfile } from '../../lib/profile-utils';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { SharePropertyModal } from '../../components/share-property-modal';
+import { ContactAgentModal } from '../../components/contact-agent-modal';
 import { Button, Card, Input, Textarea, Badge, Avatar, EmptyState, Spinner, Modal, Select } from '../../components/ui';
 import { RatingStars } from '../../components/property-card';
-import { formatCompactPrice, formatNumber, cn, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { formatCompactPrice, formatPrice, formatNumber, cn, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { getPropertyPricingDisplay, isLandProperty, getPriceUnitLabel, getAreaUnitDisplay, fromAreaUnitCode } from '../../lib/plot-pricing';
 import { isCompared, toggleCompareProperty } from '../../lib/compare';
 import { toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { getSafePropertyImages, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
@@ -22,6 +24,11 @@ import { useSEO } from '../../hooks/use-seo';
 import { VirtualTourViewer } from '../../components/virtual-tour/virtual-tour-viewer';
 import { loadGoogleMaps } from '../../lib/googleMaps';
 import type { VirtualTour } from '../../lib/types';
+
+// Fixed brand asset used for every WhatsApp/social share preview (og:image /
+// twitter:image) — deliberately never the property's own photo, so shared
+// links always carry the RealtyNow logo. Matches the app's PWA icon asset.
+const BRAND_SHARE_LOGO = 'https://realtynow.in/pwa-512x512.png';
 
 interface AgentInfo {
   first_name: string | null;
@@ -234,7 +241,7 @@ export function PropertyDetailPage() {
 
   const { t } = useLanguageContext();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { id: routeId } = useParams<{ id: string }>();
   const id = useMemo(() => {
     if (!routeId) return undefined;
@@ -254,7 +261,6 @@ export function PropertyDetailPage() {
   const [reviewDeleteConfirm, setReviewDeleteConfirm] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [showVirtualTour, setShowVirtualTour] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
   const [apptForm, setApptForm] = useState({ date: '', time: '', notes: '' });
   const [reviewForm, setReviewForm] = useState({ id: '', rating: 5, title: '', comment: '' });
   const [reportForm, setReportForm] = useState({ reason: '', details: '' });
@@ -397,19 +403,32 @@ export function PropertyDetailPage() {
     enabled: !!id,
   });
 
+  // Tracks exactly one view per genuine page mount (initial load, refresh,
+  // or navigating away and back all remount this component and correctly
+  // count again — see spec: "Open = +1, Refresh = +1, no accidental
+  // duplicates from one mount"). sessionStorage was deliberately NOT used
+  // here: it persists across refreshes within the same tab, which would
+  // have silently suppressed every refresh's view — this ref only lives
+  // for the current mount, so React StrictMode's double effect-fire is
+  // absorbed without under-counting real repeat visits.
+  const trackedPropertyIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!id || !property) return;
-    
-    // Only track public views for published properties
-    // Exclude owner previews from view counting
-    if (property.status === 'published' && property.owner_id !== user?.id) {
-      const sessionKey = `viewed_property_${id}`;
-      if (!sessionStorage.getItem(sessionKey)) {
-        sessionStorage.setItem(sessionKey, '1');
-        trackPropertyView(id, user?.id);
-      }
+    if (trackedPropertyIdRef.current === id) return;
+
+    const isInternalViewer =
+      property.owner_id === user?.id ||
+      property.assigned_agent_id === user?.id ||
+      (profile?.role === 'admin' || profile?.role === 'super_admin');
+
+    // Only genuine public visits to a live listing count as a customer view.
+    if ((property.status === 'published' || property.is_live) && !isInternalViewer) {
+      trackedPropertyIdRef.current = id;
+      trackPropertyView(id, user?.id).catch((err) => {
+        console.error('Property view tracking failed (property still loads normally):', err);
+      });
     }
-  }, [id, property, user?.id]);
+  }, [id, property, user?.id, profile?.role]);
 
   useEffect(() => {
     if (id) {
@@ -477,23 +496,6 @@ export function PropertyDetailPage() {
     window.open(href, '_blank', 'noopener,noreferrer');
     setShowShare(false);
   };
-
-  const enquiryMutation = useMutation({
-    mutationFn: async () => {
-      if (!user) throw new Error('Please sign in to submit an enquiry');
-      const payload: Record<string, unknown> = { property_id: id, name: form.name, email: form.email, phone: form.phone, message: form.message };
-      payload.customer_id = user.id;
-      if (property?.assigned_agent_id) payload.agent_id = property.assigned_agent_id;
-      const { error } = await supabase.from('enquiries').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      setContactOpen(false);
-      setForm({ name: '', email: '', phone: '', message: '' });
-      addToast('success', 'Enquiry sent successfully!');
-    },
-    onError: (err: any) => addToast('error', err.message || 'Failed to send enquiry'),
-  });
 
   const apptMutation = useMutation({
     mutationFn: async () => {
@@ -616,11 +618,13 @@ export function PropertyDetailPage() {
       }
     : undefined;
 
+  const pricing = useMemo(() => getPropertyPricingDisplay(property), [property]);
+
   const seoBhk = property?.bedrooms ? `${property.bedrooms} BHK ` : '';
-  const seoType = property?.property_type_name || 'Property';
+  const seoType = property?.property_type_name || property?.property_sub_type || (pricing.isLand ? 'Plot / Land' : 'Property');
   const seoPurpose = property?.purpose === 'Rent' ? 'Rent' : 'Sale';
   const seoLoc = property?.locality_name || property?.city_name || 'Hyderabad';
-  const seoPrice = property?.price ? ` — ₹${Number(property.price).toLocaleString('en-IN')}` : '';
+  const seoPrice = pricing.primaryPrice && pricing.primaryPrice !== '—' ? ` — ${pricing.primaryPrice}` : '';
 
   useSEO({
     title: property?.seo_title || property?.title ? `${property?.seo_title || property?.title}` : undefined,
@@ -629,10 +633,12 @@ export function PropertyDetailPage() {
       property?.description ||
       `${seoBhk}${seoType} for ${seoPurpose} in ${seoLoc}${seoPrice}. Verified listing on RealtyNow — All About Realty.`,
     type: 'article',
-    image: property?.og_image || coverImage || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+    // WhatsApp/social share previews must always show the RealtyNow logo, never
+    // the property's own photo — intentionally not property?.og_image/coverImage.
+    image: BRAND_SHARE_LOGO,
     twitterTitle: property?.twitter_title || property?.title || undefined,
     twitterDescription: property?.twitter_description || property?.description || undefined,
-    twitterImage: property?.twitter_image || property?.og_image || coverImage || undefined,
+    twitterImage: BRAND_SHARE_LOGO,
     schema,
   });
 
@@ -701,9 +707,9 @@ export function PropertyDetailPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-white pb-24 lg:pb-0">
+    <div className="min-h-screen bg-white pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
       {/* 1. CINEMATIC HERO BANNER: Dark Left Content Area (40-45%) + Natural Bright Property Image (55-60%) */}
-      <section className="relative h-[340px] sm:h-[370px] lg:h-[380px] w-full bg-slate-950 overflow-hidden select-none">
+      <section className="relative min-h-[360px] sm:min-h-[380px] md:h-[400px] w-full bg-slate-950 overflow-hidden select-none flex flex-col justify-between">
         {/* Background image carousel — 100% natural opacity and vivid colors */}
         <div className="absolute inset-0 overflow-hidden" ref={emblaRef}>
           <div className="flex h-full">
@@ -787,7 +793,7 @@ export function PropertyDetailPage() {
         )}
 
         {/* Top Bar: Dynamic Breadcrumbs & Action Buttons */}
-        <div className="absolute top-0 left-0 right-0 p-4 sm:p-5 z-20 flex justify-between items-start pointer-events-none">
+        <div className="relative top-0 left-0 right-0 p-4 sm:p-5 z-20 flex justify-between items-start pointer-events-none">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs text-slate-300 drop-shadow-md pointer-events-auto">
             {breadcrumbs.map((b, i) => (
               <span key={b.to} className="flex items-center gap-1.5">
@@ -832,11 +838,11 @@ export function PropertyDetailPage() {
           </div>
         </div>
 
-        {/* Hero Content & Photo Count */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 lg:p-8 z-20 pointer-events-none">
-          <div className="container-page px-0 flex flex-col md:flex-row md:items-end justify-between gap-5 pointer-events-auto">
-            {/* Left Content Area: constrained to max-w-xl so it stays within the dark overlay */}
-            <div className="max-w-xl text-white space-y-2.5">
+        {/* Hero Content & Photo Count — Centered Vertically */}
+        <div className="relative z-20 w-full my-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-3 pointer-events-none">
+          <div className="container-page px-0 flex flex-col md:flex-row md:items-center justify-between gap-4 pointer-events-auto">
+            {/* Left Content Area: constrained to max-w-2xl so it stays within the dark overlay */}
+            <div className="max-w-2xl text-white space-y-2 sm:space-y-2.5">
               {/* Badge: FOR SALE / FOR RENT with RealtyNow brand red #E31E24 */}
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-[#E31E24] text-white shadow-md">
@@ -863,54 +869,75 @@ export function PropertyDetailPage() {
               </p>
 
               {/* Price: Prominent RealtyNow Red #E31E24 + Negotiable badge */}
-              <div className="flex items-center gap-3 pt-1">
+              <div className="flex flex-wrap items-baseline gap-3 pt-0.5">
                 <span className="font-display text-2xl sm:text-3xl lg:text-4xl font-black text-[#E31E24] tracking-tight">
-                  {formatCompactPrice(getPropertyPrice(property), property.purpose)}
+                  {pricing.primaryPrice}
                 </span>
                 <span className="rounded-lg bg-black/60 border border-[#E31E24]/60 px-2.5 py-0.5 text-xs text-white backdrop-blur-md font-semibold">
                   Negotiable
                 </span>
               </div>
 
-              {/* Property Specs preview (if bedrooms / bathrooms / area present) */}
-              <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1 text-slate-200 text-xs sm:text-sm font-medium">
-                {property.bedrooms && (
-                  <div className="flex items-center gap-1.5">
-                    <Bed className="h-4 w-4 text-slate-400" />
-                    <span>
-                      <strong className="text-white font-bold">{property.bedrooms}</strong> Bedrooms
-                    </span>
-                  </div>
-                )}
-                {property.bathrooms && (
-                  <div className="flex items-center gap-1.5">
-                    <Bath className="h-4 w-4 text-slate-400" />
-                    <span>
-                      <strong className="text-white font-bold">{property.bathrooms}</strong> Bathrooms
-                    </span>
-                  </div>
-                )}
-                {property.built_up_area && (
-                  <div className="flex items-center gap-1.5">
-                    <Maximize className="h-4 w-4 text-slate-400" />
-                    <span>
-                      <strong className="text-white font-bold">{property.built_up_area}</strong> Sq Ft
-                    </span>
-                  </div>
-                )}
-                {property.parking && (
-                  <div className="flex items-center gap-1.5">
-                    <Car className="h-4 w-4 text-slate-400" />
-                    <span>
-                      <strong className="text-white font-bold">{property.parking}</strong> Parking
-                    </span>
-                  </div>
-                )}
-              </div>
+              {/* Secondary Land Information: Land Area & Estimated Total Property Value */}
+              {pricing.isLand ? (
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 pt-0.5 text-slate-200 text-xs sm:text-sm font-medium">
+                  {pricing.areaDisplay && (
+                    <div className="flex items-center gap-1.5">
+                      <Maximize className="h-4 w-4 text-slate-400" />
+                      <span>
+                        Plot Area: <strong className="text-white font-bold">{pricing.areaDisplay}</strong>
+                      </span>
+                    </div>
+                  )}
+                  {pricing.totalEstimatedPrice && (
+                    <div className="flex items-center gap-1.5 text-slate-300">
+                      <span>
+                        Estimated Total Value: <strong className="text-emerald-400 font-bold">{pricing.totalEstimatedPrice}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Constructed Property Specs preview (Bedrooms / Bathrooms / Area / Parking) */
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-0.5 text-slate-200 text-xs sm:text-sm font-medium">
+                  {!!property.bedrooms && (
+                    <div className="flex items-center gap-1.5">
+                      <Bed className="h-4 w-4 text-slate-400" />
+                      <span>
+                        <strong className="text-white font-bold">{property.bedrooms}</strong> BHK
+                      </span>
+                    </div>
+                  )}
+                  {!!property.bathrooms && (
+                    <div className="flex items-center gap-1.5">
+                      <Bath className="h-4 w-4 text-slate-400" />
+                      <span>
+                        <strong className="text-white font-bold">{property.bathrooms}</strong> Baths
+                      </span>
+                    </div>
+                  )}
+                  {!!property.built_up_area && (
+                    <div className="flex items-center gap-1.5">
+                      <Maximize className="h-4 w-4 text-slate-400" />
+                      <span>
+                        <strong className="text-white font-bold">{property.built_up_area}</strong> Sq Ft
+                      </span>
+                    </div>
+                  )}
+                  {!!property.parking && (
+                    <div className="flex items-center gap-1.5">
+                      <Car className="h-4 w-4 text-slate-400" />
+                      <span>
+                        <strong className="text-white font-bold">{property.parking}</strong> Parking
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Photo Count Capsule Button (Bottom Right) */}
-            <div className="shrink-0">
+            {/* Photo Count Capsule Button (Right aligned) */}
+            <div className="shrink-0 self-start md:self-end mt-2 md:mt-0">
               <button
                 onClick={() => {
                   setActiveImg(heroSlide);
@@ -927,6 +954,9 @@ export function PropertyDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Bottom indicator space */}
+        <div className="relative z-20 w-full h-3 pointer-events-none" />
       </section>
 
       {/* 2. PROPERTY IDENTITY STRIP (Clean White Bar with Red Accents) */}
@@ -964,7 +994,7 @@ export function PropertyDetailPage() {
             </div>
             <div className="flex flex-col">
               <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Property Type</span>
-              <span className="font-extrabold text-slate-900">{property.property_type_name ?? 'Property'}</span>
+              <span className="font-extrabold text-slate-900">{property.property_type_name || property.property_sub_type || 'Property'}</span>
             </div>
           </div>
 
@@ -1032,7 +1062,7 @@ export function PropertyDetailPage() {
                     </p>
                   </div>
 
-                  {property.price && (property.built_up_area || property.carpet_area) ? (
+                  {(property.price || pricing.totalEstimatedPriceNumeric) && (property.built_up_area || property.carpet_area || pricing.totalArea) ? (
                     <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/20 shrink-0">
                       <div className="text-right">
                         <span className="text-[10px] uppercase tracking-wider text-slate-300 font-bold block">Overall Rating</span>
@@ -1052,7 +1082,7 @@ export function PropertyDetailPage() {
                   )}
                 </div>
 
-                {property.price && (property.built_up_area || property.carpet_area) ? (
+                {(property.price || pricing.totalEstimatedPriceNumeric) && (property.built_up_area || property.carpet_area || pricing.totalArea) ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-center">
                     <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
                       <span className="text-[11px] text-slate-400 block font-medium">Price Value</span>
@@ -1132,26 +1162,57 @@ export function PropertyDetailPage() {
             <section className="scroll-mt-32" id="specifications">
               <h2 className="font-display text-2xl font-bold text-navy-900 mb-6">Property Specifications</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {[
-                  { label: 'Bedrooms', value: property.bedrooms, icon: Bed },
-                  { label: 'Bathrooms', value: property.bathrooms, icon: Bath },
-                  { label: 'Built-up Area', value: property.built_up_area ? `${property.built_up_area} Sq Ft` : null, icon: Maximize },
-                  { label: 'Carpet Area', value: property.carpet_area ? `${property.carpet_area} Sq Ft` : null, icon: Maximize },
-                  { label: 'Floor', value: property.floor_number != null ? `${property.floor_number} of ${property.total_floors ?? '—'}` : null, icon: Layers },
-                  { label: 'Furnishing', value: property.furnishing, icon: Box },
-                  { label: 'Facing', value: property.facing, icon: Compass },
-                  { label: 'Parking', value: property.parking, icon: Car },
-                  { label: 'Construction Year', value: property.age_of_property ? (new Date().getFullYear() - property.age_of_property).toString() : null, icon: Building },
-                  { label: 'Possession', value: property.possession_status, icon: Clock },
-                ].filter(s => s.value != null).map((s, idx) => (
-                  <div key={idx} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-navy-500 mb-1">
-                      <s.icon className="h-4 w-4" />
-                      <span className="text-xs uppercase tracking-wider font-semibold">{s.label}</span>
-                    </div>
-                    <span className="font-bold text-navy-900 text-[15px]">{s.value}</span>
-                  </div>
-                ))}
+                {pricing.isLand ? (
+                  (() => {
+                    const plot = (property as any).plot_details || (property as any).features?.plot_details || {};
+                    const layoutType = (property as any).layout_type || (property as any).features?.layout_type || plot.layoutType;
+                    return [
+                      { label: 'Plot Area', value: pricing.areaDisplay, icon: Maximize },
+                      { label: 'Price Per Unit', value: pricing.primaryPrice, icon: Building },
+                      { label: 'Estimated Total Value', value: pricing.totalEstimatedPrice, icon: Flame },
+                      { label: 'Layout Approval', value: layoutType || plot.approvalAuthority, icon: ShieldCheck },
+                      { label: 'Facing', value: property.facing || plot.facing, icon: Compass },
+                      { label: 'Road Width', value: plot.roadWidth ? `${plot.roadWidth} ft` : null, icon: Navigation2 },
+                      { label: 'Corner Plot', value: plot.cornerPlot, icon: Box },
+                      { label: 'Ownership', value: plot.ownershipType, icon: UserCheck },
+                      { label: 'Legal Status', value: plot.legallyClear === 'Yes' ? 'Legally Clear' : plot.legallyClear, icon: CheckCircle2 },
+                      { label: 'Possession', value: property.possession_status ?? plot.devStatus, icon: Clock },
+                    ];
+                  })()
+                    .filter((s) => s.value != null && s.value !== '')
+                    .map((s, idx) => (
+                      <div key={idx} className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 text-navy-500 mb-1">
+                          <s.icon className="h-4 w-4" />
+                          <span className="text-xs uppercase tracking-wider font-semibold">{s.label}</span>
+                        </div>
+                        <span className="font-bold text-navy-900 text-[15px]">{s.value}</span>
+                      </div>
+                    ))
+                ) : (
+                  [
+                    { label: 'Bedrooms', value: property.bedrooms, icon: Bed },
+                    { label: 'Bathrooms', value: property.bathrooms, icon: Bath },
+                    { label: 'Built-up Area', value: property.built_up_area ? `${property.built_up_area} Sq Ft` : null, icon: Maximize },
+                    { label: 'Carpet Area', value: property.carpet_area ? `${property.carpet_area} Sq Ft` : null, icon: Maximize },
+                    { label: 'Floor', value: property.floor_number != null ? `${property.floor_number} of ${property.total_floors ?? '—'}` : null, icon: Layers },
+                    { label: 'Furnishing', value: property.furnishing, icon: Box },
+                    { label: 'Facing', value: property.facing, icon: Compass },
+                    { label: 'Parking', value: property.parking, icon: Car },
+                    { label: 'Construction Year', value: property.age_of_property ? (new Date().getFullYear() - property.age_of_property).toString() : null, icon: Building },
+                    { label: 'Possession', value: property.possession_status, icon: Clock },
+                  ]
+                    .filter((s) => s.value != null && s.value !== '')
+                    .map((s, idx) => (
+                      <div key={idx} className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 text-navy-500 mb-1">
+                          <s.icon className="h-4 w-4" />
+                          <span className="text-xs uppercase tracking-wider font-semibold">{s.label}</span>
+                        </div>
+                        <span className="font-bold text-navy-900 text-[15px]">{s.value}</span>
+                      </div>
+                    ))
+                )}
               </div>
             </section>
 
@@ -1271,6 +1332,20 @@ export function PropertyDetailPage() {
                           <span className="text-navy-600 font-medium">Price per Sq Ft</span>
                           <span className="text-lg font-bold text-navy-900">₹{formatNumber(Math.round(getPropertyPrice(property)! / property.built_up_area))}</span>
                         </div>
+                      )}
+                      {property.price_per_unit != null && (
+                        <>
+                          <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                            <span className="text-navy-600 font-medium">Price per {getPriceUnitLabel(property.area_unit)}</span>
+                            <span className="text-lg font-bold text-navy-900">{formatPrice(property.price_per_unit)}</span>
+                          </div>
+                          {property.plot_area != null && (
+                            <div className="flex justify-between items-center pb-6 border-b border-navy-50">
+                              <span className="text-navy-600 font-medium">Total Area</span>
+                              <span className="text-lg font-bold text-navy-900">{formatNumber(property.plot_area)} {fromAreaUnitCode(property.area_unit) || getPriceUnitLabel(property.area_unit)}</span>
+                            </div>
+                          )}
+                        </>
                       )}
                     </>
                   )}
@@ -1532,7 +1607,7 @@ export function PropertyDetailPage() {
       </div>
 
       {/* MOBILE STICKY ACTION BAR */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-navy-100 p-4 shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex gap-3">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-navy-100 p-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex gap-3">
         {agent?.phone && (
           <a href={`https://wa.me/${agent.phone.replace(/[^\d]/g, '')}`} className="flex-1">
             <Button size="lg" variant="secondary" className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50">
@@ -1632,30 +1707,34 @@ export function PropertyDetailPage() {
         document.body
       )}
 
-      {/* Contact modal */}
-      <Modal
-        open={contactOpen}
-        onClose={() => setContactOpen(false)}
-        title={t('property.contactAgent', 'Contact Agent')}
-        footer={
-          <Button loading={enquiryMutation.isPending} onClick={() => enquiryMutation.mutate()} icon={<Send className="h-4 w-4" />} className="w-full bg-red-600 hover:bg-red-700 text-white border-0">
-            {t('forms.sendEnquiry', 'Send enquiry')}
-          </Button>
-        }
-      >
-        <p className="mb-4 text-sm text-navy-500">{t('property.shareDetailsMsg', 'Share your details. The agent will reach out shortly.')}</p>
-        <div className="space-y-4">
-          <Input label={t('forms.name', 'Name')} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={t('forms.yourName', 'Your name')} />
-          <Input label={t('forms.email', 'Email')} type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="you@email.com" />
-          <Input label={t('forms.phone', 'Phone')} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91 90000 00000" />
-          <Textarea label={t('forms.message', 'Message')} value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} placeholder={t('forms.interestedMsg', "I'm interested in this property. Please share more details.")} />
-          {enquiryMutation.isSuccess && (
-            <p className="text-sm text-emerald-600 flex items-center gap-1 font-medium bg-emerald-50 p-3 rounded-lg">
-              <Check className="h-4 w-4" /> {t('property.enquirySentMsg', 'Enquiry sent! The agent will contact you soon.')}
-            </p>
-          )}
-        </div>
-      </Modal>
+      {/* Contact Agent Modal */}
+      {property && (
+        <ContactAgentModal
+          isOpen={contactOpen}
+          onClose={() => setContactOpen(false)}
+          property={{
+            id: property.id,
+            title: property.title,
+            assigned_agent_id: property.assigned_agent_id,
+            owner_id: property.owner_id,
+            city_name: property.city_name,
+            locality_name: property.locality_name,
+          }}
+          agentOverride={
+            agent
+              ? {
+                  id: property.assigned_agent_id || property.owner_id || agent.id || undefined,
+                  name: agentName,
+                  phone: agent.phone,
+                  email: agent.email,
+                  avatar_url: agent.avatar_url,
+                  company: agent.company,
+                  is_verified: true,
+                }
+              : null
+          }
+        />
+      )}
 
       {/* Appointment modal */}
       <Modal

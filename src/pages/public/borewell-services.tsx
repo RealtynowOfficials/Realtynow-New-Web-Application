@@ -16,21 +16,30 @@ export function BorewellServicesPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      toast.addToast('error', 'Please log in to submit a service request.');
+    if (!form.name.trim() || !form.phone.trim()) {
+      toast.addToast('error', 'Please provide your name and phone number.');
       return;
     }
     setSubmitting(true);
     const { error } = await supabase.from('enquiries').insert({
-      name: form.name,
-      email: form.email,
-      phone: form.phone,
+      name: form.name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim(),
+      customer_id: user?.id ?? null,
       property_id: null,
       tags: ['borewell-services'],
-      message: `Borewell Services enquiry — Location: ${form.location || 'N/A'}. ${form.message}`,
+      source: 'borewell_services_page',
+      status: 'new',
+      lead_status: 'new',
+      message: `Borewell Services enquiry — Location: ${form.location || 'N/A'}. ${form.message || ''}`,
     });
     setSubmitting(false);
-    if (!error) setSent(true);
+    if (!error) {
+      setSent(true);
+      toast.addToast('success', 'Service request submitted successfully!');
+    } else {
+      toast.addToast('error', 'Failed to submit request. Please try again.');
+    }
   };
 
   return (

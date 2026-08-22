@@ -57,7 +57,7 @@ export function BlogListPage() {
       <p className="mt-3 text-lg text-navy-600 max-w-2xl">{t('blog.subtitle', 'Insights, trends, and guides on real estate. Stay informed with our latest updates and expert analysis.')}</p>
       
       <div className="mt-8 flex flex-wrap items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-navy-100">
-        <div className="relative flex-1 min-w-[250px]">
+        <div className="relative flex-1 min-w-0 sm:min-w-[250px] w-full sm:w-auto">
           <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-navy-400" />
           <input
             value={search}
@@ -408,12 +408,27 @@ export function ContactPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      toast.addToast('error', 'Please log in to submit this form.');
+    if (!form.name.trim() || !form.phone.trim()) {
+      toast.addToast('error', 'Please provide your name and phone number.');
       return;
     }
-    const { error } = await supabase.from('enquiries').insert({ ...form, property_id: null });
-    if (!error) setSent(true);
+    const { error } = await supabase.from('enquiries').insert({
+      name: form.name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim(),
+      message: form.message.trim() || null,
+      customer_id: user?.id ?? null,
+      property_id: null,
+      source: 'contact_page',
+      status: 'new',
+      lead_status: 'new',
+    });
+    if (!error) {
+      setSent(true);
+      toast.addToast('success', 'Message sent successfully!');
+    } else {
+      toast.addToast('error', 'Failed to send message. Please try again.');
+    }
   };
 
   return (

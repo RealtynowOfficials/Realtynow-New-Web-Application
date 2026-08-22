@@ -12,8 +12,8 @@ const corsHeaders = {
 };
 
 const SITE_URL = Deno.env.get('PUBLIC_SITE_URL') || 'https://realtynow.in';
-const BRAND_LOGO = 'https://realtynow.in/icons/icon-512x512.png';
-const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80';
+const BRAND_LOGO = 'https://realtynow.in/pwa-512x512.png';
+const FALLBACK_IMAGE = BRAND_LOGO;
 
 function formatCompactPrice(price: number | string | null | undefined, purpose?: string | null): string {
   if (!price) return 'Price on Request';
@@ -90,9 +90,10 @@ Deno.serve(async (req) => {
 
   const supabase = serviceClient();
 
-  // Fetch property details from v_properties_search view or properties table
+  // v_properties_search joins in property_type_name/locality_name/city_name —
+  // the raw properties table doesn't carry those denormalized columns.
   const { data: prop, error } = await supabase
-    .from('properties')
+    .from('v_properties_search')
     .select('*')
     .eq('id', propertyId)
     .maybeSingle();
@@ -138,13 +139,9 @@ Deno.serve(async (req) => {
     .replace(/"/g, '&quot;')
     .slice(0, 200);
 
-  // Determine highest quality cover image
-  let ogImage = FALLBACK_IMAGE;
-  if (prop.og_image && typeof prop.og_image === 'string' && prop.og_image.startsWith('http')) {
-    ogImage = prop.og_image;
-  } else if (Array.isArray(prop.images) && prop.images.length > 0 && prop.images[0]) {
-    ogImage = prop.images[0];
-  }
+  // Share previews always carry the RealtyNow logo, never the property's own
+  // photo — intentionally not prop.og_image/prop.images[0].
+  const ogImage = BRAND_LOGO;
 
   // Canonical Property URL
   const slug = (prop.title || 'property')
@@ -173,7 +170,7 @@ Deno.serve(async (req) => {
   <meta property="og:url" content="${canonicalUrl}">
   <meta property="og:image" content="${ogImage}">
   <meta property="og:image:secure_url" content="${ogImage}">
-  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="${title}">
@@ -214,7 +211,9 @@ Deno.serve(async (req) => {
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #fff; padding: 40px 20px; text-align: center;">
   <div style="max-width: 600px; margin: 0 auto; background: #1e293b; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-    <img src="${ogImage}" alt="${title}" style="width: 100%; height: 280px; object-fit: cover;">
+    <div style="width: 100%; height: 280px; background: #b61f24; display: flex; align-items: center; justify-content: center;">
+      <img src="${ogImage}" alt="RealtyNow" style="width: 140px; height: 140px; object-fit: contain;">
+    </div>
     <div style="padding: 24px;">
       <span style="background: #e11d48; color: #fff; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 800; text-transform: uppercase;">
         ${prop.purpose === 'Rent' ? 'FOR RENT' : 'FOR SALE'}

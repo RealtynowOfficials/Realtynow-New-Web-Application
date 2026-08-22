@@ -45,7 +45,7 @@ export function NotificationToolbar({
     <div className="sticky top-[64px] z-20 -mx-4 mb-5 border-b border-navy-100 bg-white/90 px-4 py-3 backdrop-blur-md dark:border-navy-800 dark:bg-navy-950/90 sm:top-0 sm:rounded-2xl sm:border sm:shadow-sm">
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[200px] flex-1">
+          <div className="relative min-w-0 sm:min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-400" />
             <input
               value={search}

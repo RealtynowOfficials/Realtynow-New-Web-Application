@@ -16,21 +16,30 @@ export function HomeLoansPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      toast.addToast('error', 'Please log in to submit a loan enquiry.');
+    if (!form.name.trim() || !form.phone.trim()) {
+      toast.addToast('error', 'Please provide your name and phone number.');
       return;
     }
     setSubmitting(true);
     const { error } = await supabase.from('enquiries').insert({
-      name: form.name,
-      email: form.email,
-      phone: form.phone,
+      name: form.name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim(),
+      customer_id: user?.id ?? null,
       property_id: null,
       tags: ['home-loan'],
-      message: `Home Loan enquiry — Loan amount required: ${form.loanAmount || 'N/A'}. ${form.message}`,
+      source: 'home_loans_page',
+      status: 'new',
+      lead_status: 'new',
+      message: `Home Loan enquiry — Loan amount required: ${form.loanAmount || 'N/A'}. ${form.message || ''}`,
     });
     setSubmitting(false);
-    if (!error) setSent(true);
+    if (!error) {
+      setSent(true);
+      toast.addToast('success', 'Loan enquiry submitted successfully!');
+    } else {
+      toast.addToast('error', 'Failed to submit enquiry. Please try again.');
+    }
   };
 
   const [calcAmount, setCalcAmount] = useState(5000000);

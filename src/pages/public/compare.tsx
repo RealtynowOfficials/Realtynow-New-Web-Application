@@ -6,6 +6,7 @@ import { fetchComparedProperties, clearCompareList, toggleCompareProperty } from
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { formatCompactPrice, formatPrice, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
+import { getPropertyPricingDisplay } from '../../lib/plot-pricing';
 import type { Property } from '../../lib/types';
 import { useToast } from '../../components/toast';
 import { Spinner } from '../../components/ui';
@@ -19,7 +20,23 @@ export function ComparePage() {
   const [loading, setLoading] = useState(true);
 
   const specRows: { label: string; key: keyof Property; format?: (v: unknown, p: Property) => string }[] = [
-    { label: t('property.price', 'Price'), key: 'price', format: (_, p) => formatPrice(getPropertyPrice(p)) },
+    { label: t('property.price', 'Price / Rate'), key: 'price', format: (_, p) => getPropertyPricingDisplay(p).primaryPrice },
+    {
+      label: 'Plot / Land Area',
+      key: 'plot_area',
+      format: (_, p) => {
+        const pr = getPropertyPricingDisplay(p);
+        return pr.isLand && pr.areaDisplay ? pr.areaDisplay : '—';
+      },
+    },
+    {
+      label: 'Estimated Total Value',
+      key: 'price',
+      format: (_, p) => {
+        const pr = getPropertyPricingDisplay(p);
+        return pr.isLand && pr.totalEstimatedPrice ? pr.totalEstimatedPrice : formatPrice(getPropertyPrice(p), p.purpose);
+      },
+    },
     { label: t('search.purposeLabel', 'Purpose'), key: 'purpose' },
     { label: t('search.propertyTypeLabel', 'Property Type'), key: 'property_type_name' },
     { label: t('property.bedrooms', 'Bedrooms'), key: 'bedrooms', format: (v) => (v != null ? `${v} BHK` : '') },
@@ -213,7 +230,7 @@ export function ComparePage() {
 
                         {/* Price */}
                         <p className="text-lg font-bold text-red-600 border-t border-gray-100 pt-2">
-                          {formatCompactPrice(getPropertyPrice(p), p.purpose)}
+                          {getPropertyPricingDisplay(p, { compactConstructed: true }).primaryPrice}
                         </p>
                       </motion.div>
                     </th>

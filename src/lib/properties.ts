@@ -204,7 +204,14 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
   let q = supabase
     .from('v_properties_search')
     .select('*', { count: 'exact' })
-    .or('status.eq.published,status.eq.live,is_live.eq.true');
+    .or('status.eq.published,status.eq.live,is_live.eq.true')
+    // Defense-in-depth: the DB CHECK constraint + admin_make_property_live()
+    // already make it structurally impossible for a non-draft row to have
+    // price/rent_amount below MIN_PROPERTY_PRICE (see price-validation.ts),
+    // but public search must never depend on that alone (see #22 of the
+    // pricing-restriction spec) — exactly one of price/rent_amount is ever
+    // meaningfully populated per listing, so this OR needs no purpose branching.
+    .or('price.gte.1000,rent_amount.gte.1000');
 
   let activePurpose = filters.purpose;
   if (!activePurpose && filters.q) {
@@ -507,6 +514,21 @@ export async function updatePropertyStatus(id: string, status: PropertyStatus, r
   return data;
 }
 
+// The RPC fallback chain below exists for RPC *unavailability* (e.g. an
+// environment where the function was never deployed) — it must never
+// trigger for a deliberate business-rule rejection from a working RPC
+// (wrong price, missing title, unauthorized caller), or a clean rejection
+// message like "This property cannot be published. The minimum property
+// price is ₹1,000." gets silently discarded and retried via weaker
+// fallbacks, eventually hitting the raw UPDATE fallback — which the price
+// CHECK constraint also blocks, but with a raw, ugly Postgres error
+// instead of the friendly one the RPC already gave us.
+function isMissingRpcError(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  const msg = String(err.message || '').toLowerCase();
+  return err.code === 'PGRST202' || msg.includes('could not find the function') || msg.includes('does not exist');
+}
+
 export async function approveProperty(id: string) {
   const {
     data: { user: currentUser },
@@ -520,6 +542,9 @@ export async function approveProperty(id: string) {
 
   if (!rpcError && rpcData) {
     return rpcData;
+  }
+  if (rpcError && !isMissingRpcError(rpcError)) {
+    throw new Error(rpcError.message);
   }
 
   // Fallback 1: admin_approve_property RPC
@@ -639,11 +664,27 @@ export async function getPropertyVerification(propertyId: string) {
   return data;
 }
 
+// supabase-js's functions.invoke() only sets `error` to a generic
+// "Edge Function returned a non-2xx status code" for any non-2xx response
+// — the actual { error: "..." } JSON body the function returned (e.g. the
+// friendly "minimum property price is ₹1,000" message) is only reachable
+// via error.context, a raw Response that must be read/parsed manually.
+// Without this, a business-rule rejection surfaces as an opaque generic
+// error instead of the message the edge function deliberately returned.
+async function extractFunctionErrorMessage(error: any, fallback: string): Promise<string> {
+  try {
+    const body = await error?.context?.json?.();
+    return body?.error || body?.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function adminApproveWithAi(propertyId: string, remarks?: string) {
   const { data, error } = await supabase.functions.invoke('approveProperty', {
     body: { property_id: propertyId, remarks },
   });
-  if (error) throw error;
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Approval failed'));
   return data;
 }
 
@@ -651,7 +692,7 @@ export async function adminRejectWithAi(propertyId: string, reason: string, rema
   const { data, error } = await supabase.functions.invoke('rejectProperty', {
     body: { property_id: propertyId, reason, remarks },
   });
-  if (error) throw error;
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Rejection failed'));
   return data;
 }
 

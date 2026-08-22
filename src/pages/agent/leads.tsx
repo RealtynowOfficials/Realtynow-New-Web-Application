@@ -461,7 +461,7 @@ export function AgentLeads() {
               {leads.length}
             </span>
           </button>
-          {CRM_LEAD_STAGES.map((s) => {
+          {AGENT_CRM_STAGES.map((s) => {
             const count = leads.filter((l) => (l.lead_status || l.status) === s.id).length;
             const isActive = statusFilter === s.id;
             return (

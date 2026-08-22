@@ -13,6 +13,8 @@ import { DataTable, type Column, BulkActionsBar } from '../../components/data-ta
 import { updatePropertyStatus, adminApproveWithAi, adminRejectWithAi } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
 import { formatPrice, formatDate, cn, generatePropertyUrl } from '../../lib/utils';
+import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
+import { isPropertyPublishable } from '../../lib/price-validation';
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
 import type { Property, AiVerification } from '../../lib/types';
@@ -410,7 +412,14 @@ export function AdminApprovals() {
       key: 'price',
       header: 'Price',
       sortable: true,
-      render: (p) => <span className="font-semibold">{formatPrice(p.price, p.purpose)}</span>,
+      render: (p) => (
+        <span className="font-semibold">
+          {formatPrice(p.price, p.purpose)}
+          {p.status !== 'draft' && !isPropertyPublishable(p) && (
+            <span className="block text-xs font-bold text-red-600">⚠ Invalid Price</span>
+          )}
+        </span>
+      ),
     },
     { key: 'purpose', header: 'Listing Type', render: (p) => <Badge variant="default">{p.purpose}</Badge> },
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
@@ -699,6 +708,12 @@ export function AdminApprovals() {
                     <span className="text-navy-500">Price:</span>{' '}
                     <span className="font-medium text-navy-900">{formatPrice(selected.price, selected.purpose)}</span>
                   </p>
+                  {selected.price_per_unit != null && (
+                    <p>
+                      <span className="text-navy-500">Price / {getPriceUnitLabel(selected.area_unit)}:</span>{' '}
+                      <span className="font-medium text-navy-900">{formatPrice(selected.price_per_unit)}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1315,7 +1330,22 @@ export function AdminProperties() {
       key: 'price',
       header: 'Price',
       sortable: true,
-      render: (p) => <span className="font-semibold">{formatPrice(p.price, p.purpose)}</span>,
+      render: (p) => {
+        const pricing = getPropertyPricingDisplay(p);
+        return (
+          <span className="font-semibold text-slate-900">
+            {pricing.primaryPrice}
+            {pricing.isLand && pricing.totalEstimatedPrice && (
+              <span className="block text-xs font-normal text-slate-500">
+                Total: {pricing.totalEstimatedPrice}
+              </span>
+            )}
+            {p.status !== 'draft' && !isPropertyPublishable(p) && (
+              <span className="block text-xs font-bold text-red-600">⚠ Invalid Price</span>
+            )}
+          </span>
+        );
+      },
     },
     { key: 'purpose', header: 'Purpose', render: (p) => <Badge variant="default">{p.purpose}</Badge> },
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
@@ -1421,17 +1451,36 @@ export function AdminProperties() {
   };
 
   const bulkDelete = async () => {
-    await Promise.all([...selected].map((id) => supabase.from('properties').delete().eq('id', id)));
+    const ids = [...selected];
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        const { error, count } = await supabase.from('properties').delete({ count: 'exact' }).eq('id', id);
+        return { id, error, count };
+      })
+    );
+    const failed = results.filter((r) => r.error || !r.count);
     setSelected(new Set());
     queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+    if (failed.length > 0) {
+      toast.addToast('error', `Failed to delete ${failed.length} of ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}.`);
+    } else {
+      toast.addToast('success', `Deleted ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}.`);
+    }
   };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await supabase.from('properties').delete().eq('id', id);
+      const { error, count } = await supabase.from('properties').delete({ count: 'exact' }).eq('id', id);
+      if (error) throw error;
+      if (!count) throw new Error('Property was not found or you do not have permission to delete it.');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+      toast.addToast('success', 'Property permanently deleted.');
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      toast.addToast('error', err?.message || 'Failed to delete property');
       setToDelete(null);
     },
   });

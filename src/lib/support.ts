@@ -251,7 +251,7 @@ export const KNOWLEDGE_ARTICLES: KnowledgeArticle[] = [
     ],
     tips: [
       'Listings with 5+ clear daylight photos receive up to 4x more genuine buyer inquiries.',
-      'Free accounts can list up to 2 active properties monthly. Upgrade to Pro for unlimited listings.',
+      'Free accounts can list up to 5 active properties monthly. Upgrade to Pro for unlimited listings.',
     ],
     relatedArticleIds: ['art-listing-limits', 'art-approval-process', 'art-edit-listing'],
   },
@@ -485,10 +485,10 @@ export const KNOWLEDGE_ARTICLES: KnowledgeArticle[] = [
     title: 'What are the listing limits and how does Premium work?',
     summary: 'Learn about Free listing limits vs Premium Pro subscription benefits.',
     popular: true,
-    keywords: ['listing limits', '2 property limit', 'pro plan', 'premium subscription', 'unlimited listings'],
+    keywords: ['listing limits', '5 property limit', 'pro plan', 'premium subscription', 'unlimited listings'],
     content: [
-      'RealtyNow allows every user to list up to 2 properties completely FREE every month.',
-      'To list 3 or more properties, access AI Property Advisor tools, get Featured badges, and receive priority buyer leads, users can subscribe to RealtyNow Pro.',
+      'RealtyNow allows every user to list up to 5 properties completely FREE every month.',
+      'To list 6 or more properties, access AI Property Advisor tools, get Featured badges, and receive priority buyer leads, users can subscribe to RealtyNow Pro.',
     ],
     steps: [
       'Go to "Subscription" in your portal.',

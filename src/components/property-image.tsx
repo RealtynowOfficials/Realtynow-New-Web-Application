@@ -1,44 +1,33 @@
-import React, { useState } from 'react';
 import { cn } from '../lib/utils';
 import { DEFAULT_PROPERTY_IMAGE, handleImageError } from '../lib/property-images';
 
-interface PropertyImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
-  fallbackSrc?: string;
-  containerClassName?: string;
-}
-
+/**
+ * Drop-in <img> replacement for property card/carousel thumbnails.
+ * Always fills its parent container and crops via object-cover, so any
+ * uploaded image (portrait, landscape, ultra-wide, etc.) is centered and
+ * cropped to fit rather than distorting or changing the card's height.
+ * The parent element must supply its own fixed size (aspect-ratio, h-full,
+ * or a fixed height) plus `overflow-hidden` — this component only owns the
+ * fill/crop/fallback behavior, not layout.
+ */
 export function PropertyImage({
   src,
   alt,
   className,
-  fallbackSrc = DEFAULT_PROPERTY_IMAGE,
-  containerClassName,
-  loading = 'lazy',
-  ...props
-}: PropertyImageProps) {
-  const [loaded, setLoaded] = useState(false);
-
+  onError,
+  ...rest
+}: React.ImgHTMLAttributes<HTMLImageElement> & { src?: string | null; alt: string }) {
   return (
-    <div className={cn('relative overflow-hidden bg-slate-100', containerClassName)}>
-      {!loaded && (
-        <div className="absolute inset-0 bg-slate-200 animate-pulse" />
-      )}
-      <img
-        src={src || fallbackSrc}
-        alt={alt || 'Property'}
-        loading={loading}
-        onLoad={() => setLoaded(true)}
-        onError={(e) => {
-          setLoaded(true);
-          handleImageError(e, fallbackSrc);
-        }}
-        className={cn(
-          'w-full h-full object-cover transition-opacity duration-300',
-          loaded ? 'opacity-100' : 'opacity-0',
-          className
-        )}
-        {...props}
-      />
-    </div>
+    <img
+      {...rest}
+      src={src || DEFAULT_PROPERTY_IMAGE}
+      alt={alt}
+      loading={rest.loading ?? 'lazy'}
+      onError={(e) => {
+        onError?.(e);
+        handleImageError(e, DEFAULT_PROPERTY_IMAGE);
+      }}
+      className={cn('h-full w-full object-cover object-center', className)}
+    />
   );
 }

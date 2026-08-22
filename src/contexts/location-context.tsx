@@ -18,15 +18,19 @@ type LocationState = {
   coordinates: Coordinates | null;
   isLocating: boolean;
   error: string | null;
-  /** True when the browser explicitly denied the geolocation permission — lets the UI surface an "Enable Live Location" prompt. */
+  /** True when the browser explicitly denied the geolocation permission. */
   permissionDenied: boolean;
+  /** Controls visibility of the helpful browser permission unblock guide modal. */
+  showPermissionGuide: boolean;
 };
 
 type LocationContextType = LocationState & {
   setCity: (city: string) => void;
   /** Forces a fresh geolocation + reverse-geocode read, bypassing the 24h cache. */
-  detectLocation: () => Promise<void>;
+  detectLocation: (showGuideOnDeny?: boolean) => Promise<boolean>;
   dismissLocationPrompt: () => void;
+  openPermissionGuide: () => void;
+  closePermissionGuide: () => void;
 };
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
@@ -161,22 +165,32 @@ function initialState(): LocationState {
       isLocating: false,
       error: null,
       permissionDenied: false,
+      showPermissionGuide: false,
     };
   }
   return {
-    city: null,
+    city: DEFAULT_CITY,
     cityId: null,
-    stateName: null,
-    country: null,
+    stateName: 'Telangana',
+    country: 'India',
     coordinates: null,
     isLocating: false,
     error: null,
     permissionDenied: false,
+    showPermissionGuide: false,
   };
 }
 
 export function LocationProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<LocationState>(initialState);
+
+  const openPermissionGuide = useCallback(() => {
+    setState((s) => ({ ...s, showPermissionGuide: true }));
+  }, []);
+
+  const closePermissionGuide = useCallback(() => {
+    setState((s) => ({ ...s, showPermissionGuide: false }));
+  }, []);
 
   const applyDetectedCity = useCallback(
     async (city: string, stateName: string, country: string, coordinates: Coordinates) => {
@@ -191,6 +205,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         isLocating: false,
         error: null,
         permissionDenied: false,
+        showPermissionGuide: false,
       }));
       writeCache({ city, cityId, stateName: stateName || null, country: country || null, coordinates });
     },
@@ -231,46 +246,55 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     [state.city, state.cityId],
   );
 
-  const detectLocation = useCallback(async () => {
-    setState((s) => ({ ...s, isLocating: true, error: null }));
+  const detectLocation = useCallback(
+    async (showGuideOnDeny = false): Promise<boolean> => {
+      setState((s) => ({ ...s, isLocating: true, error: null }));
 
-    if (!navigator.geolocation) {
-      fallbackToSavedOrDefault('Geolocation is not supported by your browser.', false);
-      return;
-    }
-
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 8000,
-          maximumAge: 0,
-        });
-      });
-
-      const { latitude, longitude } = position.coords;
-      const coordinates: Coordinates = { lat: latitude, lng: longitude };
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        fallbackToSavedOrDefault('Geolocation is not supported by your browser.', false);
+        return false;
+      }
 
       try {
-        const geo = await reverseGeocode(latitude, longitude);
-        await applyDetectedCity(geo.city, geo.stateName, geo.country, coordinates);
-      } catch (geoErr) {
-        console.warn('Reverse geocoding failed:', geoErr);
-        setState((s) => ({ ...s, coordinates }));
-        fallbackToSavedOrDefault('Could not determine city name from coordinates.', false);
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 8000,
+            maximumAge: 0,
+          });
+        });
+
+        const { latitude, longitude } = position.coords;
+        const coordinates: Coordinates = { lat: latitude, lng: longitude };
+
+        try {
+          const geo = await reverseGeocode(latitude, longitude);
+          await applyDetectedCity(geo.city, geo.stateName, geo.country, coordinates);
+          return true;
+        } catch (geoErr) {
+          console.warn('Reverse geocoding failed:', geoErr);
+          setState((s) => ({ ...s, coordinates, isLocating: false }));
+          fallbackToSavedOrDefault('Could not determine city name from coordinates.', false);
+          return false;
+        }
+      } catch (err: any) {
+        console.warn('Geolocation error:', err);
+        const permissionDenied = err?.code === 1;
+        fallbackToSavedOrDefault(
+          permissionDenied ? 'Location permission denied in browser.' : 'Failed to fetch location.',
+          permissionDenied,
+        );
+        if (permissionDenied && showGuideOnDeny) {
+          setState((s) => ({ ...s, showPermissionGuide: true }));
+        }
+        return false;
       }
-    } catch (err: any) {
-      console.warn('Geolocation error:', err);
-      const permissionDenied = err?.code === 1;
-      fallbackToSavedOrDefault(
-        permissionDenied ? 'Location permission denied.' : 'Failed to fetch location.',
-        permissionDenied,
-      );
-    }
-  }, [applyDetectedCity, fallbackToSavedOrDefault]);
+    },
+    [applyDetectedCity, fallbackToSavedOrDefault],
+  );
 
   const setCity = useCallback((city: string) => {
-    setState((s) => ({ ...s, city, cityId: null, error: null, permissionDenied: false }));
+    setState((s) => ({ ...s, city, cityId: null, error: null, permissionDenied: false, showPermissionGuide: false }));
     resolveCityId(city).then((cityId) => {
       setState((s) => (s.city === city ? { ...s, cityId } : s));
       writeCache({ city, cityId, stateName: null, country: null, coordinates: null });
@@ -285,14 +309,23 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (readCache()) return;
     const timer = setTimeout(() => {
-      detectLocation();
+      detectLocation(false);
     }, 800);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <LocationContext.Provider value={{ ...state, setCity, detectLocation, dismissLocationPrompt }}>
+    <LocationContext.Provider
+      value={{
+        ...state,
+        setCity,
+        detectLocation,
+        dismissLocationPrompt,
+        openPermissionGuide,
+        closePermissionGuide,
+      }}
+    >
       {children}
     </LocationContext.Provider>
   );

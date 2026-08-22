@@ -36,6 +36,7 @@ import { useToast } from '../toast';
 import { Button, Input, Textarea, Badge, Modal, Select } from '../ui';
 import { formatDate, formatDateTime, formatPrice, generatePropertyUrl, buildWhatsAppUrl } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
+import { DEFAULT_PROPERTY_IMAGE, handleImageError } from '../../lib/property-images';
 
 export const BUILDER_STAGES = [
   { id: 'new', label: 'New Lead', color: 'bg-blue-500 text-white' },
@@ -618,6 +619,7 @@ export function UnifiedLeadDetailModal({
                     <img
                       src={lead.property.images[0]}
                       alt=""
+                      onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                       className="h-12 w-16 rounded-lg object-cover shrink-0"
                     />
                   )}

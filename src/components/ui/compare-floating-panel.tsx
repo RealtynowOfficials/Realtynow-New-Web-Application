@@ -5,7 +5,9 @@ import { GitCompare, X, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { getCompareIds, clearCompareList, fetchComparedProperties } from '../../lib/compare';
 import { useAuth } from '../../lib/auth';
 import { formatCompactPrice } from '../../lib/utils';
+import { getPropertyPricingDisplay } from '../../lib/plot-pricing';
 import { Button } from '../ui';
+import type { Property } from '../../lib/types';
 import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 
 const SESSION_DISMISSED_KEY = 'realtynow_compare_panel_dismissed';
@@ -86,7 +88,7 @@ export function CompareFloatingPanel() {
   if (ids.length === 0 || isDismissed) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[999] pointer-events-none flex justify-center px-4 pb-4">
+    <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-3 sm:px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
       <AnimatePresence>
         <motion.div
           key="compare-panel"
@@ -169,7 +171,9 @@ export function CompareFloatingPanel() {
                         <p className="text-xs font-semibold text-gray-900 truncate leading-tight" title={p.title}>
                           {p.title}
                         </p>
-                        <p className="text-xs font-bold text-red-600 mt-0.5">{formatCompactPrice(p.price)}</p>
+                        <p className="text-xs font-bold text-red-600 mt-0.5">
+                          {getPropertyPricingDisplay(p, { compactConstructed: true }).primaryPrice}
+                        </p>
                       </div>
                     </div>
                   ))}

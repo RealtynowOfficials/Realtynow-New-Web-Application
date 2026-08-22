@@ -158,6 +158,7 @@ async function answerRealtyNowPropertySearch(message: string): Promise<string> {
       .from('v_properties_search')
       .select('*')
       .or('status.eq.published,is_live.eq.true')
+      .or('price.gte.1000,rent_amount.gte.1000')
       .order('published_at', { ascending: false })
       .limit(6);
 

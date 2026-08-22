@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Camera, Eye, Loader2, PlayCircle, Star, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { uploadFile, deleteFile } from '../../lib/storage';
+import { validatePropertyPrice, validateUnitPrice } from '../../lib/price-validation';
+import { isLandProperty, toAreaUnitCode, getAreaUnitDisplay, getPriceUnitLabel, calculatePlotTotalPrice, AREA_UNIT_OPTIONS } from '../../lib/plot-pricing';
 import { useToast } from '../toast';
 import { Modal, Button, Input, Textarea, Select } from '../ui';
 import { LocationAutocomplete, type SelectedPlace } from '../location-autocomplete';
@@ -33,11 +35,14 @@ interface EditPropertyModalProps {
 interface EditFormState {
   purpose: 'Sale' | 'Rent';
   category: string;
+  listing_category: string;
   property_sub_type: string;
   title: string;
   description: string;
   price: string;
   rent_amount: string;
+  price_per_unit: string;
+  area_unit: string;
   security_deposit: string;
   maintenance: string;
   negotiable: boolean;
@@ -74,11 +79,14 @@ function emptyForm(): EditFormState {
   return {
     purpose: 'Sale',
     category: '',
+    listing_category: '',
     property_sub_type: '',
     title: '',
     description: '',
     price: '',
     rent_amount: '',
+    price_per_unit: '',
+    area_unit: 'Sq. Ft',
     security_deposit: '',
     maintenance: '',
     negotiable: true,
@@ -159,11 +167,14 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
       setForm({
         purpose: data.purpose === 'Rent' ? 'Rent' : 'Sale',
         category: String(features.category ?? ''),
+        listing_category: data.listing_category ?? '',
         property_sub_type: String(features.property_sub_type ?? ''),
         title: data.title ?? '',
         description: data.description ?? '',
         price: data.price != null ? String(data.price) : '',
         rent_amount: data.rent_amount != null ? String(data.rent_amount) : '',
+        price_per_unit: data.price_per_unit != null ? String(data.price_per_unit) : '',
+        area_unit: data.area_unit ? getAreaUnitDisplay(data.area_unit) : 'Sq. Ft',
         security_deposit: data.security_deposit != null ? String(data.security_deposit) : '',
         maintenance: features.maintenance != null ? String(features.maintenance) : '',
         negotiable: features.negotiable !== false,
@@ -385,14 +396,26 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
     if (!form.title.trim() && !form.city_name.trim()) {
       errs.title = 'Enter a title, or at least a city so one can be generated';
     }
-    if (form.purpose === 'Sale' && (!form.price || Number(form.price) <= 0)) {
-      errs.price = 'Enter a valid price';
+    const isLand = isLandProperty({
+      listing_category: form.listing_category,
+      property_sub_type: form.property_sub_type,
+      price_per_unit: form.price_per_unit ? parseFloat(form.price_per_unit) : null,
+      area_unit: form.area_unit,
+      plot_area: form.plot_area ? parseFloat(form.plot_area) : null,
+    });
+    if (isLand && form.purpose === 'Sale') {
+      const unitPriceError = validateUnitPrice(form.price_per_unit, form.area_unit);
+      if (unitPriceError) errs.price_per_unit = unitPriceError;
+    } else if (form.purpose === 'Sale') {
+      const priceError = validatePropertyPrice(form.price);
+      if (priceError) errs.price = priceError;
     }
-    if (form.purpose === 'Rent' && (!form.rent_amount || Number(form.rent_amount) <= 0)) {
-      errs.rent_amount = 'Enter a valid monthly rent';
+    if (form.purpose === 'Rent') {
+      const rentError = validatePropertyPrice(form.rent_amount);
+      if (rentError) errs.rent_amount = rentError;
     }
     const numericFields: (keyof EditFormState)[] = [
-      'built_up_area', 'carpet_area', 'plot_area', 'floor_number', 'total_floors',
+      'built_up_area', 'carpet_area', 'plot_area', 'price_per_unit', 'floor_number', 'total_floors',
       'bedrooms', 'bathrooms', 'balconies', 'parking_indoor', 'parking_outdoor', 'age_of_property',
     ];
     for (const key of numericFields) {
@@ -419,6 +442,18 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
       const autoTitle = form.title.trim() || `${form.purpose} - ${form.property_sub_type || form.category || 'Property'}${form.city_name ? ` in ${form.city_name}` : ''}`;
       const autoAddress = form.address.trim() || [form.locality_name, form.city_name].filter(Boolean).join(', ') || null;
 
+      const isLand = isLandProperty({
+        listing_category: form.listing_category,
+        property_sub_type: form.property_sub_type,
+        price_per_unit: form.price_per_unit ? parseFloat(form.price_per_unit) : null,
+        area_unit: form.area_unit,
+        plot_area: form.plot_area ? parseFloat(form.plot_area) : null,
+      });
+
+      const calculatedTotalPrice = isLand && form.plot_area && form.price_per_unit
+        ? calculatePlotTotalPrice(parseFloat(form.plot_area), parseFloat(form.price_per_unit))
+        : null;
+
       // Explicit whitelist of editable columns — never spreads the fetched row, so
       // system-managed fields (status, approval_status, is_live, owner_id, created_at,
       // ai_*, verification_*, seo_*, etc.) can never be touched by this update.
@@ -432,9 +467,12 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
         place_id: form.place_id || null,
         latitude: form.latitude,
         longitude: form.longitude,
-        price: form.purpose === 'Sale' ? num(form.price) ?? 0 : num(form.rent_amount) ?? 0,
+        price: form.purpose === 'Sale' ? (calculatedTotalPrice ?? num(form.price) ?? 0) : num(form.rent_amount) ?? 0,
         rent_amount: form.purpose === 'Rent' ? num(form.rent_amount) : null,
         security_deposit: form.purpose === 'Rent' ? num(form.security_deposit) : null,
+        price_per_unit: isLand && form.price_per_unit ? parseFloat(form.price_per_unit) : null,
+        area_unit: isLand && form.area_unit ? toAreaUnitCode(form.area_unit) : null,
+        plot_area: num(form.plot_area),
         bedrooms: num(form.bedrooms) ?? 0,
         bathrooms: num(form.bathrooms) ?? 0,
         balconies: num(form.balconies) ?? 0,
@@ -443,7 +481,6 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
         total_floors: num(form.total_floors),
         built_up_area: num(form.built_up_area),
         carpet_area: num(form.carpet_area),
-        plot_area: num(form.plot_area),
         parking: (Number(form.parking_indoor) || 0) + (Number(form.parking_outdoor) || 0),
         facing: form.facing || null,
         age_of_property: num(form.age_of_property),
@@ -522,49 +559,111 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
           {/* Pricing */}
           <section className="rounded-2xl border border-navy-100 p-4">
             <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Pricing</h4>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {form.purpose === 'Sale' ? (
-                <Input
-                  label="Asking Price (₹) *"
-                  type="number"
-                  value={form.price}
-                  error={errors.price}
-                  onChange={(e) => {
-                    set('price', e.target.value);
-                    if (errors.price) setErrors((errs) => ({ ...errs, price: '' }));
-                  }}
-                  placeholder="e.g. 8500000"
-                />
-              ) : (
-                <Input
-                  label="Monthly Rent (₹) *"
-                  type="number"
-                  value={form.rent_amount}
-                  error={errors.rent_amount}
-                  onChange={(e) => {
-                    set('rent_amount', e.target.value);
-                    if (errors.rent_amount) setErrors((errs) => ({ ...errs, rent_amount: '' }));
-                  }}
-                  placeholder="e.g. 25000"
-                />
-              )}
-              {form.purpose === 'Rent' && (
-                <Input
-                  label="Security Deposit (₹)"
-                  type="number"
-                  value={form.security_deposit}
-                  onChange={(e) => set('security_deposit', e.target.value)}
-                  placeholder="e.g. 50000"
-                />
-              )}
-              <Input
-                label="Maintenance (₹/mo)"
-                type="number"
-                value={form.maintenance}
-                onChange={(e) => set('maintenance', e.target.value)}
-                placeholder="e.g. 2000"
-              />
-            </div>
+            {(() => {
+              const isLand = isLandProperty({
+                listing_category: form.listing_category,
+                property_sub_type: form.property_sub_type,
+                price_per_unit: form.price_per_unit ? parseFloat(form.price_per_unit) : null,
+                area_unit: form.area_unit,
+                plot_area: form.plot_area ? parseFloat(form.plot_area) : null,
+              });
+
+              if (isLand && form.purpose === 'Sale') {
+                return (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <Input
+                        label={`Price Per ${getPriceUnitLabel(form.area_unit)} (₹) *`}
+                        type="number"
+                        value={form.price_per_unit}
+                        error={errors.price_per_unit}
+                        onChange={(e) => {
+                          set('price_per_unit', e.target.value);
+                          if (errors.price_per_unit) setErrors((errs) => ({ ...errs, price_per_unit: '' }));
+                        }}
+                        placeholder={`e.g. 45000 / ${getPriceUnitLabel(form.area_unit)}`}
+                      />
+                      <Select
+                        label="Area Unit *"
+                        value={form.area_unit}
+                        onChange={(e) => set('area_unit', e.target.value)}
+                      >
+                        {AREA_UNIT_OPTIONS.map((unit) => (
+                          <option key={unit} value={unit}>{unit}</option>
+                        ))}
+                      </Select>
+                      <Input
+                        label={`Total Plot Area (${form.area_unit}) *`}
+                        type="number"
+                        value={form.plot_area}
+                        error={errors.plot_area}
+                        onChange={(e) => set('plot_area', e.target.value)}
+                        placeholder={`e.g. 2400`}
+                      />
+                    </div>
+                    {parseFloat(form.plot_area) > 0 && parseFloat(form.price_per_unit) > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50/60 px-4 py-2.5">
+                        <div className="text-xs font-semibold text-navy-600">
+                          {form.plot_area} {form.area_unit} × ₹{Number(form.price_per_unit).toLocaleString('en-IN')} / {getPriceUnitLabel(form.area_unit)}
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold uppercase text-navy-400 mr-2">Estimated Total Value:</span>
+                          <span className="font-display font-bold text-red-600">
+                            ₹{calculatePlotTotalPrice(parseFloat(form.plot_area), parseFloat(form.price_per_unit)).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {form.purpose === 'Sale' ? (
+                    <Input
+                      label="Asking Price (₹) *"
+                      type="number"
+                      value={form.price}
+                      error={errors.price}
+                      onChange={(e) => {
+                        set('price', e.target.value);
+                        if (errors.price) setErrors((errs) => ({ ...errs, price: '' }));
+                      }}
+                      placeholder="e.g. 8500000"
+                    />
+                  ) : (
+                    <Input
+                      label="Monthly Rent (₹) *"
+                      type="number"
+                      value={form.rent_amount}
+                      error={errors.rent_amount}
+                      onChange={(e) => {
+                        set('rent_amount', e.target.value);
+                        if (errors.rent_amount) setErrors((errs) => ({ ...errs, rent_amount: '' }));
+                      }}
+                      placeholder="e.g. 25000"
+                    />
+                  )}
+                  {form.purpose === 'Rent' && (
+                    <Input
+                      label="Security Deposit (₹)"
+                      type="number"
+                      value={form.security_deposit}
+                      onChange={(e) => set('security_deposit', e.target.value)}
+                      placeholder="e.g. 50000"
+                    />
+                  )}
+                  <Input
+                    label="Maintenance (₹/mo)"
+                    type="number"
+                    value={form.maintenance}
+                    onChange={(e) => set('maintenance', e.target.value)}
+                    placeholder="e.g. 2000"
+                  />
+                </div>
+              );
+            })()}
             <label className="mt-3 flex items-center gap-2 text-sm font-medium text-navy-700 cursor-pointer">
               <input type="checkbox" checked={form.negotiable} onChange={(e) => set('negotiable', e.target.checked)} className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer" />
               Price is negotiable

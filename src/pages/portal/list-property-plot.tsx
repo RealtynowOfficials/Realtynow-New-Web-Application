@@ -16,7 +16,9 @@ import { savePropertyDraft } from '../../lib/properties';
 import { ensureUserProfile } from '../../lib/profile-utils';
 import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
 import { ServiceUnavailable } from '../../components/service-unavailable';
-import { cn } from '../../lib/utils';
+import { cn, formatPrice } from '../../lib/utils';
+import { toAreaUnitCode, getPriceUnitLabel, calculatePlotTotalPrice } from '../../lib/plot-pricing';
+import { validateUnitPrice, validatePropertyPrice, MIN_PROPERTY_PRICE } from '../../lib/price-validation';
 
 // ─── Plot-specific vocab ──────────────────────────────────────────────────
 const PLOT_TYPES = [
@@ -24,7 +26,7 @@ const PLOT_TYPES = [
   'Farm Land', 'Gated Community Plot', 'HMDA Layout Plot', 'DTCP Layout Plot',
 ];
 const FACINGS = ['East', 'West', 'North', 'South', 'North-East', 'North-West', 'South-East', 'South-West'];
-const AREA_UNITS = ['Sq. Yards', 'Sq. Ft.', 'Acres', 'Guntas'];
+const AREA_UNITS = ['Sq. Ft', 'Sq. Yd', 'Acres', 'Guntas'];
 const ROAD_FACING = ['Single Road', 'Two Roads', 'Three Roads', 'Four Roads'];
 const LAYOUT_TYPES = ['HMDA Approved', 'DTCP Approved', 'GHMC Approved', 'RERA Registered Layout', 'Panchayat Layout', 'Gram Panchayat', 'Venture', 'Unapproved', 'Other'];
 const PLOT_FEATURES = [
@@ -103,7 +105,7 @@ const EMPTY_STATE: PlotFormState = {
   address: '', city: '', locality: '', state: '', country: 'India', pincode: '',
   latitude: null, longitude: null, placeId: '',
   propertyTypeName: '', purposeIntent: 'Sale',
-  length: '', width: '', totalArea: '', areaUnit: 'Sq. Yards',
+  length: '', width: '', totalArea: '', areaUnit: 'Sq. Ft',
   facing: '', cornerPlot: '', roadFacing: '', roadWidth: '', plotNumber: '', blockSector: '',
   layoutType: '', approvalAuthority: '', approvalNumber: '', approvalDate: '', reraNumber: '', layoutNumber: '', lpNumber: '',
   approvalDocs: [],
@@ -219,7 +221,7 @@ export function OpenPlotWizard() {
     }));
   };
 
-  // Auto-calculate area from length × width; auto-calculate price-per-unit both ways.
+  // Auto-calculate area from length × width.
   useEffect(() => {
     const l = parseFloat(form.length), w = parseFloat(form.width);
     if (l > 0 && w > 0) {
@@ -229,24 +231,42 @@ export function OpenPlotWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.length, form.width]);
 
-  const onPriceChange = (price: string) => {
+  // Total price is always derived from area × rate — never independently
+  // editable — so it can never drift (also re-enforced server-side by the
+  // recalculate_plot_total_price trigger on submit/save). Only overwrites
+  // expectedPrice once a valid rate is actually entered, so restoring an
+  // older draft (saved before this field existed) never blanks out a
+  // price it already had.
+  useEffect(() => {
     const area = parseFloat(form.totalArea);
-    const p = parseFloat(price);
-    setForm((f) => ({
-      ...f,
-      expectedPrice: price,
-      pricePerUnit: area > 0 && p > 0 ? (p / area).toFixed(2) : f.pricePerUnit,
-    }));
-  };
-  const onPricePerUnitChange = (val: string) => {
-    const area = parseFloat(form.totalArea);
-    const pu = parseFloat(val);
-    setForm((f) => ({
-      ...f,
-      pricePerUnit: val,
-      expectedPrice: area > 0 && pu > 0 ? (pu * area).toFixed(2) : f.expectedPrice,
-    }));
-  };
+    const pu = parseFloat(form.pricePerUnit);
+    const total = calculatePlotTotalPrice(area, pu);
+    if (total > 0 && String(total) !== form.expectedPrice) set('expectedPrice', String(total));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.totalArea, form.pricePerUnit]);
+
+  // When the customer changes which unit the plot is measured/priced in,
+  // a previously entered rate no longer means anything (₹45,000 could have
+  // meant "per Sq. Yard" or "per Acre") — clear it and ask them to
+  // re-enter rather than silently reinterpreting it under the new unit.
+  // Guarded by `restoring`: while an existing draft is loading, areaUnit
+  // jumps straight from its default to the saved value, which must NOT be
+  // treated as a user-driven change that wipes the restored price.
+  const prevAreaUnitRef = useRef(form.areaUnit);
+  useEffect(() => {
+    if (restoring) {
+      prevAreaUnitRef.current = form.areaUnit;
+      return;
+    }
+    if (prevAreaUnitRef.current && prevAreaUnitRef.current !== form.areaUnit && form.pricePerUnit) {
+      set('pricePerUnit', '');
+      toast.addToast('info', `Unit changed to ${form.areaUnit} — please re-enter the price per ${getPriceUnitLabel(form.areaUnit)}.`);
+    }
+    prevAreaUnitRef.current = form.areaUnit;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.areaUnit, restoring]);
+
+  const onPricePerUnitChange = (val: string) => set('pricePerUnit', val);
 
   const buildDescription = () =>
     [form.whySpecial, form.nearbyLandmarks, form.investmentPotential, form.otherInfo].filter(Boolean).join('\n\n');
@@ -270,8 +290,13 @@ export function OpenPlotWizard() {
     latitude: form.latitude,
     longitude: form.longitude,
     plot_area: form.totalArea ? parseFloat(form.totalArea) : null,
+    area_unit: toAreaUnitCode(form.areaUnit),
+    price_per_unit: form.pricePerUnit ? parseFloat(form.pricePerUnit) : null,
     facing: form.facing || null,
     ownership_type: form.ownershipType || null,
+    // Recomputed authoritatively server-side (recalculate_plot_total_price
+    // trigger) from plot_area * price_per_unit — sent here too so a
+    // freshly-typed rate is reflected immediately, before the round-trip.
     price: form.expectedPrice ? parseFloat(form.expectedPrice) : 0,
     amenities: form.features,
     images: form.photos.map((p) => p.url),
@@ -301,7 +326,14 @@ export function OpenPlotWizard() {
   const validateStep = (): string | null => {
     if (activeStep === 0 && (!form.city || !form.latitude)) return 'Please select the plot location from the map search.';
     if (activeStep === 1 && (!form.propertyTypeName || !form.totalArea)) return 'Please select a plot type and enter plot dimensions.';
-    if (activeStep === 6 && !form.expectedPrice) return 'Please enter the expected price.';
+    if (activeStep === 1) {
+      const unitPriceError = validateUnitPrice(form.pricePerUnit);
+      if (unitPriceError) return unitPriceError;
+    }
+    if (activeStep === 6) {
+      const totalPriceError = validatePropertyPrice(form.expectedPrice);
+      if (totalPriceError) return totalPriceError;
+    }
     if (activeStep === 8 && (!form.ownerName || !form.mobileNumber)) return 'Please enter seller name and mobile number.';
     return null;
   };
@@ -310,6 +342,13 @@ export function OpenPlotWizard() {
     const err = validateStep();
     if (err) {
       toast.addToast('error', err);
+      if (activeStep === 1 && validateUnitPrice(form.pricePerUnit)) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById('wizard-field-pricePerUnit');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el?.focus();
+        });
+      }
       return;
     }
     setActiveStep((s) => Math.min(STEPS.length - 1, s + 1));
@@ -458,6 +497,36 @@ export function OpenPlotWizard() {
                   <div><FieldLabel>Total Area</FieldLabel><InputField type="number" value={form.totalArea} onChange={(e) => set('totalArea', e.target.value)} placeholder="Auto-calculated" /></div>
                 </div>
                 <div><FieldLabel>Area Unit</FieldLabel><ChipSelect options={AREA_UNITS} value={form.areaUnit} onChange={(v) => set('areaUnit', v)} /></div>
+                <div>
+                  <FieldLabel>Price Per {getPriceUnitLabel(form.areaUnit)}</FieldLabel>
+                  <InputField
+                    id="wizard-field-pricePerUnit"
+                    type="number"
+                    min={MIN_PROPERTY_PRICE}
+                    value={form.pricePerUnit}
+                    onChange={(e) => onPricePerUnitChange(e.target.value)}
+                    placeholder={`₹ e.g. 45,000 / ${getPriceUnitLabel(form.areaUnit)}`}
+                    className={form.pricePerUnit && validateUnitPrice(form.pricePerUnit, form.areaUnit) ? 'border-red-400 focus:border-red-500 focus:ring-red-400/20' : ''}
+                  />
+                  {form.pricePerUnit && validateUnitPrice(form.pricePerUnit, form.areaUnit) ? (
+                    <p className="mt-1.5 text-xs font-semibold text-red-600">{validateUnitPrice(form.pricePerUnit, form.areaUnit)}</p>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-navy-500">Enter the selling price for each {getPriceUnitLabel(form.areaUnit)}.</p>
+                  )}
+                  {parseFloat(form.totalArea) > 0 && parseFloat(form.pricePerUnit) > 0 && (
+                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50/60 px-4 py-3">
+                      <div className="text-xs font-semibold text-navy-500">
+                        {form.totalArea} {form.areaUnit} × {formatPrice(parseFloat(form.pricePerUnit))} / {getPriceUnitLabel(form.areaUnit)}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-navy-400">Estimated Total Property Price</p>
+                        <p className="font-display text-lg font-extrabold text-red-600">
+                          {formatPrice(calculatePlotTotalPrice(parseFloat(form.totalArea), parseFloat(form.pricePerUnit)))}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div><FieldLabel>Facing</FieldLabel><ChipSelect options={FACINGS} value={form.facing} onChange={(v) => set('facing', v)} /></div>
                 <div><FieldLabel>Corner Plot</FieldLabel><ChipSelect options={['Yes', 'No']} value={form.cornerPlot} onChange={(v) => set('cornerPlot', v as any)} /></div>
                 <div><FieldLabel>Road Facing</FieldLabel><ChipSelect options={ROAD_FACING} value={form.roadFacing} onChange={(v) => set('roadFacing', v)} /></div>
@@ -545,9 +614,22 @@ export function OpenPlotWizard() {
             {activeStep === 6 && (
               <div className="space-y-5">
                 <SectionTitle title="Pricing" sub="Keep it simple — we'll do the math." />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><FieldLabel>Expected Price (₹)</FieldLabel><InputField type="number" value={form.expectedPrice} onChange={(e) => onPriceChange(e.target.value)} /></div>
-                  <div><FieldLabel>Price Per {form.areaUnit} (₹)</FieldLabel><InputField type="number" value={form.pricePerUnit} onChange={(e) => onPricePerUnitChange(e.target.value)} /></div>
+                <div className="rounded-2xl border border-navy-100 bg-navy-50/60 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-navy-400">Total Area</p>
+                      <p className="font-semibold text-navy-800">{form.totalArea ? `${form.totalArea} ${form.areaUnit}` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-navy-400">Price Per {getPriceUnitLabel(form.areaUnit)}</p>
+                      <p className="font-semibold text-navy-800">{form.pricePerUnit ? formatPrice(parseFloat(form.pricePerUnit)) : '—'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-navy-400">Estimated Total Property Price</p>
+                      <p className="font-display text-lg font-extrabold text-red-600">{form.expectedPrice ? formatPrice(parseFloat(form.expectedPrice)) : '—'}</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setActiveStep(1)} className="mt-3 text-xs font-bold text-red-600 hover:underline">Edit price per unit</button>
                 </div>
                 <div><FieldLabel>Negotiability</FieldLabel><ChipSelect options={NEGOTIABILITY} value={form.negotiability} onChange={(v) => set('negotiability', v)} /></div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -617,7 +699,7 @@ export function OpenPlotWizard() {
                   <ReviewRow label="Facing" value={form.facing} onEdit={() => setActiveStep(1)} />
                   <ReviewRow label="Layout Approval" value={form.layoutType} onEdit={() => setActiveStep(2)} />
                   <ReviewRow label="Legal Status" value={form.legallyClear} onEdit={() => setActiveStep(4)} />
-                  <ReviewRow label="Expected Price" value={form.expectedPrice ? `₹${form.expectedPrice}` : ''} onEdit={() => setActiveStep(6)} />
+                  <ReviewRow label="Expected Price" value={form.expectedPrice ? `${formatPrice(parseFloat(form.expectedPrice))} (${form.pricePerUnit ? formatPrice(parseFloat(form.pricePerUnit)) : '—'} / ${getPriceUnitLabel(form.areaUnit)})` : ''} onEdit={() => setActiveStep(1)} />
                   <ReviewRow label="Photos" value={`${form.photos.length} uploaded`} onEdit={() => setActiveStep(7)} />
                   <ReviewRow label="Seller" value={form.ownerName} onEdit={() => setActiveStep(8)} />
                 </div>
@@ -631,7 +713,7 @@ export function OpenPlotWizard() {
         </AnimatePresence>
 
         {/* Sticky nav */}
-        <div className="sticky bottom-0 mt-8 flex items-center justify-between gap-3 border-t border-navy-100 bg-white/95 py-4 backdrop-blur">
+        <div className="sticky bottom-0 mt-8 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 border-t border-navy-100 bg-white/95 py-3.5 sm:py-4 backdrop-blur pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))]">
           <Button variant="ghost" onClick={goBack} disabled={activeStep === 0} icon={<ChevronLeft className="h-4 w-4" />}>Previous</Button>
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={handleSaveDraft} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</Button>

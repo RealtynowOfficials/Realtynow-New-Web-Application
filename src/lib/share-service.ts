@@ -53,12 +53,33 @@ export function getSitePublicBaseUrl(): string {
 
 /**
  * Generates the full, canonical, clickable HTTPS public URL for a property.
+ * This is what a human sees/pastes (e.g. "Copy Link") — it points straight at
+ * the SPA property page.
  */
 export function getPropertyPublicUrl(property?: PropertyShareInput | null): string {
   if (!property) return getSitePublicBaseUrl();
   const path = generatePropertyUrl(property);
   if (path === '#' || !path) return getSitePublicBaseUrl();
   return `${getSitePublicBaseUrl()}${path}`;
+}
+
+/**
+ * Generates the URL to actually hand to WhatsApp/Facebook/LinkedIn/Telegram/X
+ * share targets, instead of the plain public URL above. Those platforms'
+ * crawlers fetch whatever URL they're given and read its *static* HTML head
+ * tags — they never execute JavaScript, so a client-rendered SPA route (this
+ * app has no SSR) can never hand them a real per-property image/title. This
+ * points at the `property-og` edge function instead, which serves that same
+ * static HTML directly (property-specific title/description, but the image
+ * is always the RealtyNow logo, never the property's photo) and then
+ * client-side-redirects any real human visitor on to the canonical page
+ * above — so the recipient still lands on the normal property page.
+ */
+export function getPropertyShareCrawlerUrl(property?: PropertyShareInput | null): string {
+  const id = property?.id;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  if (!id || !supabaseUrl) return getPropertyPublicUrl(property);
+  return `${supabaseUrl}/functions/v1/property-og?id=${encodeURIComponent(id)}`;
 }
 
 /**
@@ -114,7 +135,11 @@ export function getFormattedPriceText(p: PropertyShareInput): string {
  * key specs, and the clickable HTTPS public property link.
  */
 export function buildWhatsAppPropertyShareMessage(property: PropertyShareInput): string {
-  const publicUrl = getPropertyPublicUrl(property);
+  // The link embedded in the message text is what WhatsApp actually unfurls
+  // into a rich preview — must be the crawler URL (logo image), not the
+  // plain public URL (which WhatsApp's non-JS crawler can't read a real
+  // per-property image/title from anyway, since this is a client-rendered SPA).
+  const shareUrl = getPropertyShareCrawlerUrl(property);
   const locationText = getPropertyLocationText(property);
   const priceText = getFormattedPriceText(property);
 
@@ -156,7 +181,7 @@ export function buildWhatsAppPropertyShareMessage(property: PropertyShareInput):
 
   lines.push('');
   lines.push('Explore this property:');
-  lines.push(publicUrl);
+  lines.push(shareUrl);
   lines.push('');
   lines.push('_RealtyNow — All About Realty_');
 
@@ -191,10 +216,13 @@ export async function sharePropertyNativeOrCopy(
 
   if (typeof navigator !== 'undefined' && navigator.share) {
     try {
+      // Whatever target app the OS share sheet lands on (WhatsApp, SMS,
+      // Telegram, etc.) will unfurl this url itself, so it must be the
+      // crawler URL (logo image) — see getPropertyShareCrawlerUrl.
       await navigator.share({
         title: property.title,
         text: message,
-        url: publicUrl,
+        url: getPropertyShareCrawlerUrl(property),
       });
       return { success: true, method: 'native' };
     } catch {
@@ -204,6 +232,7 @@ export async function sharePropertyNativeOrCopy(
 
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     try {
+      // Clipboard copy stays the clean, human-readable canonical URL.
       await navigator.clipboard.writeText(publicUrl);
       onCopied?.();
       return { success: true, method: 'copy' };

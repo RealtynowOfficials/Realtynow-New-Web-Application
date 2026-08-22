@@ -10,7 +10,7 @@ import { normalizeIndianMobile } from './phone';
  * Includes the Developer phone number (9963509329) for application testing & development.
  */
 const DEFAULT_ADMIN_PHONES = [
-  '9963509329', // Developer
+  '9959412687', // Sole authorized administrator
 ];
 
 /**

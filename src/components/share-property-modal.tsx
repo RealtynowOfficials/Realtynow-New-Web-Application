@@ -16,6 +16,7 @@ import { Modal, Button } from './ui';
 import { useToast } from './toast';
 import {
   getPropertyPublicUrl,
+  getPropertyShareCrawlerUrl,
   buildWhatsAppPropertyShareMessage,
   getPropertyLocationText,
   getFormattedPriceText,
@@ -62,12 +63,17 @@ export const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
   };
 
   const publicUrl = getPropertyPublicUrl(propInput);
+  // Platform share intents (Facebook/LinkedIn/X/Telegram) fetch whatever URL
+  // they're given and unfurl it themselves — must be the crawler URL so they
+  // get the RealtyNow logo, not the property's own photo. "Copy Link" below
+  // stays on publicUrl (the clean, human-readable page URL).
+  const shareCrawlerUrl = getPropertyShareCrawlerUrl(propInput);
   const whatsappMessage = buildWhatsAppPropertyShareMessage(propInput);
   const coverImage = getPropertyCoverImage(propInput);
   const locationText = getPropertyLocationText(propInput);
   const priceText = getFormattedPriceText(propInput);
 
-  const encodedUrl = encodeURIComponent(publicUrl);
+  const encodedUrl = encodeURIComponent(shareCrawlerUrl);
   const encodedWhatsapp = encodeURIComponent(whatsappMessage);
   const encodedTitle = encodeURIComponent(`RealtyNow: ${property.title}`);
 
@@ -109,6 +115,12 @@ export const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
       url: `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodeURIComponent(`🏡 Check out this property on @RealtyNow: ${property.title}`)}`,
     },
     {
+      name: 'Telegram',
+      color: 'bg-[#26A5E4] hover:bg-[#1e8fc7] text-white shadow-[#26A5E4]/20',
+      icon: Send,
+      url: `https://t.me/share/url?url=${encodedUrl}&text=${encodeURIComponent(`🏡 Check out this property on RealtyNow: ${property.title}`)}`,
+    },
+    {
       name: 'Gmail / Email',
       color: 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/20',
       icon: Mail,
@@ -122,7 +134,7 @@ export const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
         await navigator.share({
           title: property.title,
           text: whatsappMessage,
-          url: publicUrl,
+          url: shareCrawlerUrl,
         });
         onClose();
       } catch {

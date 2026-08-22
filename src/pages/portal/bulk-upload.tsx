@@ -19,7 +19,7 @@ import { getPortalSections } from './sections';
 import { Card, Button, Select, Badge } from '../../components/ui';
 import { useToast } from '../../hooks/useToast';
 import { supabase } from '../../lib/supabase';
-import { checkListingLimit } from '../../lib/listing-limits';
+import { checkListingLimit, FREE_PLAN_LIMIT } from '../../lib/listing-limits';
 import { getListingPurposes, getWorkflowForPurpose, type ListingPurpose, type WorkflowField } from '../../lib/listing-config';
 import {
   parseImportFile,
@@ -405,7 +405,7 @@ export function BulkUpload() {
           </div>
           <h2 className="text-2xl font-bold text-navy-900 mb-2">Listing Limit Reached</h2>
           <p className="text-navy-600 mb-6">
-            You have reached or exceeded the maximum limit of 2 properties for free accounts. Please upgrade your plan to list more properties and unlock premium features.
+            You have reached or exceeded the maximum limit of {FREE_PLAN_LIMIT} properties for free accounts. Please upgrade your plan to list more properties and unlock premium features.
           </p>
           <Button onClick={() => navigate('/portal/subscription')} className="w-full sm:w-auto">
             View Subscription Plans

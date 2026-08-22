@@ -988,7 +988,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden border-t border-navy-100 bg-white lg:hidden"
             >
-              <div className="container-wide max-h-[75vh] space-y-1 overflow-y-auto py-4">
+              <div className="container-wide max-h-[calc(100dvh-4rem)] space-y-1 overflow-y-auto py-4 pb-safe">
                 <Link
                   to="/"
                   onClick={() => setMobileOpen(false)}

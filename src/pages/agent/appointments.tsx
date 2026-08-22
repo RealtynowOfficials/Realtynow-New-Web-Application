@@ -36,6 +36,7 @@ export function AgentAppointments() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'all');
+  const visitsOnly = searchParams.get('tab') === 'site_visits';
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -49,7 +50,7 @@ export function AgentAppointments() {
   const realtimeTick = useRealtimeCount('appointments', { column: 'agent_id', value: user?.id ?? '' });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-appointments', user?.id, statusFilter, realtimeTick],
+    queryKey: ['agent-appointments', user?.id, statusFilter, visitsOnly, realtimeTick],
     queryFn: async () => {
       let q = supabase
         .from('appointments')
@@ -59,6 +60,9 @@ export function AgentAppointments() {
         .eq('agent_id', user!.id)
         .order('scheduled_at', { ascending: false });
       if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+      // "Site Visits" nav link — only appointments that are an actual
+      // property visit (visit_type set), not other appointment kinds.
+      if (visitsOnly) q = q.not('visit_type', 'is', null);
       const { data } = await q;
       return (data ?? []).map((a) => ({
         ...a,
@@ -144,8 +148,12 @@ export function AgentAppointments() {
   return (
     <DashboardLayout sections={agentSections} title="Appointments & Visits" badge="Agent">
       <PageHeader
-        title="Appointments & Visits"
-        subtitle="Manage scheduled property visits and customer appointments."
+        title={visitsOnly ? 'Site Visits' : 'Appointments & Visits'}
+        subtitle={
+          visitsOnly
+            ? 'Scheduled and completed property site visits.'
+            : 'Manage scheduled property visits and customer appointments.'
+        }
       />
 
       <div className="mb-4 flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit overflow-x-auto">
@@ -154,7 +162,10 @@ export function AgentAppointments() {
             key={t}
             onClick={() => {
               setStatusFilter(t);
-              setSearchParams(t === 'all' ? {} : { status: t });
+              setSearchParams({
+                ...(t === 'all' ? {} : { status: t }),
+                ...(visitsOnly ? { tab: 'site_visits' } : {}),
+              });
             }}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-bold capitalize transition cursor-pointer ${
               statusFilter === t

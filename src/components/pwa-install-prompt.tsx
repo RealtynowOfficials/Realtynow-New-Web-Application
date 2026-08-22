@@ -75,7 +75,7 @@ export const PwaInstallPrompt: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 max-w-sm animate-bounce-in">
+    <div className="fixed bottom-5 right-4 left-4 sm:left-auto sm:right-5 z-50 max-w-sm animate-bounce-in pb-safe">
       <div className="bg-slate-900/95 backdrop-blur-md border border-red-500/30 text-white p-5 rounded-2xl shadow-2xl shadow-red-950/50">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">

@@ -228,7 +228,7 @@ export function DataTable<T>({
       >
         {/* Left: Search Bar */}
         {searchable && (
-          <div className="relative min-w-[240px] flex-1 max-w-md">
+          <div className="relative min-w-0 sm:min-w-[240px] flex-1 max-w-md w-full sm:w-auto">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder={searchPlaceholder ?? "Search records…"}
@@ -237,12 +237,12 @@ export function DataTable<T>({
                 setQuery(e.target.value);
                 setPage(1);
               }}
-              className="pl-9.5 text-xs sm:text-sm bg-slate-50/50 border-slate-200 focus:bg-white focus:border-red-500 rounded-xl h-10 transition-all"
+              className="pl-10 text-xs sm:text-sm bg-slate-50/50 border-slate-200 focus:bg-white focus:border-red-500 rounded-xl h-10 transition-all"
             />
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2.5 ml-auto">
+        <div className="flex flex-wrap items-center gap-2.5 ml-0 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end">
           {/* Middle: Advanced Date Filter */}
           {dateFilterable && (
             <div className="flex flex-wrap items-center gap-2">

@@ -42,7 +42,28 @@ export function DashboardLayout({
     }
   }, [location.pathname]);
 
-  const isActive = (to: string, end?: boolean) => (end ? location.pathname === to : location.pathname.startsWith(to));
+  const allNavTargets = sections.flatMap((s) => s.items.map((i) => i.to));
+
+  const isActive = (to: string, end?: boolean) => {
+    // Nav items that encode a query string in `to` (e.g. a sub-filter link
+    // sharing a base path with a sibling item) must match that exact query,
+    // not just the pathname — otherwise they can never highlight as active.
+    const [toPath, toSearch] = to.split('?');
+    if (toSearch) {
+      return location.pathname === toPath && location.search === `?${toSearch}`;
+    }
+    const pathMatches = end ? location.pathname === toPath : location.pathname.startsWith(toPath);
+    if (!pathMatches) return false;
+    // A sibling item can claim this same pathname more specifically via its
+    // own query string (e.g. Appointments vs Appointments?tab=site_visits) —
+    // defer to it instead of both lighting up at once.
+    const moreSpecificSiblingActive = allNavTargets.some((other) => {
+      if (other === to) return false;
+      const [otherPath, otherSearch] = other.split('?');
+      return !!otherSearch && otherPath === toPath && location.search === `?${otherSearch}`;
+    });
+    return !moreSpecificSiblingActive;
+  };
 
   return (
     <div className="min-h-screen bg-navy-50/40">
@@ -151,10 +172,10 @@ export function DashboardLayout({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex-1">
-            <h1 className="font-display text-lg font-semibold text-navy-900 flex items-center gap-2">
-              {t(title, title)}
-              {badge && <span className="badge bg-gold-100 text-gold-700">{badge}</span>}
+          <div className="flex-1 min-w-0">
+            <h1 className="font-display text-base sm:text-lg font-semibold text-navy-900 flex items-center gap-2 truncate">
+              <span className="truncate">{t(title, title)}</span>
+              {badge && <span className="badge bg-gold-100 text-gold-700 shrink-0">{badge}</span>}
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">

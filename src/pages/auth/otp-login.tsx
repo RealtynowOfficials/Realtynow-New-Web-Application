@@ -404,7 +404,7 @@ export function OtpLoginPage() {
     'group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 bg-[length:200%_100%] py-3.5 text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-all duration-300 hover:bg-[position:100%_0] hover:shadow-xl hover:shadow-red-600/35 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60';
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-navy-950 lg:grid" style={{ gridTemplateColumns: '38% 62%' }}>
+    <div className="relative min-h-[100dvh] w-full overflow-x-hidden bg-navy-950 lg:grid" style={{ gridTemplateColumns: '38% 62%' }}>
       {/* ───────────── Left — cinematic panel ───────────── */}
       <div className="relative hidden overflow-hidden lg:block">
         <motion.div
@@ -526,7 +526,7 @@ export function OtpLoginPage() {
       </div>
 
       {/* ───────────── Right — glass login card ───────────── */}
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-5 py-10 sm:px-8">
+      <div className="relative flex min-h-[100dvh] w-full items-center justify-center overflow-y-auto bg-white px-4 py-8 sm:px-8 sm:py-12">
         
         {/* ── Real-estate illustration pattern layer ── */}
         {(() => false)() && (
@@ -664,14 +664,14 @@ export function OtpLoginPage() {
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="relative w-full max-w-lg rounded-[24px] border border-white/60 bg-white/90 p-7 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl sm:p-9"
+          className="relative w-full max-w-[480px] sm:max-w-lg rounded-[24px] border border-white/60 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl sm:p-9 my-auto"
         >
-          <div className="mb-7 flex justify-center lg:hidden">
-            <Logo to="/" size={180} src="/2.png" />
+          <div className="mb-6 flex justify-center lg:hidden">
+            <Logo to="/" size={160} src="/2.png" />
           </div>
 
           {step === 'mobile' && isAdminContext && (
-            <div className="mb-7 flex justify-center">
+            <div className="mb-6 flex justify-center">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-red-600 shadow-sm">
                 <Lock className="h-3.5 w-3.5" /> Admin Portal
               </span>
@@ -679,13 +679,13 @@ export function OtpLoginPage() {
           )}
 
           {step === 'mobile' && !isAdminContext && (
-            <div className="relative mb-7 grid grid-cols-4 gap-1 rounded-2xl bg-navy-100/70 p-1.5">
+            <div className="relative mb-6 flex sm:grid sm:grid-cols-4 gap-1 rounded-2xl bg-navy-100/70 p-1.5 overflow-x-auto no-scrollbar snap-x">
               {SEGMENTS.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => selectSegment(id)}
-                  className="relative rounded-xl py-2.5 text-[11px] font-bold transition-colors"
+                  className="relative flex-1 min-w-[78px] sm:min-w-0 rounded-xl py-2 px-1 text-[11px] font-bold transition-colors shrink-0 snap-center"
                 >
                   {segment === id && (
                     <motion.span
@@ -697,11 +697,12 @@ export function OtpLoginPage() {
                   )}
                   <span
                     className={cn(
-                      'relative z-10 flex flex-col items-center gap-1',
+                      'relative z-10 flex flex-col items-center gap-1 text-center whitespace-nowrap',
                       segment === id ? 'text-white' : 'text-navy-500',
                     )}
                   >
-                    <Icon className="h-4 w-4" /> {label}
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate max-w-[80px] sm:max-w-none">{label}</span>
                   </span>
                 </button>
               ))}

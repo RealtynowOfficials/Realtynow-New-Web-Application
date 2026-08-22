@@ -15,6 +15,7 @@ import { DataTable, type Column, BulkActionsBar } from '../../components/data-ta
 import { submitPropertyForReview } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
 import { formatPrice, formatDate , generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
+import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
 import type { Property } from '../../lib/types';
 import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { ExportMenu } from '../../components/export-menu';
@@ -208,7 +209,19 @@ export function PortalMyProperties() {
       key: 'price',
       header: 'Price / Rent',
       sortable: true,
-      render: (p) => <span className="font-semibold">{formatPrice(getPropertyPrice(p), p.purpose)}</span>,
+      render: (p) => {
+        const pricing = getPropertyPricingDisplay(p);
+        return (
+          <span className="font-semibold text-slate-900">
+            {pricing.primaryPrice}
+            {pricing.isLand && pricing.totalEstimatedPrice && (
+              <span className="block text-xs font-normal text-slate-500">
+                Total: {pricing.totalEstimatedPrice}
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: 'status',
@@ -485,6 +498,9 @@ export function PortalMyProperties() {
                 ) : (
                   <>
                     <p className="font-bold text-navy-900 mt-2 text-lg">{formatPrice(getPropertyPrice(p), p.purpose)}</p>
+                    {p.price_per_unit != null && (
+                      <p className="text-xs font-semibold text-navy-500">{formatPrice(p.price_per_unit)} / {getPriceUnitLabel(p.area_unit)}</p>
+                    )}
                     <p className="text-xs text-navy-400 mt-1">
                       {t('portal.submitted', 'Submitted')}: {formatDate(p.created_at)}
                     </p>

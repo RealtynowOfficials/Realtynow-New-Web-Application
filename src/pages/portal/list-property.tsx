@@ -1,6 +1,7 @@
 // Trigger HMR
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -33,10 +34,12 @@ import { useAuth } from '../../lib/auth';
 import { useToast } from '../../hooks/useToast';
 import { LocationAutocomplete, type SelectedPlace } from '../../components/location-autocomplete';
 import { supabase } from '../../lib/supabase';
+import { FREE_PLAN_LIMIT } from '../../lib/listing-limits';
 import { triggerAiVerification } from '../../lib/properties';
 import { ensureUserProfile } from '../../lib/profile-utils';
 import { uploadFile, deleteFile, type StorageBucket } from '../../lib/storage';
 import { cn } from '../../lib/utils';
+import { validatePropertyPrice } from '../../lib/price-validation';
 import { useServiceStatus, SERVICE_KEYS } from '../../lib/service-status';
 import { ServiceUnavailable } from '../../components/service-unavailable';
 import {
@@ -280,6 +283,7 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
   const { t } = useLanguageContext();
   const wizardSections = profile?.role === 'agent' ? getAgentSections(t) : getPortalSections(t);
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [searchParams] = useSearchParams();
@@ -316,13 +320,18 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
         return;
       }
       
-      // 3. check properties count
+      // 3. check properties listed this calendar month (resets monthly, not
+      // lifetime) — drafts don't count as "listed", only real submissions do.
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const { count: propCount } = await supabase
         .from('properties')
         .select('*', { count: 'exact', head: true })
-        .eq('owner_id', user!.id);
-        
-      if (propCount && propCount >= 2) {
+        .eq('owner_id', user!.id)
+        .neq('status', 'draft')
+        .gte('created_at', startOfMonth);
+
+      if (propCount && propCount >= FREE_PLAN_LIMIT) {
         setQuotaExceeded(true);
       }
       setQuotaChecked(true);
@@ -368,7 +377,34 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
 
   const reindexMedia = (items: MediaItem[]): MediaItem[] => items.map((m, i) => ({ ...m, order: i }));
 
-  
+  // The standalone "Cover Image" box and the "Property Images" gallery used to be two
+  // disconnected pieces of state — uploading a cover image only ever set coverImageUrl,
+  // never touched mediaItems, so the gallery kept whatever it independently considered
+  // isCover. This is the single point that keeps both in sync: the cover image always
+  // becomes mediaItems[0] with isCover:true, every other item loses isCover, and an
+  // already-present URL is promoted in place instead of being duplicated.
+  const applyCoverFromUrl = (url: string, extra?: { bucket?: StorageBucket; path?: string }) => {
+    setCoverImageUrl(url);
+    setMediaItems((prev) => {
+      const existing = prev.find((m) => m.url === url);
+      if (existing) {
+        return reindexMedia([existing, ...prev.filter((m) => m.id !== existing.id)]).map((m) => ({
+          ...m,
+          isCover: m.id === existing.id,
+        }));
+      }
+      const newItem: MediaItem = {
+        id: crypto.randomUUID(),
+        url,
+        type: 'image',
+        isCover: true,
+        order: 0,
+        ...extra,
+      };
+      return reindexMedia([newItem, ...prev.map((m) => ({ ...m, isCover: false }))]);
+    });
+  };
+
   const handleCoverImageUpload = async (rawFile: File) => {
     if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type) || rawFile.type.startsWith('video/')) {
       toast.addToast('error', 'Please select a valid image file (JPG, PNG, WEBP)');
@@ -381,11 +417,11 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
         toast.addToast('error', `${rawFile.name}: exceeds 5MB limit`);
         return;
       }
-      const { url, error } = await uploadFile('property-images', file);
+      const { url, path, error } = await uploadFile('property-images', file);
       if (error) {
         toast.addToast('error', error);
       } else if (url) {
-        setCoverImageUrl(url);
+        applyCoverFromUrl(url, { bucket: 'property-images', path });
       }
     } finally {
       setCoverImageUploading(false);
@@ -501,6 +537,8 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
         if (prev.some((m) => m.id !== tempId && m.url === url)) {
           return reindexMedia(prev.filter((m) => m.id !== tempId));
         }
+        const finalizing = prev.find((m) => m.id === tempId);
+        if (finalizing?.isCover && !isVideo && url) setCoverImageUrl(url);
         return reindexMedia(prev.map((m) => (m.id === tempId ? { ...m, url, path, bucket, uploading: false } : m)));
       });
     }
@@ -522,13 +560,22 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
       return;
     }
     setMediaUrlError(null);
+    const becomesCover = mediaItems.length === 0;
+    if (becomesCover) setCoverImageUrl(url);
     setMediaItems((prev) =>
-      reindexMedia([...prev, { id: crypto.randomUUID(), url, type: isVideoUrl(url) ? 'video' : 'image', isCover: prev.length === 0, order: 0 }]),
+      reindexMedia([...prev, { id: crypto.randomUUID(), url, type: isVideoUrl(url) ? 'video' : 'image', isCover: becomesCover, order: 0 }]),
     );
     setMediaUrlInput('');
   };
 
-  const setCoverMedia = (id: string) => setMediaItems((prev) => prev.map((m) => ({ ...m, isCover: m.id === id })));
+  // Keeps the standalone Cover Image box in sync when a different gallery image is
+  // starred as cover — bidirectional with applyCoverFromUrl above.
+  const setCoverMedia = (id: string) =>
+    setMediaItems((prev) => {
+      const target = prev.find((m) => m.id === id);
+      if (target) setCoverImageUrl(target.url);
+      return prev.map((m) => ({ ...m, isCover: m.id === id }));
+    });
 
   const removeMedia = async (item: MediaItem) => {
     if (item.bucket && item.path) {
@@ -538,7 +585,14 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
     }
     setMediaItems((prev) => {
       const next = reindexMedia(prev.filter((m) => m.id !== item.id));
-      if (item.isCover && next.length > 0) next[0] = { ...next[0], isCover: true };
+      if (item.isCover) {
+        if (next.length > 0) {
+          next[0] = { ...next[0], isCover: true };
+          setCoverImageUrl(next[0].url);
+        } else {
+          setCoverImageUrl(null);
+        }
+      }
       return next;
     });
   };
@@ -647,7 +701,16 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
             if (draft.features?.negotiable !== undefined) {
               setNegotiable(draft.features.negotiable);
             }
-            if (draft.cover_image_url) setCoverImageUrl(draft.cover_image_url);
+            // cover_image_url is the authoritative field — reconcile it into the
+            // just-restored mediaItems (via applyCoverFromUrl) rather than only
+            // setting the standalone box, so a property saved before this fix (or
+            // edited by any other path) self-heals to a consistent single cover on
+            // every reload instead of re-showing the box/gallery mismatch.
+            if (draft.cover_image_url) {
+              applyCoverFromUrl(draft.cover_image_url);
+            } else {
+              setCoverImageUrl(null);
+            }
           }
           setIsRestoring(false);
         }).catch(err => {
@@ -664,7 +727,7 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
   React.useEffect(() => {
     if (isRestoring) return;
     const timer = setTimeout(() => {
-      handleSaveDraft();
+      handleSaveDraft(true);
     }, 1000);
     return () => clearTimeout(timer);
   }, [JSON.stringify(watch()), activeStep, completedSteps, bedrooms, bathrooms, balconies, furnishing, selectedAmenities, mediaItems, negotiable]);
@@ -748,11 +811,9 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
 
     if (stepName === 'Pricing') {
       const priceStr = vals.purpose === 'Rent' ? vals.rent_amount : vals.price;
-      if (isBlank(priceStr)) {
-        return fail(vals.purpose === 'Rent' ? 'rent_amount' : 'price', 'Please enter the pricing details to continue.');
-      }
-      if (isInvalidNumber(priceStr) || Number(priceStr) <= 0) {
-        return fail(vals.purpose === 'Rent' ? 'rent_amount' : 'price', 'Enter a valid price greater than zero.');
+      const priceError = validatePropertyPrice(priceStr);
+      if (priceError) {
+        return fail(vals.purpose === 'Rent' ? 'rent_amount' : 'price', priceError);
       }
     }
 
@@ -877,33 +938,73 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
   };
 
   const handleSaveDraft = async (isAutoSave = false) => {
-    // If it is an autosave, ensure we have some data so we do not spam empty drafts
-    if (isAutoSave && !draftId && activeStep === 0 && !getValues('purpose')) return;
+    // Before creating the FIRST database row for a brand-new draft, require
+    // at least one real, deliberate selection (a property type). This used
+    // to check `!getValues('purpose')`, but `purpose` defaults to 'Sale' in
+    // the form's defaultValues, so that check was always false and never
+    // actually blocked anything — the autosave effect (fires 1s after mount)
+    // was silently creating a ₹0, all-defaults "Sale - Property" draft row
+    // the instant a customer so much as opened "List Property" and did
+    // nothing at all, even if they immediately navigated away. Confirmed via
+    // production data: every such row had current_step=0, no property_type,
+    // and updated_at===created_at (never touched again). Manual "Save Draft"
+    // clicks (isAutoSave=false) are unaffected — this only gates the silent
+    // background autosave for a not-yet-persisted draft.
+    if (isAutoSave && !draftId && !getValues('property_type_id') && !getValues('property_sub_type')) return;
     setSaving(true);
     try {
       const payload = buildPayload();
-      
-      // Local backup
+
+      // Local backup only — never the source of truth. The actual save below
+      // must always be attempted; navigator.onLine only reflects the network
+      // adapter's state (unreliable behind proxies/VPNs/sandboxed browsers)
+      // and previously skipped the real DB write entirely whenever it
+      // misreported offline, which is how "Save Draft" could silently do
+      // nothing at all.
       localStorage.setItem(`realtynow_draft_${user?.id || 'guest'}`, JSON.stringify(payload));
-      
-      // DB Save
-      if (navigator.onLine) {
-        const { savePropertyDraft } = await import('../../lib/properties');
-        const data = await savePropertyDraft(draftId, payload, submissionId);
-        if (!draftId && data?.id) {
-          setDraftId(data.id);
-          // Update URL without reloading to reflect draft_id
-          window.history.replaceState({}, '', `?draft_id=${data.id}`);
-        }
+
+      const { savePropertyDraft } = await import('../../lib/properties');
+      const data = await savePropertyDraft(draftId, payload, submissionId);
+      if (!draftId && data?.id) {
+        setDraftId(data.id);
+        // Update URL without reloading to reflect draft_id
+        window.history.replaceState({}, '', `?draft_id=${data.id}`);
+      }
+
+      // So "My Properties → Drafts" reflects this save the moment the
+      // customer navigates there, without needing a hard refresh.
+      queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] });
+
+      if (!isAutoSave) {
+        toast.addToast('success', 'Draft saved. You can continue this listing anytime from My Properties → Drafts.');
       }
     } catch (err: any) {
       console.error('Failed to save draft:', err);
+      const message =
+        err?.message === 'LISTING_LIMIT_REACHED'
+          ? `You've reached your free listing limit for this month. Upgrade to save more drafts.`
+          : err?.message === 'Cannot create an empty draft property'
+            ? 'Enter at least a few property details before saving a draft.'
+            : `Failed to save draft: ${err?.message || 'please try again.'}`;
+      toast.addToast('error', message);
     } finally {
       setSaving(false);
     }
   };
 
   const onSubmit = async () => {
+    // The per-step "Pricing" gate only runs when navigating via Next — jumping
+    // straight to Review/Submit (via the step pills) bypassed it entirely,
+    // which is how ₹0 listings reached admin approval. Re-check here too.
+    const finalVals = getValues();
+    const finalPriceStr = finalVals.purpose === 'Rent' ? finalVals.rent_amount : finalVals.price;
+    const finalPriceError = validatePropertyPrice(finalPriceStr);
+    if (finalPriceError) {
+      setActiveStep(WIZARD_STEPS.indexOf('Pricing'));
+      fail(finalVals.purpose === 'Rent' ? 'rent_amount' : 'price', finalPriceError);
+      return;
+    }
+
     setSaving(true);
     try {
       if (user?.id) {
@@ -986,7 +1087,7 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
           </div>
           <h2 className="text-2xl font-bold text-navy-900 mb-2">Listing Limit Reached</h2>
           <p className="text-navy-600 mb-6">
-            You have reached the maximum limit of 2 properties for free accounts. Please upgrade your plan to list more properties and unlock premium features.
+            You have reached the maximum limit of {FREE_PLAN_LIMIT} properties for free accounts. Please upgrade your plan to list more properties and unlock premium features.
           </p>
           <Button onClick={() => navigate('/portal/subscription')} className="w-full sm:w-auto">
             View Subscription Plans
@@ -1235,6 +1336,21 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
                             );
                           })}
                         </div>
+                        {watch('property_sub_type') === 'Plot' && (
+                          <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50/70 p-4 text-left">
+                            <div>
+                              <p className="text-sm font-bold text-red-900">Listing an Open Plot or Land?</p>
+                              <p className="text-xs text-red-700">Use our specialized Plot Listing Wizard designed specifically for per-unit pricing (₹/Sq. Ft, ₹/Sq. Yd), survey numbers, and layout approvals.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => navigate('/portal/list-property/plot')}
+                              className="shrink-0 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-red-700 transition-colors"
+                            >
+                              Go to Plot Wizard →
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1600,6 +1716,16 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
                               <InputField
                                 value={coverImageUrl ?? ''}
                                 onChange={(e) => setCoverImageUrl(e.target.value || null)}
+                                onBlur={() => {
+                                  const val = (coverImageUrl || '').trim();
+                                  if (val && isValidMediaUrl(val)) applyCoverFromUrl(val);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter') return;
+                                  e.preventDefault();
+                                  const val = (coverImageUrl || '').trim();
+                                  if (val && isValidMediaUrl(val)) applyCoverFromUrl(val);
+                                }}
                                 placeholder="Paste cover image URL..."
                               />
                               <div className="flex items-center gap-2">
@@ -2197,18 +2323,18 @@ export function ListPropertyWizard({ isAdminMode = false, disableLayout = false 
               </div>
 
               {/* Sticky Footer */}
-              <div className="bg-white/95 backdrop-blur-2xl border-t border-navy-100/50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 z-50 rounded-b-[32px]">
+              <div className="bg-white/95 backdrop-blur-2xl border-t border-navy-100/50 px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 z-50 rounded-b-[32px] pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={handleBack}
                   disabled={activeStep === 0}
-                  className="rounded-xl h-11 px-5 font-medium text-sm hover:bg-navy-50 text-navy-600 transition-colors"
+                  className="rounded-xl h-11 px-5 font-medium text-sm hover:bg-navy-50 text-navy-600 transition-colors justify-center sm:justify-start"
                   icon={<ChevronLeft className="h-4 w-4" />}
                 >
                   Previous
                 </Button>
-                <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
                   <button
                     type="button"
                     onClick={() => handleSaveDraft()}

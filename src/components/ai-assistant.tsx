@@ -103,7 +103,7 @@ export function AIAssistant({ context }: { context?: string }) {
 
   return (
     <>
-      <div className="fixed bottom-24 md:bottom-10 right-3 md:right-6 z-20 flex flex-col items-end gap-2.5 md:gap-3 pointer-events-none">
+      <div className="fixed bottom-6 md:bottom-10 right-3 md:right-6 z-40 flex flex-col items-end gap-2.5 md:gap-3 pointer-events-none pb-safe">
         <a
           href="https://wa.me/919494230774"
           target="_blank"
@@ -133,7 +133,7 @@ export function AIAssistant({ context }: { context?: string }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.96 }}
               transition={{ duration: 0.2 }}
-              className="fixed bottom-6 right-6 z-50 flex h-[520px] w-[calc(100vw-3rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-cardHover"
+              className="fixed bottom-4 right-3 sm:bottom-6 sm:right-6 z-50 flex h-[520px] max-h-[calc(100dvh-5rem)] w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-3rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-cardHover"
             >
               <div className="flex items-center justify-between border-b border-navy-100 bg-navy-700 px-4 py-3 text-white">
                 <div className="flex items-center gap-2">

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Phone, Mail, Clock, Calendar, Sparkles, MessageCircle, Home } from 'lucide-react';
 import { formatDate, formatPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { DEFAULT_PROPERTY_IMAGE, handleImageError } from '../../lib/property-images';
 
 export interface AgentKanbanStageTheme {
   id: string;
@@ -236,6 +237,7 @@ export function AgentKanbanBoard({ leads, onStatusChange, onOpenLead }: AgentKan
                           <img
                             src={lead.property.images[0]}
                             alt=""
+                            onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
                             className="w-7 h-7 rounded object-cover shrink-0"
                           />
                         ) : (

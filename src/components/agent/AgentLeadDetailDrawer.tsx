@@ -26,6 +26,7 @@ import { useToast } from '../toast';
 import { Button, Input, Textarea, Badge } from '../ui';
 import { formatDate, formatPrice, generatePropertyUrl, buildWhatsAppUrl } from '../../lib/utils';
 import { useRealtimeCount } from '../../lib/realtime';
+import { DEFAULT_PROPERTY_IMAGE, handleImageError } from '../../lib/property-images';
 
 export const CRM_LEAD_STAGES = [
   { id: 'new', label: 'New Lead', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -407,8 +408,9 @@ export function AgentLeadDetailDrawer({
                 </div>
                 <div className="flex items-start gap-3">
                   <img
-                    src={lead.property.images?.[0] || 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg'}
+                    src={lead.property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
                     alt={lead.property.title}
+                    onError={(e) => handleImageError(e)}
                     className="w-20 h-20 rounded-xl object-cover border border-slate-200 shrink-0"
                   />
                   <div className="min-w-0 flex-1">
