@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,7 +8,6 @@ import {
   FileText,
   Briefcase,
   MapPin,
-  Upload,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
@@ -16,12 +15,12 @@ import {
   Handshake,
   Star,
   Clock,
-  X,
   AlertCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui';
 import { Logo, LogoLight } from '../../components/logo';
+import { DocumentUploadArea } from '../../components/uploader/document-upload-area';
 import { uploadFile } from '../../lib/storage';
 import { normalizeIndianMobile } from '../../lib/phone';
 import { getFriendlyErrorMessage } from '../../lib/utils';
@@ -163,70 +162,6 @@ function FieldError({ message }: { message?: string }) {
   );
 }
 
-// ─── File Upload ──────────────────────────────────────────────────────────────
-
-function FileUploadArea({
-  label,
-  hint,
-  file,
-  onChange,
-  accept = 'image/*,.pdf',
-  required = false,
-  error,
-}: {
-  label: string;
-  hint: string;
-  file: File | null;
-  onChange: (f: File | null) => void;
-  accept?: string;
-  required?: boolean;
-  error?: string;
-}) {
-  const { t } = useLanguageContext();
-  return (
-    <div>
-      <p className="text-sm font-medium text-navy-600 mb-1.5">
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </p>
-      <label
-        className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 cursor-pointer transition-all ${
-          error
-            ? 'border-red-400 bg-red-500/5'
-            : file
-              ? 'border-gold-400 bg-gold-500/5'
-              : 'border-navy-200 bg-navy-50/50 hover:border-gold-400 hover:bg-gold-500/5'
-        }`}
-      >
-        <input type="file" accept={accept} className="sr-only" onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
-        {file ? (
-          <div className="flex items-center gap-2 text-gold-600">
-            <CheckCircle2 className="h-5 w-5" />
-            <span className="text-sm font-medium truncate max-w-[200px]">{file.name}</span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                onChange(null);
-              }}
-              className="ml-1 text-navy-400 hover:text-red-400"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
-          <>
-            <Upload className="h-6 w-6 text-navy-400" />
-            <span className="text-sm text-navy-600">{t('auth.clickToUpload', 'Click to upload')}</span>
-            <span className="text-xs text-navy-500">{hint}</span>
-          </>
-        )}
-      </label>
-      <FieldError message={error} />
-    </div>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function PartnerRegisterPage() {
@@ -271,12 +206,8 @@ export function PartnerRegisterPage() {
     const normalized = normalizeIndianMobile(mobile);
     if (!normalized) return; // invalid format — the validator will catch it
     try {
-      const { data } = await supabase
-        .from('partner_applications')
-        .select('id')
-        .eq('mobile_number', `+${normalized}`)
-        .limit(1);
-      if (data && data.length > 0) {
+      const { data } = await supabase.rpc('check_partner_mobile_exists', { p_mobile: `+${normalized}` });
+      if (data) {
         setMobileDuplicateWarning(
           t('auth.mobileDuplicateWarning', 'A partner application already exists for this mobile number. Contact support if this is an error.')
         );
@@ -303,6 +234,14 @@ export function PartnerRegisterPage() {
       }
     }
   };
+
+  // Whenever a jump back to Step 1 lands with pending errors (e.g. the final
+  // GST/state cross-check at submit time), focus the offending field once
+  // Step 1's inputs are actually mounted.
+  useEffect(() => {
+    if (step === 1) focusFirstError(errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   const validateStep = (): boolean => {
     let errs: Partial<Record<keyof FormData, string>> = {};
@@ -392,8 +331,11 @@ export function PartnerRegisterPage() {
       state: form.state,
     });
     if (Object.keys(finalErrs).length > 0) {
+      setErrors(finalErrs);
+      setStep(1);
       setServerError(
-        t('auth.invalidPartnerDetailsFields', 'Some fields in your Partner Details are invalid. Please go back to Step 1 and correct them before submitting.')
+        Object.values(finalErrs)[0] ||
+          t('auth.invalidPartnerDetailsFields', 'Some fields in your Partner Details are invalid. Please correct them before submitting.')
       );
       return;
     }
@@ -410,12 +352,8 @@ export function PartnerRegisterPage() {
 
     try {
       // Check for duplicate mobile on submission
-      const { data: dupCheck } = await supabase
-        .from('partner_applications')
-        .select('id')
-        .eq('mobile_number', `+${mobile}`)
-        .limit(1);
-      if (dupCheck && dupCheck.length > 0) {
+      const { data: dupExists } = await supabase.rpc('check_partner_mobile_exists', { p_mobile: `+${mobile}` });
+      if (dupExists) {
         throw new Error(
           t('auth.mobileDuplicateError', 'A partner application already exists for this mobile number. Please contact support if this is an error.')
         );
@@ -436,10 +374,8 @@ export function PartnerRegisterPage() {
         docUpload(form.address_proof_doc, 'addr'),
       ]);
 
-      const { data, error } = await supabase
-        .from('partner_applications')
-        .insert({
-          status: 'submitted',
+      const { data: applicationNumberResult, error } = await supabase.rpc('submit_partner_application', {
+        p_application: {
           partner_type: form.partner_type,
           full_name: form.full_name.trim(),
           mobile_number: `+${mobile}`,
@@ -448,7 +384,7 @@ export function PartnerRegisterPage() {
           business_registration_number: form.business_registration_number.trim() || null,
           gst_number: form.gst_number.trim().toUpperCase() || null,
           pan_number: form.pan_number.trim().toUpperCase() || null,
-          years_of_experience: form.years_of_experience ? Number(form.years_of_experience) : null,
+          years_of_experience: form.years_of_experience || null,
           website: form.website.trim() || null,
           address_line_1: form.address_line_1.trim(),
           address_line_2: form.address_line_2.trim() || null,
@@ -462,7 +398,7 @@ export function PartnerRegisterPage() {
           preferred_locations: form.preferred_locations
             ? form.preferred_locations.split(',').map((l) => l.trim()).filter(Boolean)
             : [],
-          expected_monthly_leads: form.expected_monthly_leads ? Number(form.expected_monthly_leads) : null,
+          expected_monthly_leads: form.expected_monthly_leads || null,
           current_business_volume: form.current_business_volume.trim() || null,
           real_estate_experience: form.real_estate_experience.trim() || null,
           description: form.description.trim() || null,
@@ -471,12 +407,11 @@ export function PartnerRegisterPage() {
           gst_doc_url,
           business_reg_doc_url,
           address_proof_doc_url,
-        })
-        .select('application_number')
-        .single();
+        },
+      });
 
       if (error) throw new Error(error.message);
-      setApplicationNumber(data?.application_number ?? null);
+      setApplicationNumber((applicationNumberResult as string) ?? null);
       setSubmitted(true);
     } catch (e: unknown) {
       setServerError(getFriendlyErrorMessage(e));
@@ -1016,11 +951,11 @@ export function PartnerRegisterPage() {
                     <h1 className="font-display text-2xl font-bold text-navy-900">{t('auth.uploadDocumentsHeading', 'Upload Documents')}</h1>
                     <p className="mt-1 text-sm text-navy-500">{t('auth.uploadDocumentsSubtitle', 'Help us verify your identity and business (optional but recommended)')}</p>
                     <div className="mt-6 space-y-5">
-                      <FileUploadArea label={t('auth.docPanCard', 'PAN Card')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.pan_doc} onChange={(f) => set('pan_doc', f)} />
-                      <FileUploadArea label={t('auth.docAadhaar', 'Aadhaar / Government ID')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.id_doc} onChange={(f) => set('id_doc', f)} />
-                      <FileUploadArea label={t('auth.docGstCertificate', 'GST Certificate')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.gst_doc} onChange={(f) => set('gst_doc', f)} />
-                      <FileUploadArea label={t('auth.docBusinessRegCertificate', 'Business Registration Certificate')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.business_reg_doc} onChange={(f) => set('business_reg_doc', f)} />
-                      <FileUploadArea label={t('auth.docAddressProof', 'Address Proof')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.address_proof_doc} onChange={(f) => set('address_proof_doc', f)} />
+                      <DocumentUploadArea label={t('auth.docPanCard', 'PAN Card')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.pan_doc} onChange={(f) => set('pan_doc', f)} />
+                      <DocumentUploadArea label={t('auth.docAadhaar', 'Aadhaar / Government ID')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.id_doc} onChange={(f) => set('id_doc', f)} />
+                      <DocumentUploadArea label={t('auth.docGstCertificate', 'GST Certificate')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.gst_doc} onChange={(f) => set('gst_doc', f)} />
+                      <DocumentUploadArea label={t('auth.docBusinessRegCertificate', 'Business Registration Certificate')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.business_reg_doc} onChange={(f) => set('business_reg_doc', f)} />
+                      <DocumentUploadArea label={t('auth.docAddressProof', 'Address Proof')} hint={t('auth.docHintSize', 'JPG, PNG or PDF — max 10MB')} file={form.address_proof_doc} onChange={(f) => set('address_proof_doc', f)} />
                       <div className="rounded-xl border border-gold-200 bg-gold-500/5 p-4 text-xs text-navy-500">
                         <ShieldCheck className="h-4 w-4 text-gold-600 mb-2" />
                         <p className="font-semibold text-navy-900">{t('auth.documentsSafeTitle', 'Your documents are safe')}</p>

@@ -244,7 +244,7 @@ serve(async (req) => {
             .eq('user_id', userId)
             .maybeSingle();
           if (!existingPartner) {
-            const { error: partnerErr } = await supabaseAdmin.from('partners').insert({
+            const { data: insertedPartner, error: partnerErr } = await supabaseAdmin.from('partners').insert({
               application_id: app.id,
               user_id: userId,
               full_name: app.full_name,
@@ -256,9 +256,45 @@ serve(async (req) => {
               verification_status: 'verified',
               approved_by: adminUserId,
               approved_at: new Date().toISOString(),
-            });
+              gst_number: app.gst_number || null,
+              pan_number: app.pan_number || null,
+              website: app.website || null,
+              business_registration_number: app.business_registration_number || null,
+              address_line_1: app.address_line_1 || null,
+              address_line_2: app.address_line_2 || null,
+              country: app.country || 'India',
+              state: app.state || null,
+              city: app.city || null,
+              district: app.district || null,
+              pincode: app.pincode || null,
+            }).select('id').single();
             if (partnerErr) throw new Error('Failed to create partner account: ' + partnerErr.message);
             await recordApprovalAudit('PARTNER_CREATED', 'SUCCESS', undefined, { user_id: userId });
+
+            // Seed partner_documents from the application's doc-URL snapshot so
+            // the partner doesn't land on an empty Documents tab post-approval.
+            const docTypeByColumn: Record<string, string> = {
+              pan_doc_url: 'pan',
+              id_doc_url: 'govt_id',
+              gst_doc_url: 'gst_certificate',
+              business_reg_doc_url: 'business_registration',
+              address_proof_doc_url: 'address_proof',
+              other_doc_url: 'other',
+            };
+            const seedDocs = Object.entries(docTypeByColumn)
+              .filter(([col]) => !!app[col])
+              .map(([col, document_type]) => ({
+                partner_id: insertedPartner?.id,
+                user_id: userId,
+                document_type,
+                storage_path: app[col],
+                status: 'under_review',
+                uploaded_at: app.created_at,
+              }));
+            if (seedDocs.length > 0) {
+              const { error: docsErr } = await supabaseAdmin.from('partner_documents').insert(seedDocs);
+              if (docsErr) console.warn('Failed to seed partner_documents (non-fatal):', docsErr.message);
+            }
           }
         }
       } catch (err: any) {

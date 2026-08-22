@@ -131,6 +131,9 @@ const AdminBuilderApplications = lazy(() =>
 const AdminPartnerApplications = lazy(() =>
   import('./pages/admin/applications').then((m) => ({ default: m.AdminPartnerApplications })),
 );
+const AdminBusinessPartners = lazy(() =>
+  import('./pages/admin/business-partners').then((m) => ({ default: m.AdminBusinessPartners })),
+);
 const AdminCustomers = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminCustomers })));
 const AdminPropertyEditor = lazy(() => import('./pages/admin/admin-property-editor').then((m) => ({ default: m.AdminPropertyEditor })));
 const AdminAgents = lazy(() => import('./pages/admin/manage').then((m) => ({ default: m.AdminAgents })));
@@ -180,6 +183,7 @@ const AgentProfile = lazy(() => import('./pages/agent/profile').then((m) => ({ d
 const AgentAiAssistant = lazy(() => import('./pages/agent/ai-assistant').then((m) => ({ default: m.AgentAiAssistant })));
 
 const PartnerDashboard = lazy(() => import('./pages/partner/dashboard').then((m) => ({ default: m.PartnerDashboard })));
+const PartnerProfile = lazy(() => import('./pages/partner/profile').then((m) => ({ default: m.PartnerProfile })));
 
 const BuilderDashboard = lazy(() => import('./pages/builder/dashboard').then((m) => ({ default: m.BuilderDashboard })));
 const BuilderProjects = lazy(() => import('./pages/builder/projects').then((m) => ({ default: m.BuilderProjects })));
@@ -488,7 +492,10 @@ function AppRoutes() {
             },
             {
               element: <ProtectedRoute allowRoles={['partner']} />,
-              children: [{ path: '/partner', element: <PartnerDashboard /> }],
+              children: [
+                { path: '/partner', element: <PartnerDashboard /> },
+                { path: '/partner/profile', element: <PartnerProfile /> },
+              ],
             },
             {
               element: <ProtectedRoute allowRoles={['builder']} />,
@@ -532,6 +539,7 @@ function AppRoutes() {
                 { path: '/admin/agent-applications', element: <AdminAgentApplications /> },
                 { path: '/admin/builder-applications', element: <AdminBuilderApplications /> },
                 { path: '/admin/partner-applications', element: <AdminPartnerApplications /> },
+                { path: '/admin/business-partners', element: <AdminBusinessPartners /> },
                 { path: '/admin/customers', element: <AdminCustomers /> },
                 { path: '/admin/agents', element: <AdminAgents /> },
                 { path: '/admin/blogs', element: <AdminBlogs /> },

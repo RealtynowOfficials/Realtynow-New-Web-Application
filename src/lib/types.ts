@@ -645,6 +645,74 @@ export interface PartnerApplication {
   updated_at: string;
 }
 
+export interface Partner {
+  id: string;
+  partner_code: string | null;
+  application_id: string | null;
+  user_id: string;
+  full_name: string;
+  mobile_number: string;
+  email: string | null;
+  partner_type: string | null;
+  company_name: string | null;
+  status: 'active' | 'suspended' | 'inactive';
+  verification_status: string | null;
+  gst_number: string | null;
+  pan_number: string | null;
+  website: string | null;
+  business_registration_number: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  country: string | null;
+  state: string | null;
+  city: string | null;
+  district: string | null;
+  pincode: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// account_number is intentionally omitted — REVOKEd at the DB column level,
+// only readable via the audited admin_reveal_partner_bank_account_number() RPC.
+export interface PartnerBankAccount {
+  id: string;
+  user_id: string;
+  partner_id: string | null;
+  account_holder_name: string;
+  bank_name: string;
+  account_number_last4: string | null;
+  ifsc_code: string;
+  branch: string | null;
+  account_type: 'savings' | 'current';
+  verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PartnerDocumentType =
+  | 'aadhaar' | 'pan' | 'govt_id' | 'cancelled_cheque' | 'bank_proof' | 'passbook'
+  | 'gst_certificate' | 'business_registration' | 'address_proof' | 'other';
+
+export type PartnerDocumentStatus = 'uploaded' | 'under_review' | 'verified' | 'rejected' | 'resubmission_required';
+
+export interface PartnerDocument {
+  id: string;
+  partner_id: string | null;
+  user_id: string;
+  document_type: PartnerDocumentType;
+  storage_path: string;
+  status: PartnerDocumentStatus;
+  rejection_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  uploaded_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type KycIdType = 'aadhaar' | 'pan' | 'passport' | 'voter_id' | 'driving_license';
 export type KycStatus = 'pending' | 'verified' | 'rejected';
 

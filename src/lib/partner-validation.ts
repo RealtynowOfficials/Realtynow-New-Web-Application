@@ -269,6 +269,24 @@ export function validatePAN(raw: string, required = true): string | null {
   return null;
 }
 
+/** 8b — IFSC Code (partner_bank_accounts, mirrors chk_partner_bank_ifsc_format DB constraint) */
+export function validateIFSC(raw: string): string | null {
+  const value = raw.trim().toUpperCase();
+  if (!value) return 'IFSC code is required.';
+  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(value)) {
+    return 'Please enter a valid IFSC code (e.g. HDFC0001234).';
+  }
+  return null;
+}
+
+/** 8c — Bank Account Number (partner_bank_accounts) */
+export function validateBankAccountNumber(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return 'Account number is required.';
+  if (!/^\d{9,18}$/.test(value)) return 'Please enter a valid account number (9-18 digits).';
+  return null;
+}
+
 /** 9 — Website URL (always required) */
 export function validateWebsiteUrl(raw: string): string | null {
   const value = raw.trim();
