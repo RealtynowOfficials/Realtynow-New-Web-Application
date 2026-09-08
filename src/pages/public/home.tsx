@@ -20,8 +20,6 @@ import {
   TrendingUp,
   Building2,
   Home,
-  Store,
-  Warehouse,
   Users,
   Star,
   Phone,
@@ -34,7 +32,6 @@ import {
   FileText,
   Wallet,
   KeyRound,
-  Briefcase,
   Heart,
   GitCompare,
   BarChart3,
@@ -53,10 +50,19 @@ import {
   Droplets,
   PieChart,
   Bed,
+  Bath,
+  Car,
+  Compass,
+  Maximize2,
+  Waves,
+  Dumbbell,
+  Trees,
+  Camera,
+  Flame,
+  Wifi,
   Share2,
   Check,
   CheckCircle2,
-  Calendar,
   X,
 } from 'lucide-react';
 import { useClickOutside } from '../../hooks/useClickOutside';
@@ -65,7 +71,7 @@ import type { CategorySlug } from '../../lib/categories';
 import { normalizeSearchQuery } from '../../lib/properties';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
-import { formatPrice, formatCompactPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
+import { formatPrice, formatCompactPrice, formatNumber, cn, generatePropertyUrl, buildWhatsAppUrl } from '../../lib/utils';
 import { sharePropertyNativeOrCopy } from '../../lib/share-service';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useToast } from '../../components/toast';
@@ -77,15 +83,14 @@ import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../..
 import { useAuth } from '../../lib/auth';
 import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { PropertyImage } from '../../components/property-image';
-import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
+import { getPropertyPricingDisplay } from '../../lib/plot-pricing';
 import { PostPropertyLink } from '../../components/post-property-link';
-import { ContactAgentModal } from '../../components/contact-agent-modal';
-import { BookVisitModal } from '../../components/book-visit-modal';
 import { fetchPublicFeaturedProperties } from '../../lib/featured-properties-api';
 import { fetchPublicCampaigns } from '../../lib/paid-campaigns-api';
 import { isRakshaBandhanActive } from '../../lib/campaigns/festive-campaigns';
 import { RakshaBandhanPropertySection } from '../../components/festive/RakshaBandhanPropertySection';
-import { RakhiMandala, TinyRakhiIcon } from '../../components/festive/RakshaBandhanIcons';
+import { TinyRakhiIcon } from '../../components/festive/RakshaBandhanIcons';
+import { getAmenityDisplayItem } from '../../lib/amenities';
 
 type HomeCardProperty = Property & {
   city_name?: string | null;
@@ -93,6 +98,24 @@ type HomeCardProperty = Property & {
   property_type_name?: string | null;
   builder_name?: string | null;
 };
+
+function getAmenityLucideIcon(token: string) {
+  const l = (token || '').toLowerCase();
+  if (l.includes('pool') || l.includes('swim')) return <Waves className="h-3 w-3 text-cyan-600 shrink-0" />;
+  if (l.includes('gym') || l.includes('fitness')) return <Dumbbell className="h-3 w-3 text-amber-600 shrink-0" />;
+  if (l.includes('security') || l.includes('guard')) return <Shield className="h-3 w-3 text-emerald-600 shrink-0" />;
+  if (l.includes('parking') || l.includes('car')) return <Car className="h-3 w-3 text-blue-600 shrink-0" />;
+  if (l.includes('garden') || l.includes('park') || l.includes('tree') || l.includes('plantation')) return <Trees className="h-3 w-3 text-emerald-600 shrink-0" />;
+  if (l.includes('power') || l.includes('backup') || l.includes('generator') || l.includes('electricity') || l.includes('solar')) return <Zap className="h-3 w-3 text-amber-500 shrink-0" />;
+  if (l.includes('lift') || l.includes('elevator')) return <Layers className="h-3 w-3 text-indigo-600 shrink-0" />;
+  if (l.includes('club')) return <Building2 className="h-3 w-3 text-purple-600 shrink-0" />;
+  if (l.includes('camera') || l.includes('cctv')) return <Camera className="h-3 w-3 text-slate-600 shrink-0" />;
+  if (l.includes('play') || l.includes('kid') || l.includes('child')) return <Sparkles className="h-3 w-3 text-rose-500 shrink-0" />;
+  if (l.includes('water') || l.includes('drainage') || l.includes('borewell') || l.includes('rain')) return <Droplets className="h-3 w-3 text-sky-600 shrink-0" />;
+  if (l.includes('wifi') || l.includes('internet')) return <Wifi className="h-3 w-3 text-teal-600 shrink-0" />;
+  if (l.includes('gas')) return <Flame className="h-3 w-3 text-orange-500 shrink-0" />;
+  return <CheckCircle2 className="h-3 w-3 text-slate-500 shrink-0" />;
+}
 
 /* ============================================================
    Compact premium property card — shared by the homepage carousels
@@ -170,12 +193,12 @@ export function HomePropertyCard({
   };
 
   return (
-    <div className="group flex h-full flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.09)] hover:-translate-y-1">
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.09)] hover:-translate-y-1">
       <Link
         to={generatePropertyUrl(property)}
-        className="block flex-1"
+        className="flex flex-1 flex-col"
       >
-        <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100">
+        <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100 shrink-0">
           <PropertyImage
             src={getPropertyCoverImage(property)}
             alt={property.title}
@@ -229,9 +252,132 @@ export function HomePropertyCard({
           )}
         </div>
 
-        <div className="flex flex-col p-4 sm:p-5">
+        <div className="flex flex-col p-4 sm:p-4.5">
           {(() => {
             const pricing = getPropertyPricingDisplay(property, { compactConstructed: true });
+            const propObj: any = (property as any).property || property;
+
+            const rawBeds = propObj.bedrooms ?? property.bedrooms;
+            const bedrooms = rawBeds != null && rawBeds > 0 ? rawBeds : null;
+            const bathrooms = propObj.bathrooms ?? property.bathrooms;
+            const builtUpArea = propObj.built_up_area ?? property.built_up_area;
+            const carpetArea = propObj.carpet_area ?? property.carpet_area;
+            const plotArea = propObj.plot_area ?? property.plot_area;
+            const areaUnit = propObj.area_unit || property.area_unit || (plotArea ? 'sq.yd' : 'sq.ft');
+            const parking = propObj.parking ?? property.parking;
+            const facing = propObj.facing || property.facing;
+            const furnishing = propObj.furnishing || property.furnishing;
+
+            // Collect compact specifications
+            const specs: { icon: React.ReactNode; label: string }[] = [];
+            if (bedrooms != null) {
+              specs.push({
+                icon: <Bed className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${bedrooms} BHK`,
+              });
+            }
+            if (bathrooms != null && bathrooms > 0) {
+              specs.push({
+                icon: <Bath className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${bathrooms} ${bathrooms === 1 ? 'Bath' : 'Baths'}`,
+              });
+            }
+            if (builtUpArea) {
+              specs.push({
+                icon: <Maximize2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${formatNumber(builtUpArea)} sq.ft`,
+              });
+            } else if (plotArea) {
+              specs.push({
+                icon: <Maximize2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${formatNumber(plotArea)} ${areaUnit}`,
+              });
+            } else if (carpetArea) {
+              specs.push({
+                icon: <Maximize2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${formatNumber(carpetArea)} sq.ft`,
+              });
+            }
+            if (parking != null && parking > 0) {
+              specs.push({
+                icon: <Car className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${parking} ${parking === 1 ? 'Car' : 'Parking'}`,
+              });
+            }
+            if (facing) {
+              specs.push({
+                icon: <Compass className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                label: `${facing}`,
+              });
+            }
+
+            // If specs is empty (like in "3 & 4 BHK Luxury Apartments"), intelligently extract from title and category
+            if (specs.length === 0) {
+              const bhkMatch = (property.title || '').match(/(\d+(?:\s*(?:&|-|\/)\s*\d+)?)\s*BHK/i);
+              if (bhkMatch) {
+                specs.push({
+                  icon: <Bed className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                  label: `${bhkMatch[1].replace(/\s+/g, ' ')} BHK`,
+                });
+              }
+              const typeName = propObj.property_sub_type || propObj.property_type_name || (property.title?.toLowerCase().includes('apartment') ? 'Apartment' : property.title?.toLowerCase().includes('villa') ? 'Villa' : null);
+              if (typeName) {
+                specs.push({
+                  icon: <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />,
+                  label: typeName,
+                });
+              }
+              if (property.possession_status) {
+                specs.push({
+                  icon: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />,
+                  label: property.possession_status,
+                });
+              } else if (reraNumber) {
+                specs.push({
+                  icon: <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />,
+                  label: 'RERA Approved',
+                });
+              } else {
+                specs.push({
+                  icon: <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />,
+                  label: 'Prime Location',
+                });
+              }
+            }
+
+            // Normalise & deduplicate amenities list
+            const rawAmenities: string[] = (propObj.amenities || property.amenities || []).filter(Boolean);
+            const seen = new Set<string>();
+            const amenitiesList: { id: string; label: string; icon: string }[] = [];
+
+            for (const item of rawAmenities) {
+              const meta = getAmenityDisplayItem(item);
+              const labelStr = typeof meta?.label === 'string' ? meta.label : String(meta?.label || '');
+              if (labelStr.trim()) {
+                const key = labelStr.toLowerCase();
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  amenitiesList.push({ ...meta, label: labelStr });
+                }
+              }
+            }
+
+            // High-quality fallback amenities if listing has none in DB
+            if (amenitiesList.length === 0) {
+              const isPlot = !!plotArea && !builtUpArea;
+              const isComm = (property.listing_category || '').toLowerCase().includes('commercial') || (propObj.property_type_name || '').toLowerCase().includes('commercial');
+              const defaults = isPlot
+                ? ['Gated Layout', 'Clear Title', 'Water Connection', 'Compound Wall']
+                : isComm
+                ? ['Power Backup', '24/7 Security', 'Lift', 'Parking']
+                : ['24/7 Security', 'Power Backup', 'Water Supply', 'Gated Community'];
+
+              defaults.forEach((d) => amenitiesList.push(getAmenityDisplayItem(d)));
+            }
+
+            const visibleAmenities = amenitiesList.slice(0, 3);
+            const remainingCount = Math.max(0, amenitiesList.length - 3);
+
             return (
               <>
                 <div className="flex items-baseline justify-between gap-2 flex-wrap mb-1">
@@ -243,13 +389,17 @@ export function HomePropertyCard({
                       </span>
                     )}
                   </p>
-                  {property.bedrooms != null ? (
+                  {bedrooms != null ? (
                     <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
-                      <Bed className="h-3.5 w-3.5 text-slate-500" /> {property.bedrooms} BHK
+                      <Bed className="h-3.5 w-3.5 text-slate-500" /> {bedrooms} BHK
                     </span>
                   ) : pricing.areaDisplay ? (
                     <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-100 px-2.5 py-0.5 text-xs font-bold">
                       {pricing.areaDisplay}
+                    </span>
+                  ) : propObj.property_sub_type || propObj.property_type_name ? (
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">
+                      {propObj.property_sub_type || propObj.property_type_name}
                     </span>
                   ) : null}
                 </div>
@@ -265,18 +415,64 @@ export function HomePropertyCard({
                     {property.city_name ?? 'Hyderabad'}
                   </span>
                 </p>
+
+                {/* Property Key Specifications - Clean & tight */}
+                {specs.length > 0 && (
+                  <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                    {specs.slice(0, 3).map((spec, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 rounded-md bg-slate-50 border border-slate-200/70 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                      >
+                        {spec.icon}
+                        <span>{spec.label}</span>
+                      </span>
+                    ))}
+                    {furnishing && furnishing !== 'Unfurnished' && (
+                      <span className="inline-flex items-center rounded-md bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 text-[10px] font-semibold">
+                        {furnishing}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Amenities Badges Section - Placed directly with content with no empty gap */}
+                <div className="mt-2.5 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Amenities
+                    </span>
+                    {remainingCount > 0 && (
+                      <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-full px-1.5 py-0.2">
+                        +{remainingCount} more
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {visibleAmenities.map((amenity, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50/90 hover:bg-slate-100 border border-slate-200/80 px-2 py-1 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
+                        title={amenity.label}
+                      >
+                        {getAmenityLucideIcon(amenity.id || amenity.label)}
+                        <span className="truncate max-w-[105px]">{amenity.label}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </>
             );
           })()}
         </div>
       </Link>
 
-      {/* View Details CTA Button */}
-      <div className="mt-auto pt-2 px-4 pb-4 border-t border-slate-100">
+      {/* Floating Smooth Slide-Up View Details Button on Hover */}
+      <div className="absolute inset-x-0 bottom-0 p-3.5 pt-8 bg-gradient-to-t from-white via-white/95 to-transparent rounded-b-2xl sm:rounded-b-3xl transform translate-y-5 opacity-0 pointer-events-none group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 ease-out z-20">
         <Link
           to={generatePropertyUrl(property)}
           onClick={(e) => e.stopPropagation()}
-          className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-50 hover:bg-red-600 text-slate-700 hover:text-white border border-slate-200 hover:border-red-600 transition-all text-center flex items-center justify-center gap-2 group/btn shadow-2xs hover:shadow-md active:scale-98"
+          className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/25 hover:shadow-lg hover:shadow-red-600/35 transition-all text-center flex items-center justify-center gap-2 group/btn active:scale-98"
         >
           <span>{t('common.viewDetails', 'View Details')}</span>
           <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover/btn:translate-x-1" />
@@ -1644,67 +1840,322 @@ function TrustSection() {
 }
 
 /* ============================================================
-   Property Categories — Curated Luxury Category Showcase
+   Property Categories — 3D Level Carousel Showcase (Screenshot 2)
 ============================================================ */
 import { CATEGORY_LIST } from '../../lib/categories';
+
+interface CategoryShowcaseConfig {
+  tagline: string;
+  image: string;
+  textAccentClass: string;
+  borderHoverClass: string;
+  badgeBg: string;
+}
+
+const CATEGORY_SHOWCASE_CONFIG: Record<string, CategoryShowcaseConfig> = {
+  'independent-houses': {
+    tagline: 'Spacious homes for your family',
+    image: '/categories/independent-houses.jpg',
+    textAccentClass: 'text-red-600',
+    borderHoverClass: 'hover:border-red-400 hover:shadow-red-500/10',
+    badgeBg: 'bg-red-50 text-red-600',
+  },
+  'apartment-flats': {
+    tagline: 'Modern living in prime locations',
+    image: '/categories/apartment-flats.jpg',
+    textAccentClass: 'text-rose-600',
+    borderHoverClass: 'hover:border-rose-400 hover:shadow-rose-500/10',
+    badgeBg: 'bg-rose-50 text-rose-600',
+  },
+  'gated-community-homes': {
+    tagline: 'Secure & luxurious community living',
+    image: '/categories/gated-community-homes.jpg',
+    textAccentClass: 'text-emerald-600',
+    borderHoverClass: 'hover:border-emerald-500 hover:shadow-emerald-500/10',
+    badgeBg: 'bg-emerald-50 text-emerald-600',
+  },
+  'open-plots-land': {
+    tagline: 'Invest in your future today',
+    image: '/categories/open-plots-land.jpg',
+    textAccentClass: 'text-amber-600',
+    borderHoverClass: 'hover:border-amber-400 hover:shadow-amber-500/10',
+    badgeBg: 'bg-amber-50 text-amber-600',
+  },
+  'luxury-villas': {
+    tagline: 'Premium villas for elite living',
+    image: '/categories/luxury-villas.jpg',
+    textAccentClass: 'text-purple-600',
+    borderHoverClass: 'hover:border-purple-400 hover:shadow-purple-500/10',
+    badgeBg: 'bg-purple-50 text-purple-600',
+  },
+  'farm-houses': {
+    tagline: 'Serene retreat amidst nature',
+    image: '/categories/farm-houses.jpg',
+    textAccentClass: 'text-green-600',
+    borderHoverClass: 'hover:border-green-400 hover:shadow-green-500/10',
+    badgeBg: 'bg-green-50 text-green-600',
+  },
+  'new-projects': {
+    tagline: 'Upcoming & pre-launch developments',
+    image: '/categories/new-projects.jpg',
+    textAccentClass: 'text-blue-600',
+    borderHoverClass: 'hover:border-blue-400 hover:shadow-blue-500/10',
+    badgeBg: 'bg-blue-50 text-blue-600',
+  },
+  'duplex-houses': {
+    tagline: 'Multi-level living with supreme comfort',
+    image: '/categories/duplex-houses.jpg',
+    textAccentClass: 'text-indigo-600',
+    borderHoverClass: 'hover:border-indigo-400 hover:shadow-indigo-500/10',
+    badgeBg: 'bg-indigo-50 text-indigo-600',
+  },
+  'pent-houses': {
+    tagline: 'Sky-high luxury with panoramic views',
+    image: '/categories/pent-houses.jpg',
+    textAccentClass: 'text-sky-600',
+    borderHoverClass: 'hover:border-sky-400 hover:shadow-sky-500/10',
+    badgeBg: 'bg-sky-50 text-sky-600',
+  },
+  'agriculture-land': {
+    tagline: 'Fertile farmland & agro investments',
+    image: '/categories/agriculture-land.jpg',
+    textAccentClass: 'text-lime-700',
+    borderHoverClass: 'hover:border-lime-500 hover:shadow-lime-600/10',
+    badgeBg: 'bg-lime-50 text-lime-700',
+  },
+  'owner-properties': {
+    tagline: 'Direct from verified owners',
+    image: '/categories/owner-properties.jpg',
+    textAccentClass: 'text-teal-600',
+    borderHoverClass: 'hover:border-teal-400 hover:shadow-teal-500/10',
+    badgeBg: 'bg-teal-50 text-teal-600',
+  },
+  'builder-share-properties': {
+    tagline: 'Exclusive builder share inventory',
+    image: '/categories/builder-share-properties.jpg',
+    textAccentClass: 'text-orange-600',
+    borderHoverClass: 'hover:border-orange-400 hover:shadow-orange-500/10',
+    badgeBg: 'bg-orange-50 text-orange-600',
+  },
+  'commercial-spaces': {
+    tagline: 'Grade-A offices & workspaces',
+    image: '/categories/commercial-spaces.jpg',
+    textAccentClass: 'text-red-600',
+    borderHoverClass: 'hover:border-red-400 hover:shadow-red-500/10',
+    badgeBg: 'bg-red-50 text-red-600',
+  },
+  'shops-showrooms': {
+    tagline: 'High footfall retail storefronts',
+    image: '/categories/shops-showrooms.jpg',
+    textAccentClass: 'text-amber-600',
+    borderHoverClass: 'hover:border-amber-400 hover:shadow-amber-500/10',
+    badgeBg: 'bg-amber-50 text-amber-600',
+  },
+  'shopping-malls': {
+    tagline: 'Prime commercial retail complexes',
+    image: '/categories/shopping-malls.jpg',
+    textAccentClass: 'text-pink-600',
+    borderHoverClass: 'hover:border-pink-400 hover:shadow-pink-500/10',
+    badgeBg: 'bg-pink-50 text-pink-600',
+  },
+  'godowns-warehouses': {
+    tagline: 'Industrial storage & logistics hubs',
+    image: '/categories/godowns-warehouses.jpg',
+    textAccentClass: 'text-cyan-700',
+    borderHoverClass: 'hover:border-cyan-500 hover:shadow-cyan-600/10',
+    badgeBg: 'bg-cyan-50 text-cyan-700',
+  },
+  'pg-coliving-spaces': {
+    tagline: 'Fully furnished shared living spaces',
+    image: '/categories/pg-coliving-spaces.jpg',
+    textAccentClass: 'text-violet-600',
+    borderHoverClass: 'hover:border-violet-400 hover:shadow-violet-500/10',
+    badgeBg: 'bg-violet-50 text-violet-600',
+  },
+};
 
 function CategoriesSection() {
   const { t } = useLanguageContext();
   const { city } = useLocationContext();
   const rakhiActive = isRakshaBandhanActive();
 
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    loop: false,
+    align: 'start',
+    slidesToScroll: 'auto',
+    containScroll: 'trimSnaps',
+    dragFree: true,
+  });
+
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [canScrollPrev, setCanScrollPrev] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(true);
+  const [scrollSnaps, setScrollSnaps] = useState<number[]>([]);
+
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setSelectedIndex(emblaApi.selectedScrollSnap());
+    setCanScrollPrev(emblaApi.canScrollPrev());
+    setCanScrollNext(emblaApi.canScrollNext());
+  }, [emblaApi]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    setScrollSnaps(emblaApi.scrollSnapList());
+    onSelect();
+    emblaApi.on('select', onSelect);
+    emblaApi.on('reInit', () => {
+      setScrollSnaps(emblaApi.scrollSnapList());
+      onSelect();
+    });
+    return () => {
+      emblaApi.off('select', onSelect);
+    };
+  }, [emblaApi, onSelect]);
+
+  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
+
   return (
-    <SectionShell
-      title={
-        <div>
+    <section className="py-8 sm:py-12 bg-gradient-to-b from-white via-slate-50/30 to-white relative overflow-hidden" id="categories">
+      <div className="container-wide">
+        {/* Section Header (Centered with Badge) */}
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 text-red-600 border border-red-200/80 text-[11px] font-extrabold mb-2.5 shadow-2xs">
+            <Sparkles className="w-3 h-3 text-red-500" />
+            <span>Find Your Perfect Property</span>
+          </div>
+
           {rakhiActive && (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-red-50 via-amber-50 to-rose-50 border border-amber-200/90 text-red-700 text-[11px] font-black uppercase tracking-wider mb-2.5 shadow-2xs">
-              <span className="text-xs">🪢</span>
-              <span>Raksha Bandhan Special</span>
+            <div className="flex justify-center mb-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gradient-to-r from-red-50 via-amber-50 to-rose-50 border border-amber-200/90 text-red-700 text-[10px] font-black uppercase tracking-wider shadow-2xs">
+                <span className="text-xs">🪢</span>
+                <span>Raksha Bandhan Special</span>
+              </div>
             </div>
           )}
-          <div className="flex items-center gap-1">
-            Browse by <span className="text-red-600 ml-1.5">Category</span>
+
+          <h2 className="font-display text-xl sm:text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Browse by <span className="text-red-600">Category</span>
+          </h2>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-lg mx-auto font-normal">
+            {t('home.categorySubtitle', 'Explore a wide range of property options tailored to your needs')}
+          </p>
+        </div>
+
+        {/* Carousel Slider with Floating Navigation Arrows */}
+        <div className="relative group/carousel">
+          {/* Left Arrow Button */}
+          <button
+            type="button"
+            onClick={scrollPrev}
+            disabled={!canScrollPrev}
+            aria-label="Previous categories"
+            className="absolute -left-2 sm:-left-3 md:-left-4 top-[45%] -translate-y-1/2 z-20 grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-full bg-white text-slate-700 border border-slate-200/90 shadow-md hover:bg-slate-50 hover:border-slate-300 disabled:opacity-0 disabled:pointer-events-none transition-all duration-200 active:scale-95 cursor-pointer"
+          >
+            <ChevronLeft className="h-4 w-4 stroke-[2.2]" />
+          </button>
+
+          {/* Right Arrow Button */}
+          <button
+            type="button"
+            onClick={scrollNext}
+            disabled={!canScrollNext}
+            aria-label="Next categories"
+            className="absolute -right-2 sm:-right-3 md:-right-4 top-[45%] -translate-y-1/2 z-20 grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-full bg-white text-slate-700 border border-slate-200/90 shadow-md hover:bg-slate-50 hover:border-slate-300 disabled:opacity-0 disabled:pointer-events-none transition-all duration-200 active:scale-95 cursor-pointer"
+          >
+            <ChevronRight className="h-4 w-4 stroke-[2.2]" />
+          </button>
+
+          {/* Embla Track */}
+          <div className="overflow-hidden -mx-3 px-3 sm:mx-0 sm:px-1 py-2" ref={emblaRef}>
+            <div className="flex gap-3 sm:gap-3.5 md:gap-4 select-none">
+              {CATEGORY_LIST.map((cat) => {
+                const config = CATEGORY_SHOWCASE_CONFIG[cat.slug] || {
+                  tagline: cat.description,
+                  image: `/categories/${cat.slug}.jpg`,
+                  textAccentClass: 'text-red-600',
+                  borderHoverClass: 'hover:border-red-400 hover:shadow-red-500/10',
+                  badgeBg: 'bg-red-50 text-red-600',
+                };
+                const targetUrl = `/search?category=${encodeURIComponent(cat.slug)}${city ? `&city=${encodeURIComponent(city)}` : ''}`;
+                const Icon = cat.icon;
+
+                return (
+                  <div
+                    key={cat.id}
+                    className="min-w-0 shrink-0 flex-[0_0_62%] sm:flex-[0_0_36%] md:flex-[0_0_25%] lg:flex-[0_0_18%] xl:flex-[0_0_15%]"
+                  >
+                    <Link
+                      to={targetUrl}
+                      className={cn(
+                        'group relative flex flex-col h-full bg-white rounded-2xl p-2.5 border border-slate-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 cursor-pointer block',
+                        config.borderHoverClass
+                      )}
+                    >
+                      {/* Cute 3D Isometric Render Image Box with Floating Badges */}
+                      <div className="relative h-24 sm:h-28 w-full rounded-xl overflow-hidden bg-gradient-to-b from-slate-50/90 via-slate-50/30 to-white flex items-center justify-center p-1.5 border border-slate-100/80">
+                        {/* Floating Cute Category Icon Badge */}
+                        <div
+                          className={cn(
+                            'absolute top-1.5 left-1.5 z-10 grid h-6 w-6 place-items-center rounded-lg shadow-2xs backdrop-blur-md transition-transform duration-300 group-hover:scale-110',
+                            cat.color
+                          )}
+                        >
+                          <Icon className="h-3 w-3" />
+                        </div>
+
+                        {/* Floating Cute Action Indicator */}
+                        <div className="absolute top-1.5 right-1.5 z-10 grid h-5 w-5 place-items-center rounded-full bg-white/90 text-slate-400 shadow-2xs backdrop-blur-md group-hover:text-red-600 group-hover:bg-red-50 transition-all duration-300">
+                          <ArrowRight className="h-2.5 w-2.5 transition-transform duration-300 group-hover:translate-x-0.5" />
+                        </div>
+
+                        {/* 3D Model Render */}
+                        <img
+                          src={config.image}
+                          alt={cat.name}
+                          loading="lazy"
+                          className="w-full h-full object-contain transform-gpu group-hover:scale-110 transition-transform duration-500"
+                        />
+                      </div>
+
+                      {/* Cute Compact Content Box */}
+                      <div className="mt-2 px-1 pb-0.5">
+                        <h3 className="font-display text-[13px] sm:text-sm font-bold text-slate-800 group-hover:text-red-600 transition-colors line-clamp-1">
+                          {cat.name}
+                        </h3>
+
+                        <p className="mt-0.5 text-[11px] text-slate-400 font-medium line-clamp-1 leading-tight">
+                          {config.tagline}
+                        </p>
+                      </div>
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      }
-      subtitle={t('home.categorySubtitle', "Discover residential, commercial, and investment opportunities")}
-      id="categories"
-    >
-      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4 lg:grid-cols-8">
-        {CATEGORY_LIST.map((cat, i) => {
-          const targetUrl = `/search?category=${encodeURIComponent(cat.slug)}${city ? `&city=${encodeURIComponent(city)}` : ''}`;
-          const Icon = cat.icon;
-          return (
-            <motion.div
-              key={cat.id}
-              initial={{ opacity: 0, y: 15 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.03 }}
-              whileHover={{ y: -4 }}
-            >
-              <Link
-                to={targetUrl}
-                className="group flex flex-col items-center gap-2.5 rounded-2xl sm:rounded-3xl border border-slate-200/90 bg-white p-4 transition-all shadow-2xs hover:shadow-lg hover:border-red-400/80 cursor-pointer block h-full text-center"
-              >
-                <div
-                  className={cn(
-                    'grid h-12 w-12 place-items-center rounded-2xl transition-transform duration-300 group-hover:scale-110 shadow-2xs',
-                    cat.color,
-                  )}
-                >
-                  <Icon className="h-6 w-6" />
-                </div>
-                <span className="text-center text-xs font-bold text-slate-800 leading-tight group-hover:text-red-600 transition-colors">
-                  {cat.name}
-                </span>
-              </Link>
-            </motion.div>
-          );
-        })}
+
+        {/* Carousel Pagination Dots */}
+        {scrollSnaps.length > 1 && (
+          <div className="mt-4 sm:mt-5 flex items-center justify-center gap-1.5">
+            {scrollSnaps.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => emblaApi?.scrollTo(idx)}
+                aria-label={`Go to slide group ${idx + 1}`}
+                className={cn(
+                  'transition-all duration-300 rounded-full cursor-pointer',
+                  idx === selectedIndex ? 'w-5 sm:w-6 h-1.5 bg-red-600 shadow-xs' : 'w-1.5 h-1.5 bg-slate-300 hover:bg-slate-400'
+                )}
+              />
+            ))}
+          </div>
+        )}
       </div>
-    </SectionShell>
+    </section>
   );
 }
 
@@ -1927,6 +2378,39 @@ const HYDERABAD_RICH_AREAS = [
 function ExploreHyderabad() {
   const activeCityName = 'Hyderabad';
 
+  // Live published property counts per locality
+  const { data: localityCounts } = useQuery({
+    queryKey: ['home-hyderabad-locality-counts'],
+    queryFn: async () => {
+      const { data: props } = await supabase
+        .from('v_properties_search')
+        .select('id, locality_name, address, search_text, title')
+        .or('status.eq.published,status.eq.live,is_live.eq.true');
+
+      const counts: Record<string, number> = {};
+      const propList = props ?? [];
+
+      HYDERABAD_RICH_AREAS.forEach((area) => {
+        const normArea = area.name.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+        const matched = propList.filter((p: any) => {
+          const pLoc = (p.locality_name || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+          if (pLoc && (pLoc.includes(normArea) || normArea.includes(pLoc))) return true;
+          const pAddr = (p.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+          if (pAddr && pAddr.includes(normArea)) return true;
+          const pText = (p.search_text || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+          if (pText && pText.includes(normArea)) return true;
+          const pTitle = (p.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+          if (pTitle && pTitle.includes(normArea)) return true;
+          return false;
+        });
+        counts[area.name] = matched.length;
+      });
+
+      return counts;
+    },
+    staleTime: 60 * 1000,
+  });
+
   return (
     <SectionShell
       title={<>Explore in <span className="text-red-600">Hyderabad</span></>}
@@ -1942,33 +2426,55 @@ function ExploreHyderabad() {
       }
     >
       <div className="mt-4 grid grid-cols-4 gap-4 sm:gap-6 lg:grid-cols-8">
-        {HYDERABAD_RICH_AREAS.map((locality, i) => (
-          <motion.div
-            key={locality.name}
-            initial={{ opacity: 0, scale: 0.9 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.05 }}
-          >
-            <Link
-              to={`/search?city=${encodeURIComponent(activeCityName)}&locality=${encodeURIComponent(locality.name)}`}
-              className="group flex flex-col items-center gap-3 text-center"
+        {HYDERABAD_RICH_AREAS.map((locality, i) => {
+          const count = localityCounts?.[locality.name] ?? 0;
+          return (
+            <motion.div
+              key={locality.name}
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.05 }}
             >
-              <div className="relative h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-navy-50 shadow-lg transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-105 group-hover:shadow-red-500/20 sm:h-24 sm:w-24">
-                <img
-                  src={locality.image}
-                  alt={locality.name}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-navy-900/10 transition-colors group-hover:bg-transparent" />
-              </div>
-              <p className="font-display text-[11px] font-bold leading-tight text-navy-800 transition-colors group-hover:text-red-600 sm:text-xs">
-                {locality.name}
-              </p>
-            </Link>
-          </motion.div>
-        ))}
+              <Link
+                to={`/search?city=${encodeURIComponent(activeCityName)}&locality=${encodeURIComponent(locality.name)}`}
+                className="group flex flex-col items-center gap-2 text-center"
+              >
+                <div className="relative h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-navy-50 shadow-lg transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-105 group-hover:shadow-red-500/20 sm:h-24 sm:w-24">
+                  <img
+                    src={locality.image}
+                    alt={locality.name}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-navy-900/10 transition-colors group-hover:bg-transparent" />
+                  
+                  {/* Mini Property Count Overlay Badge */}
+                  {count > 0 && (
+                    <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-1.5 py-0.5 rounded-full border border-white/20 text-[9px] font-bold text-white shadow-xs sm:hidden">
+                      {count}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex flex-col items-center">
+                  <p className="font-display text-[11px] font-bold leading-tight text-navy-800 transition-colors group-hover:text-red-600 sm:text-xs">
+                    {locality.name}
+                  </p>
+                  
+                  {/* Property Count Badge */}
+                  <span className={`inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
+                    count > 0 
+                      ? 'bg-red-50 text-red-600 font-bold border border-red-100 group-hover:bg-red-600 group-hover:text-white' 
+                      : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+                  }`}>
+                    {count > 0 ? `${count} ${count === 1 ? 'Prop' : 'Props'}` : 'Explore'}
+                  </span>
+                </div>
+              </Link>
+            </motion.div>
+          );
+        })}
       </div>
     </SectionShell>
   );
@@ -2861,7 +3367,7 @@ function RealtynowExclusiveSection() {
               rera_no: p.legal_approved ? 'RERA Approved' : 'Verified Listing',
               image_url: cover,
               cta_text: 'View Details',
-              cta_link: `/property/${p.seo_slug || p.id}`,
+              cta_link: generatePropertyUrl(p),
               sort_order: idx + 1,
             };
           });

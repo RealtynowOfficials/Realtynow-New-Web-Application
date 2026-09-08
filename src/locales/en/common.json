@@ -94,5 +94,17 @@
   "saveProperty": "Save property",
   "share": "Share",
   "print": "Print",
-  "prev": "Prev"
+  "prev": "Prev",
+  "justNow": "just now",
+  "mAgo": "m ago",
+  "hAgo": "h ago",
+  "dAgo": "d ago",
+  "all": "All",
+  "refresh": "Refresh",
+  "view": "View",
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "approved": "Approved",
+  "rejected": "Rejected"
 }

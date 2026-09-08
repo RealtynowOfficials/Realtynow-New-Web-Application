@@ -29,13 +29,29 @@ export function GlobalNotificationListener() {
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
         (payload) => {
           const newNotif = payload.new as any;
-          
+          if (!newNotif) return;
+
+          const title = String(newNotif.title || '').trim();
+          const lowerTitle = title.toLowerCase();
+          const notifType = String(newNotif.type || '').toLowerCase();
+
+          // Suppress internal AI verification notifications (especially AI verification: Rejected)
+          // from displaying as an intrusive toast or push notification
+          if (
+            lowerTitle.includes('ai verification') ||
+            lowerTitle.includes('ai_verif') ||
+            notifType === 'property_verification'
+          ) {
+            return;
+          }
+
           // 1. Show an in-app Toast notification so the user sees it visually on the page
-          addToast('success', newNotif.title || 'New Notification');
+          const isError = lowerTitle.includes('reject') || lowerTitle.includes('fail') || lowerTitle.includes('error');
+          addToast(isError ? 'error' : 'success', title || 'New Notification');
 
           // 2. Trigger browser's native Push Notification API if permission is granted
           if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification(newNotif.title, {
+            new Notification(title, {
               body: newNotif.body,
               icon: '/pwa-192x192.png',
             });

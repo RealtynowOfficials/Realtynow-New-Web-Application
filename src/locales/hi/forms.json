@@ -1,5 +1,5 @@
 {
-  "postProperty": "संपत्ति सूचीबद्ध करें",
+  "postProperty": "प्रॉपर्टी पोस्ट करें",
   "title": "Listing Title",
   "selectCity": "Select City",
   "selectLocality": "Select Locality",
@@ -11,7 +11,7 @@
   "sendEnquiry": "[HI] Send enquiry",
   "name": "[HI] Name",
   "yourName": "[HI] Your name",
-  "email": "[HI] Email",
+  "email": "ईमेल पता",
   "phone": "[HI] Phone",
   "message": "[HI] Message",
   "interestedMsg": "[HI] I\\'m interested in this property. Please share more details.",
@@ -23,5 +23,10 @@
   "submitReview": "[HI] Submit review",
   "rating": "[HI] Rating",
   "comment": "[HI] Comment",
-  "shareExperience": "[HI] Share your experience with this property"
+  "shareExperience": "[HI] Share your experience with this property",
+  "firstName": "पहला नाम",
+  "lastName": "अंतिम नाम",
+  "mobileNumber": "मोबाइल नंबर (10 अंक)",
+  "password": "पासवर्ड",
+  "submit": "सबमिट करें"
 }

@@ -17,7 +17,7 @@ import {
 } from './search-engine';
 import { buildPublishedQuery, type PropertyFilters } from './properties';
 import { categorizeProperty, normalizeCategorySlug, type CategorySlug } from './categories';
-import { matchesAllAmenities, matchesAmenity } from './amenities';
+import { matchesAllAmenities } from './amenities';
 
 export interface GlobalSearchOptions extends PropertyFilters {
   /** Raw natural language query or keyword */
@@ -44,7 +44,7 @@ export interface GlobalSearchResult {
   properties: ScoredProperty[];
   totalCount: number;
   baseTotalCount: number;
-  categoryCounts: Record<CategorySlug, number>;
+  categoryCounts: Partial<Record<CategorySlug, number>>;
   parsedIntent: ParsedSearchIntent;
   page: number;
   pageSize: number;
@@ -169,7 +169,11 @@ export function calculateRelevanceScore(
 
   // 7. Purpose match (+30)
   if (intent.purpose && property.purpose) {
-    if (property.purpose.toLowerCase() === intent.purpose.toLowerCase()) {
+    const propP = property.purpose.toLowerCase();
+    const intP = intent.purpose.toLowerCase();
+    const isBothSale = (propP.includes('sale') || propP.includes('buy')) && (intP.includes('sale') || intP.includes('buy'));
+    const isBothRent = (propP.includes('rent') || propP.includes('lease')) && (intP.includes('rent') || intP.includes('lease'));
+    if (propP === intP || isBothSale || isBothRent) {
       score += 30;
     }
   }
@@ -219,12 +223,21 @@ export async function executeGlobalPropertySearch(
   const activeCategorySlug = normalizeCategorySlug(rawTargetCategory);
 
   // 3. Synthesize base query filters (strictly omitting category/type so DB returns all context candidates)
+  const rawPurpose = explicitFilters.purpose || parsedIntent.purpose || undefined;
+  const normalizedPurpose = rawPurpose
+    ? rawPurpose.toLowerCase() === 'buy'
+      ? 'Sale'
+      : rawPurpose.toLowerCase() === 'rent'
+      ? 'Rent'
+      : rawPurpose
+    : undefined;
+
   const baseQueryFilters: PropertyFilters = {
     ...explicitFilters,
     category: undefined,
     type: undefined,
     property_type_id: undefined,
-    purpose: explicitFilters.purpose || parsedIntent.purpose || undefined,
+    purpose: normalizedPurpose,
     bedrooms: explicitFilters.bedrooms ?? (parsedIntent.bedrooms ?? undefined),
     min_price: explicitFilters.min_price ?? (parsedIntent.minPrice ?? undefined),
     max_price: explicitFilters.max_price ?? (parsedIntent.maxPrice ?? undefined),
@@ -270,21 +283,30 @@ export async function executeGlobalPropertySearch(
   const baseTotalCount = allCandidates.length;
 
   // 5. Calculate synchronized Category Breakdown strictly using canonical categorizeProperty
-  const categoryCounts: Record<CategorySlug, number> = {
-    apartment: 0,
-    'independent-house': 0,
-    villa: 0,
-    plots: 0,
-    'commercial-office': 0,
-    'retail-shop': 0,
-    warehouse: 0,
-    'co-working': 0,
+  const categoryCounts: Partial<Record<CategorySlug, number>> = {
+    'independent-houses': 0,
+    'apartment-flats': 0,
+    'gated-community-homes': 0,
+    'open-plots-land': 0,
+    'luxury-villas': 0,
+    'farm-houses': 0,
+    'new-projects': 0,
+    'duplex-houses': 0,
+    'pent-houses': 0,
+    'agriculture-land': 0,
+    'owner-properties': 0,
+    'builder-share-properties': 0,
+    'commercial-spaces': 0,
+    'shops-showrooms': 0,
+    'shopping-malls': 0,
+    'godowns-warehouses': 0,
+    'pg-coliving-spaces': 0,
   };
 
   for (const prop of allCandidates) {
     const slug = categorizeProperty(prop);
-    if (slug && categoryCounts[slug] !== undefined) {
-      categoryCounts[slug] += 1;
+    if (slug) {
+      categoryCounts[slug] = (categoryCounts[slug] || 0) + 1;
     }
   }
 
@@ -371,7 +393,14 @@ export async function fetchLiveSearchSuggestions(
     }
 
     if (parsedIntent.purpose) {
-      propQuery = propQuery.eq('purpose', parsedIntent.purpose);
+      const p = parsedIntent.purpose.toLowerCase();
+      if (p === 'buy' || p === 'sale') {
+        propQuery = propQuery.or('purpose.ilike.%Sale%,purpose.ilike.%Buy%');
+      } else if (p === 'rent' || p === 'lease') {
+        propQuery = propQuery.or('purpose.ilike.%Rent%,purpose.ilike.%Lease%');
+      } else {
+        propQuery = propQuery.ilike('purpose', `%${parsedIntent.purpose}%`);
+      }
     }
 
     const { data: propData } = await propQuery;
@@ -391,7 +420,7 @@ export async function fetchLiveSearchSuggestions(
     }));
 
     // 2. Fetch matching localities with count
-    let locQuery = supabase
+    const locQuery = supabase
       .from('localities')
       .select('name, cities(name)')
       .ilike('name', `%${parsedIntent.location || trimmed}%`)

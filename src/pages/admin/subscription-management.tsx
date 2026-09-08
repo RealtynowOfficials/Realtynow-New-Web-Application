@@ -4,26 +4,19 @@ import {
   Sparkles,
   Crown,
   Zap,
-  CheckCircle2,
   Edit3,
   Plus,
   ToggleLeft,
   ToggleRight,
   Users,
   CreditCard,
-  Building2,
   Calendar,
   Eye,
   Shield,
-  Phone,
-  Camera,
   Layers,
   Search,
-  ArrowUpDown,
-  Filter,
   Check,
   X,
-  AlertCircle,
   TrendingUp,
   Package,
 } from 'lucide-react';
@@ -59,7 +52,7 @@ export function AdminSubscriptionManagement() {
     queryFn: () => fetchSubscriptionPlans(true),
   });
 
-  // 2. Fetch Customer Subscriptions Audit Log
+  // 2. Fetch Customer Subscriptions Audit Log with Customer Profile
   const { data: customerSubs = [], isLoading: loadingSubs } = useQuery({
     queryKey: ['admin-customer-subscriptions'],
     queryFn: async () => {
@@ -75,7 +68,24 @@ export function AdminSubscriptionManagement() {
         console.error('Failed to fetch customer subscriptions:', error);
         return [];
       }
-      return data || [];
+
+      const rows = data || [];
+      const userIds = [...new Set(rows.map((s: any) => s.customer_id).filter(Boolean))];
+      
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, name, phone, email')
+          .in('id', userIds);
+
+        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+        return rows.map((s: any) => ({
+          ...s,
+          customer: profileMap.get(s.customer_id) || null,
+        }));
+      }
+
+      return rows;
     },
   });
 
@@ -460,8 +470,18 @@ export function AdminSubscriptionManagement() {
                     customerSubs.map((sub) => (
                       <tr key={sub.id} className="hover:bg-navy-50/40 transition-colors">
                         <td className="px-5 py-4">
-                          <p className="font-bold text-navy-900">{sub.customer_id.slice(0, 12)}...</p>
-                          <span className="text-[10px] text-navy-400">ID: {sub.id.slice(0, 8)}</span>
+                          <p className="font-bold text-navy-900">
+                            {sub.customer?.full_name || sub.customer?.name || 'Customer'}
+                          </p>
+                          <div className="flex flex-col text-[11px] text-navy-500 mt-0.5 space-y-0.5">
+                            {sub.customer?.phone && (
+                              <span className="text-navy-600 font-semibold">📞 {sub.customer.phone}</span>
+                            )}
+                            {sub.customer?.email && (
+                              <span className="text-navy-400">✉️ {sub.customer.email}</span>
+                            )}
+                            <span className="text-[10px] text-navy-400 font-mono">ID: {sub.customer_id.slice(0, 8)}...</span>
+                          </div>
                         </td>
                         <td className="px-5 py-4">
                           <span className="font-bold text-navy-900">{sub.plan?.name || 'RealtyNow Package'}</span>

@@ -39,6 +39,8 @@ export interface CustomerSubscription {
   auto_renew: boolean;
   plan?: SubscriptionPlan;
   created_at: string;
+  invoice_number?: string;
+  invoice?: any;
 }
 
 export interface ActiveSubscriptionSummary {
@@ -197,7 +199,7 @@ export async function fetchSubscriptionPlans(includeInactive = false): Promise<S
     }
     return (data || []).map((row) => ({
       ...row,
-      price: Number(row.price || 0),
+      price: Number(row.price ?? 0),
       tax_gst_pct: Number(row.tax_gst_pct || 18),
       features_list: Array.isArray(row.features_list) ? row.features_list : [],
     }));
@@ -325,6 +327,13 @@ export async function fetchActiveCustomerSubscription(userId: string): Promise<A
 export async function fetchCustomerSubscriptionHistory(userId: string): Promise<CustomerSubscription[]> {
   if (!userId) return [];
   try {
+    // 1. Fetch user invoices to link
+    const { data: userInvoices } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
     const { data, error } = await supabase
       .from('customer_subscriptions')
       .select('*, plan:subscription_plans(*)')
@@ -338,10 +347,21 @@ export async function fetchCustomerSubscriptionHistory(userId: string): Promise<
       }
       return [];
     }
-    return (data || []).map((row) => ({
-      ...row,
-      amount_paid: Number(row.amount_paid || 0),
-    }));
+
+    return (data || []).map((row, idx) => {
+      // Attempt to link matching invoice
+      const matchedInvoice = userInvoices?.find(
+        (inv) => inv.items?.some?.((it: any) => it.title?.includes(row.plan?.name)) ||
+                 Math.abs(Number(inv.subtotal) - Number(row.amount_paid)) < 1
+      ) || userInvoices?.[idx];
+
+      return {
+        ...row,
+        amount_paid: Number(row.amount_paid || 0),
+        invoice_number: matchedInvoice?.invoice_number,
+        invoice: matchedInvoice || undefined,
+      };
+    });
   } catch {
     return [];
   }
@@ -353,9 +373,24 @@ export async function fetchCustomerSubscriptionHistory(userId: string): Promise<
 export async function createSubscriptionPlan(
   plan: Omit<SubscriptionPlan, 'id' | 'created_at' | 'updated_at'>
 ): Promise<SubscriptionPlan | null> {
+  const cleanPlan: Record<string, any> = { ...plan };
+  delete cleanPlan.id;
+  delete cleanPlan.created_at;
+  delete cleanPlan.updated_at;
+
+  if (cleanPlan.price !== undefined) cleanPlan.price = Number(cleanPlan.price) || 0;
+  if (cleanPlan.tax_gst_pct !== undefined) cleanPlan.tax_gst_pct = Number(cleanPlan.tax_gst_pct) || 18;
+  if (cleanPlan.validity_days !== undefined) cleanPlan.validity_days = Number(cleanPlan.validity_days) || 30;
+  if (cleanPlan.listing_limit !== undefined) cleanPlan.listing_limit = Number(cleanPlan.listing_limit) || 5;
+  if (cleanPlan.enquiry_limit !== undefined) cleanPlan.enquiry_limit = Number(cleanPlan.enquiry_limit) || 20;
+  if (cleanPlan.display_order !== undefined) cleanPlan.display_order = Number(cleanPlan.display_order) || 1;
+  if (cleanPlan.features_list !== undefined) {
+    cleanPlan.features_list = Array.isArray(cleanPlan.features_list) ? cleanPlan.features_list : [];
+  }
+
   const { data, error } = await supabase
     .from('subscription_plans')
-    .insert([plan])
+    .insert([cleanPlan])
     .select('*')
     .single();
 
@@ -373,9 +408,24 @@ export async function updateSubscriptionPlan(
   id: string,
   updates: Partial<SubscriptionPlan>
 ): Promise<SubscriptionPlan | null> {
+  const cleanUpdates: Record<string, any> = { ...updates };
+  delete cleanUpdates.id;
+  delete cleanUpdates.created_at;
+
+  if (cleanUpdates.price !== undefined) cleanUpdates.price = Number(cleanUpdates.price) || 0;
+  if (cleanUpdates.tax_gst_pct !== undefined) cleanUpdates.tax_gst_pct = Number(cleanUpdates.tax_gst_pct) || 18;
+  if (cleanUpdates.validity_days !== undefined) cleanUpdates.validity_days = Number(cleanUpdates.validity_days) || 30;
+  if (cleanUpdates.listing_limit !== undefined) cleanUpdates.listing_limit = Number(cleanUpdates.listing_limit) || 5;
+  if (cleanUpdates.enquiry_limit !== undefined) cleanUpdates.enquiry_limit = Number(cleanUpdates.enquiry_limit) || 20;
+  if (cleanUpdates.display_order !== undefined) cleanUpdates.display_order = Number(cleanUpdates.display_order) || 1;
+  if (cleanUpdates.features_list !== undefined) {
+    cleanUpdates.features_list = Array.isArray(cleanUpdates.features_list) ? cleanUpdates.features_list : [];
+  }
+  cleanUpdates.updated_at = new Date().toISOString();
+
   const { data, error } = await supabase
     .from('subscription_plans')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update(cleanUpdates)
     .eq('id', id)
     .select('*')
     .single();
@@ -403,7 +453,7 @@ export async function toggleSubscriptionPlanStatus(id: string, isActive: boolean
 }
 
 /**
- * Activate subscription upon confirmed payment
+ * Activate subscription upon confirmed payment and generate GST invoice
  */
 export async function activateSubscription(
   userId: string,
@@ -413,6 +463,8 @@ export async function activateSubscription(
   gatewayPaymentId?: string,
   gateway = 'Razorpay'
 ): Promise<string> {
+  let createdSubId = '';
+
   try {
     const { data, error } = await supabase.rpc('activate_subscription_payment', {
       p_customer_id: userId,
@@ -424,7 +476,7 @@ export async function activateSubscription(
     });
 
     if (!error && data) {
-      return data;
+      createdSubId = data;
     }
   } catch (rpcErr) {
     console.warn('RPC activate_subscription_payment not available, falling back to direct state update:', rpcErr);
@@ -437,7 +489,161 @@ export async function activateSubscription(
   const now = new Date();
   const expiry = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
-  const subId = `sub_${Date.now()}`;
+  const subId = createdSubId || `sub_${Date.now()}`;
+
+  // 1. Fetch user profile for invoice details
+  let billingName = 'Valued Member';
+  let billingEmail = '';
+  let billingPhone = '';
+
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('first_name, last_name, email, phone')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile) {
+      billingName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Valued Member';
+      billingEmail = profile.email || '';
+      billingPhone = profile.phone || '';
+    }
+  } catch (profErr) {
+    console.warn('Could not fetch user profile for billing:', profErr);
+  }
+
+  // 2. Financial calculation (18% GST)
+  const subtotal = amount;
+  const taxPct = 18;
+  const taxAmount = Math.round(subtotal * 0.18 * 100) / 100;
+  const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
+  const invoiceNumber = `RN-${now.getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const invoiceItems = [
+    {
+      id: `item_${Date.now()}`,
+      title: `${selectedPlan.name} Subscription Plan (${validityDays} Days)`,
+      description: `Includes up to ${selectedPlan.listing_limit} listings and ${selectedPlan.enquiry_limit} enquiries with ${selectedPlan.visibility_level} visibility rank.`,
+      quantity: 1,
+      unit_price: subtotal,
+      total: subtotal,
+    },
+  ];
+
+  // 3. Insert record into payments table
+  let paymentId: string | null = null;
+  try {
+    const { data: payRecord } = await supabase
+      .from('payments')
+      .insert([
+        {
+          user_id: userId,
+          amount: totalAmount,
+          currency: 'INR',
+          status: 'paid',
+          gateway: gateway.toLowerCase().includes('razorpay') ? 'razorpay' : gateway,
+          gateway_order_id: gatewayOrderId || null,
+          gateway_payment_id: gatewayPaymentId || null,
+          paid_at: now.toISOString(),
+          description: `Subscription: ${selectedPlan.name}`,
+          invoice_number: invoiceNumber,
+          metadata: {
+            phone: billingPhone,
+            email: billingEmail,
+            name: billingName,
+            plan_id: selectedPlan.id,
+            plan_name: selectedPlan.name,
+            invoice_number: invoiceNumber,
+            gateway_payment_id: gatewayPaymentId || null,
+            gateway_order_id: gatewayOrderId || null,
+          },
+        }
+      ])
+      .select('id')
+      .maybeSingle();
+
+    if (payRecord?.id) paymentId = payRecord.id;
+  } catch (payErr) {
+    console.warn('Could not insert payment record:', payErr);
+  }
+
+  // 4. Insert record into invoices table
+  let invoiceData: any = {
+    id: `inv_${Date.now()}`,
+    invoice_number: invoiceNumber,
+    user_id: userId,
+    payment_id: paymentId,
+    customer: {
+      name: billingName,
+      email: billingEmail,
+      phone: billingPhone,
+      address: 'Registered RealtyNow Member',
+    },
+    billing_name: billingName,
+    billing_email: billingEmail,
+    billing_phone: billingPhone,
+    items: invoiceItems,
+    subtotal,
+    tax_percentage: taxPct,
+    tax_pct: taxPct,
+    tax_amount: taxAmount,
+    discount: 0,
+    discount_amount: 0,
+    total: totalAmount,
+    total_amount: totalAmount,
+    currency: 'INR',
+    status: 'paid',
+    issued_at: now.toISOString(),
+    invoice_date: now.toISOString(),
+    due_date: now.toISOString(),
+    paid_at: now.toISOString(),
+  };
+
+  try {
+    const { data: createdInv } = await supabase
+      .from('invoices')
+      .insert([
+        {
+          invoice_number: invoiceNumber,
+          user_id: userId,
+          payment_id: paymentId,
+          billing_name: billingName,
+          billing_email: billingEmail,
+          billing_phone: billingPhone,
+          items: invoiceItems,
+          subtotal,
+          tax_pct: taxPct,
+          tax_amount: taxAmount,
+          discount_amount: 0,
+          total: totalAmount,
+          currency: 'INR',
+          status: 'paid',
+          issued_at: now.toISOString(),
+          paid_at: now.toISOString(),
+        }
+      ])
+      .select('*')
+      .maybeSingle();
+
+    if (createdInv) {
+      invoiceData = {
+        ...invoiceData,
+        ...createdInv,
+        tax_percentage: taxPct,
+        total_amount: totalAmount,
+        invoice_date: createdInv.issued_at,
+        customer: {
+          name: billingName,
+          email: billingEmail,
+          phone: billingPhone,
+        },
+      };
+    }
+  } catch (invErr) {
+    console.warn('Could not insert invoice record:', invErr);
+  }
+
+  // 5. Store in local state for instant rendering
   const summary: ActiveSubscriptionSummary = {
     subscription_id: subId,
     plan_id: selectedPlan.id,
@@ -464,7 +670,7 @@ export async function activateSubscription(
 
   localStorage.setItem(`realtynow_active_sub_${userId}`, JSON.stringify(summary));
 
-  // Save in history
+  // Save in history with full invoice linked
   const historyItem: CustomerSubscription = {
     id: subId,
     customer_id: userId,
@@ -479,6 +685,8 @@ export async function activateSubscription(
     auto_renew: true,
     plan: selectedPlan,
     created_at: now.toISOString(),
+    invoice_number: invoiceNumber,
+    invoice: invoiceData,
   };
 
   const existingHistory = JSON.parse(localStorage.getItem(`realtynow_sub_history_${userId}`) || '[]');

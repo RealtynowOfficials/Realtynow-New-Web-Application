@@ -10,13 +10,9 @@ import {
   Zap,
   ArrowRight,
   ShieldCheck,
-  Home,
-  Building2,
-  LandPlot,
   Loader2,
   MapPin,
   Bed,
-  Tag,
   ExternalLink,
   X,
 } from 'lucide-react';

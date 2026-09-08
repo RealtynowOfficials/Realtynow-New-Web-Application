@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Handshake, Users, ShieldCheck, ShieldOff, Building2, Phone, Mail, Clock } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Eye, Handshake, Users, ShieldCheck, ShieldOff, Building2, Phone, Mail, Clock, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { Card, Button, Badge, EmptyState, Skeleton } from '../../components/ui';
+import { Card, Button, Badge, EmptyState, Skeleton, Modal } from '../../components/ui';
 import { useToast } from '../../components/toast';
-import { DataTable, type Column } from '../../components/data-table';
+import { DataTable, BulkActionsBar, type Column } from '../../components/data-table';
 import { formatDate } from '../../lib/utils';
 import { PartnerDetailDrawer } from '../../components/admin/PartnerDetailDrawer';
 import { ApplicationReviewDrawer } from '../../components/admin/ApplicationReviewDrawer';
@@ -104,6 +104,8 @@ export function AdminBusinessPartners() {
   const [viewing, setViewing] = useState<Partner | null>(null);
   const [reviewing, setReviewing] = useState<PartnerApplication | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
   const queryClient = useQueryClient();
   const { addToast } = useToast();
   const { t } = useLanguageContext();
@@ -133,6 +135,23 @@ export function AdminBusinessPartners() {
   const partners = data ?? [];
   const activeCount = partners.filter((p) => p.status === 'active').length;
   const suspendedCount = partners.filter((p) => p.status === 'suspended').length;
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { deleteDirectoryMembers } = await import('../../lib/role-crm-api');
+      await deleteDirectoryMembers(ids, 'partner');
+      return ids;
+    },
+    onSuccess: (deletedIds: string[]) => {
+      addToast('success', `${deletedIds.length} business partner${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['admin-business-partners'] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete partner(s)');
+    },
+  });
 
   const toggleStatus = async (p: Partner) => {
     if (!p.application_id) {
@@ -180,9 +199,9 @@ export function AdminBusinessPartners() {
     { key: 'created_at', header: 'Joined', sortable: true, render: (p) => <span className="text-sm text-navy-500">{formatDate(p.created_at)}</span> },
     {
       key: 'id',
-      header: '',
+      header: 'Actions',
       render: (p) => (
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5 justify-end">
           <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(p)}>View</Button>
           <Button
             size="sm"
@@ -192,6 +211,14 @@ export function AdminBusinessPartners() {
           >
             {p.status === 'active' ? 'Suspend' : 'Reactivate'}
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-red-600 hover:bg-red-50"
+            title="Delete Partner Permanently"
+            onClick={() => setToDelete([p.id])}
+            icon={<Trash2 className="h-3.5 w-3.5" />}
+          />
         </div>
       ),
     },
@@ -230,6 +257,16 @@ export function AdminBusinessPartners() {
         </div>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mb-4">
+          <BulkActionsBar
+            count={selectedIds.size}
+            onDelete={() => setToDelete(Array.from(selectedIds))}
+            onClear={() => setSelectedIds(new Set())}
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
@@ -248,6 +285,21 @@ export function AdminBusinessPartners() {
             getRowId={(r: any) => r.id}
             searchable
             searchPlaceholder="Search by name, mobile, company..."
+            selectedIds={selectedIds}
+            onToggleSelect={(id) =>
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })
+            }
+            onSelectAll={(ids) =>
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+                return next;
+              })
+            }
             cardRender={(row) => (
               <PartnerRow p={row as Partner} onView={(p) => setViewing(p)} onToggleStatus={toggleStatus} busy={togglingId === (row as Partner).id} />
             )}
@@ -277,6 +329,35 @@ export function AdminBusinessPartners() {
           application={pendingApplications.find((a) => a.id === reviewing.id) ?? reviewing}
           type="partner"
         />
+      )}
+
+      {/* Delete Partner Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          open={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Partner' : `${toDelete.length} Partners`}`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-navy-700">
+            {toDelete.length === 1
+              ? 'This will permanently remove the partner account and associated records.'
+              : `This will permanently remove all ${toDelete.length} selected partner accounts and associated records.`}
+          </p>
+        </Modal>
       )}
     </DashboardLayout>
   );

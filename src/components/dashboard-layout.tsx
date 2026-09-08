@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, LogOut, Home, Globe, ChevronDown, ChevronRight } from 'lucide-react';
+import { Menu, X, LogOut, Home, Globe, ChevronDown } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useLanguageContext } from '../lib/i18n/language-context';
 import { LanguageSelectorModal } from './language-selector-modal';
@@ -357,7 +357,39 @@ export function DashboardLayout({
           <div className="flex-1 min-w-0">
             <h1 className="font-display text-base sm:text-lg font-semibold text-navy-900 flex items-center gap-2 truncate">
               <span className="truncate">{t(title, title)}</span>
-              {badge && <span className="badge bg-gold-100 text-gold-700 shrink-0">{badge}</span>}
+              {(() => {
+                const roleBadge = (() => {
+                  const effective = badge || profile?.role;
+                  if (effective === 'customer' || effective === 'Buyer/Owner' || effective === 'Buyer / Owner') {
+                    return { label: 'Buyer / Owner', className: 'bg-red-50 text-red-700 border border-red-200/80' };
+                  }
+                  if (effective === 'agent' || effective === 'Agent') {
+                    return { label: 'Agent', className: 'bg-blue-50 text-blue-700 border border-blue-200/80' };
+                  }
+                  if (effective === 'builder' || effective === 'Builder') {
+                    return { label: 'Builder', className: 'bg-amber-50 text-amber-700 border border-amber-200/80' };
+                  }
+                  if (effective === 'partner' || effective === 'Partner') {
+                    return { label: 'Partner', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200/80' };
+                  }
+                  if (effective === 'admin' || effective === 'Admin') {
+                    return { label: 'Admin', className: 'bg-purple-50 text-purple-700 border border-purple-200/80' };
+                  }
+                  if (effective === 'super_admin' || effective === 'Super Admin') {
+                    return { label: 'Super Admin', className: 'bg-purple-50 text-purple-700 border border-purple-200/80' };
+                  }
+                  if (badge) {
+                    return { label: badge, className: 'bg-slate-100 text-slate-700 border border-slate-200' };
+                  }
+                  return { label: 'Buyer / Owner', className: 'bg-red-50 text-red-700 border border-red-200/80' };
+                })();
+
+                return (
+                  <span className={cn('px-2.5 py-0.5 text-xs font-bold rounded-full shrink-0 shadow-2xs', roleBadge.className)}>
+                    {roleBadge.label}
+                  </span>
+                );
+              })()}
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">

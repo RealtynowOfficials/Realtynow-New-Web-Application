@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Search, ArrowUpDown, Calendar, LayoutList, LayoutGrid, User, Mail, Phone, Building, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, ArrowUpDown, Calendar, LayoutList, LayoutGrid, Mail, Phone, Building } from 'lucide-react';
 import { Button, Input, Skeleton, Badge } from './ui';
 import { cn, formatDate, formatPrice } from '../lib/utils';
 import { StatusBadge } from './property-card';
@@ -606,21 +606,32 @@ export function DataTable<T>({
 
 export function BulkActionsBar({
   count,
+  selectedCount,
   onDelete,
+  onClear,
   actions,
 }: {
-  count: number;
+  count?: number;
+  selectedCount?: number;
+  totalCount?: number;
   onDelete: () => void;
+  onClear?: () => void;
   actions?: React.ReactNode;
 }) {
+  const displayCount = selectedCount ?? count ?? 0;
   return (
     <div className="mb-4 flex items-center justify-between rounded-lg bg-navy-50 px-4 py-3 border border-navy-200">
       <div className="flex items-center gap-3">
-        <Badge variant="info">{count} selected</Badge>
+        <Badge variant="info">{displayCount} selected</Badge>
         <span className="text-sm font-medium text-navy-700">Choose action:</span>
       </div>
       <div className="flex items-center gap-2">
         {actions}
+        {onClear && (
+          <Button variant="ghost" size="sm" onClick={onClear}>
+            Clear
+          </Button>
+        )}
         <Button variant="danger" size="sm" onClick={onDelete}>
           Delete selected
         </Button>

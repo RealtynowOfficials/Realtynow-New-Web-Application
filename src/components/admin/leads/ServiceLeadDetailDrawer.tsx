@@ -1,32 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   X,
-  Phone,
   Mail,
   MessageCircle,
-  Calendar,
-  Clock,
-  Send,
   User,
-  ExternalLink,
-  MapPin,
-  Building2,
-  Tag,
-  CheckCircle2,
   FileText,
-  AlertTriangle,
   Flame,
   Activity,
   Layers,
-  DollarSign,
-  Briefcase,
-  ChevronRight,
-  ShieldCheck,
   CalendarClock,
   UserCheck,
   PhoneCall,
-  Edit2,
   Sparkles,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -95,6 +80,7 @@ export const SERVICE_TYPE_BADGES: Record<
   string,
   { label: string; color: string; bg: string; border: string; icon: string }
 > = {
+  FREE_LIST_PROPERTY: { label: 'Property Listing', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: '🏡' },
   HOME_SERVICES: { label: 'Home Services', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: '🛠️' },
   INTERIOR_SERVICES: { label: 'Interior Services', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200', icon: '🎨' },
   BOREWELL_SERVICES: { label: 'Borewell Services', color: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-200', icon: '💧' },
@@ -303,7 +289,9 @@ const toDbLeadStatus = (status: string): string => {
           title: `Priority Changed to ${newPriority.toUpperCase()}`,
           actor_id: user?.id ?? null,
         });
-      } catch {}
+      } catch {
+        /* Ignore activity log insertion errors */
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-service-lead', leadId] });
@@ -333,7 +321,9 @@ const toDbLeadStatus = (status: string): string => {
           title: assigneeId ? 'Lead Assigned' : 'Lead Unassigned',
           actor_id: user?.id ?? null,
         });
-      } catch {}
+      } catch {
+        /* Ignore activity log insertion errors */
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-service-lead', leadId] });
@@ -365,7 +355,9 @@ const toDbLeadStatus = (status: string): string => {
           description: content.trim().substring(0, 100) + (content.length > 100 ? '...' : ''),
           actor_id: user.id,
         });
-      } catch {}
+      } catch {
+        /* Ignore activity log insertion errors */
+      }
     },
     onSuccess: () => {
       setNoteContent('');
@@ -398,7 +390,9 @@ const toDbLeadStatus = (status: string): string => {
           title: `Follow-up Scheduled for ${formatDate(fullIso)} ${followUpTime}`,
           actor_id: user?.id ?? null,
         });
-      } catch {}
+      } catch {
+        /* Ignore activity log insertion errors */
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-service-lead', leadId] });
@@ -669,11 +663,42 @@ const toDbLeadStatus = (status: string): string => {
                     </div>
                   )}
 
-                  {/* Interior / Home Style or Area */}
-                  {customFields.propertyType && (
+                  {/* Listing Intent (Sell / Rent) */}
+                  {customFields.intent && (
+                    <div className="p-3 rounded-xl bg-red-50/60 border border-red-100">
+                      <span className="text-[10px] font-bold uppercase text-red-600 block">Listing Intent</span>
+                      <span className="font-extrabold text-red-800 text-sm mt-0.5 block uppercase">
+                        Looking to {customFields.intent}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Property Type / Sub Type */}
+                  {(customFields.propertyType || customFields.property_type) && (
                     <div className="p-3 rounded-xl bg-white border border-slate-100">
                       <span className="text-[10px] font-bold uppercase text-slate-400 block">Property Type</span>
-                      <span className="font-bold text-slate-800 mt-0.5 block">{customFields.propertyType}</span>
+                      <span className="font-bold text-slate-800 mt-0.5 block">
+                        {customFields.property_type || customFields.propertyType}
+                        {(customFields.sub_type || customFields.subType) ? ` • ${customFields.sub_type || customFields.subType}` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Pincode */}
+                  {customFields.pincode && (
+                    <div className="p-3 rounded-xl bg-white border border-slate-100">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Pincode</span>
+                      <span className="font-bold text-slate-800 mt-0.5 block">{customFields.pincode}</span>
+                    </div>
+                  )}
+
+                  {/* Contact Time Preference */}
+                  {(customFields.contact_time || customFields.contactTime || customFields.preferred_time) && (
+                    <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-100">
+                      <span className="text-[10px] font-bold uppercase text-blue-600 block">Preferred Contact Time</span>
+                      <span className="font-bold text-blue-800 mt-0.5 block">
+                        {customFields.contact_time || customFields.contactTime || customFields.preferred_time}
+                      </span>
                     </div>
                   )}
 

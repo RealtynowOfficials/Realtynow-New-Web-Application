@@ -71,5 +71,17 @@
   "addToCompare": "താരതമ്യത്തിലേക്ക് ചേർക്കുക",
   "removeFromCompare": "താരതമ്യത്തിൽ നിന്ന് നീക്കംചെയ്യുക",
   "bhk": "BHK",
-  "sqft": "ചതുരശ്ര അടി"
+  "sqft": "ചതുരശ്ര അടി",
+  "justNow": "just now",
+  "mAgo": "m ago",
+  "hAgo": "h ago",
+  "dAgo": "d ago",
+  "all": "All",
+  "refresh": "Refresh",
+  "view": "View",
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "approved": "Approved",
+  "rejected": "Rejected"
 }

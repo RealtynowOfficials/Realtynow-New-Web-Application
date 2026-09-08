@@ -71,5 +71,17 @@
   "addToCompare": "ಹೋಲಿಸಲು ಸೇರಿಸಿ",
   "removeFromCompare": "ಹೋಲಿಕೆಯಿಂದ ತೆಗೆದುಹಾಕಿ",
   "bhk": "BHK",
-  "sqft": "ಚ.ಅ"
+  "sqft": "ಚ.ಅ",
+  "justNow": "just now",
+  "mAgo": "m ago",
+  "hAgo": "h ago",
+  "dAgo": "d ago",
+  "all": "All",
+  "refresh": "Refresh",
+  "view": "View",
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "approved": "Approved",
+  "rejected": "Rejected"
 }

@@ -9,14 +9,12 @@ import {
   Globe,
   ExternalLink,
   MapPin,
-  Building2,
   Sparkles,
 } from 'lucide-react';
 import { Modal, Button } from './ui';
 import { useToast } from './toast';
 import {
   getPropertyPublicUrl,
-  getPropertyShareCrawlerUrl,
   buildWhatsAppPropertyShareMessage,
   getPropertyLocationText,
   getFormattedPriceText,
@@ -63,17 +61,12 @@ export const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
   };
 
   const publicUrl = getPropertyPublicUrl(propInput);
-  // Platform share intents (Facebook/LinkedIn/X/Telegram) fetch whatever URL
-  // they're given and unfurl it themselves — must be the crawler URL so they
-  // get the RealtyNow logo, not the property's own photo. "Copy Link" below
-  // stays on publicUrl (the clean, human-readable page URL).
-  const shareCrawlerUrl = getPropertyShareCrawlerUrl(propInput);
   const whatsappMessage = buildWhatsAppPropertyShareMessage(propInput);
   const coverImage = getPropertyCoverImage(propInput);
   const locationText = getPropertyLocationText(propInput);
   const priceText = getFormattedPriceText(propInput);
 
-  const encodedUrl = encodeURIComponent(shareCrawlerUrl);
+  const encodedUrl = encodeURIComponent(publicUrl);
   const encodedWhatsapp = encodeURIComponent(whatsappMessage);
   const encodedTitle = encodeURIComponent(`RealtyNow: ${property.title}`);
 
@@ -134,7 +127,7 @@ export const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
         await navigator.share({
           title: property.title,
           text: whatsappMessage,
-          url: shareCrawlerUrl,
+          url: publicUrl,
         });
         onClose();
       } catch {

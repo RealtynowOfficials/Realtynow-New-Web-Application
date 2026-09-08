@@ -1,3 +1,4 @@
 {
-  "dashboard": "Admin Dashboard"
+  "dashboard": "Dashboard",
+  "adminDashboard": "Admin Dashboard"
 }

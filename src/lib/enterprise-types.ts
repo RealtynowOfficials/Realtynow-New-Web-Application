@@ -118,8 +118,11 @@ export interface PaymentTransaction {
   id: string;
   user_id: string;
   invoice_id: string | null;
+  invoice_number?: string;
   order_id: string | null; // Razorpay Order ID
   payment_id: string | null; // Razorpay Payment ID
+  gateway_payment_id?: string;
+  description?: string;
   amount: number;
   currency: string;
   status: 'pending' | 'success' | 'failed' | 'refunded' | 'paid';

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Wallet, IndianRupee, Clock, CheckCircle2, ArrowDownToLine, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Wallet, IndianRupee, Clock, CheckCircle2, ArrowDownToLine, ArrowUpRight, ArrowDownLeft, FileText } from 'lucide-react';
+import { InvoiceModal } from '../../components/invoices/InvoiceModal';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
@@ -61,6 +62,7 @@ export function AgentCommissions() {
   const { addToast } = useToast();
 
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [selectedCommissionInvoice, setSelectedCommissionInvoice] = useState<any | null>(null);
   const [amount, setAmount] = useState('');
   const [accountName, setAccountName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
@@ -223,9 +225,49 @@ export function AgentCommissions() {
                     <p className="text-xs text-navy-400">{c.percentage}% · {formatDate(c.created_at)}</p>
                     {c.notes && <p className="text-xs text-navy-500 mt-0.5">{c.notes}</p>}
                   </div>
-                  <Badge variant={commissionStatusVariant(c.status)} className="capitalize">
-                    {c.status}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={commissionStatusVariant(c.status)} className="capitalize">
+                      {c.status}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        const gross = Number(c.amount) || 0;
+                        const tds = Math.round(gross * 0.05 * 100) / 100;
+                        setSelectedCommissionInvoice({
+                          invoice_number: `RN-COM-${c.id.slice(0, 8).toUpperCase()}`,
+                          customer: {
+                            name: user?.user_metadata?.full_name || 'Verified RealtyNow Agent',
+                            email: user?.email || '',
+                            phone: user?.user_metadata?.phone || '',
+                            address: 'Registered Agent Partner, India',
+                          },
+                          subtotal: gross,
+                          tds_amount: tds,
+                          tax_amount: tds,
+                          total_amount: gross - tds,
+                          invoice_date: c.created_at,
+                          due_date: c.paid_at || c.created_at,
+                          payment_status: c.status === 'paid' ? 'paid' : 'pending',
+                          status: c.status === 'paid' ? 'paid' : 'pending',
+                          items: [
+                            {
+                              title: c.notes || 'Real Estate Deal Brokerage & Commission',
+                              description: `Commission Rate: ${c.percentage}% · TDS (5% Sec 194H) Applicable`,
+                              quantity: 1,
+                              unit_price: gross,
+                              total: gross,
+                            }
+                          ]
+                        });
+                      }}
+                      icon={<FileText className="h-3.5 w-3.5 text-red-600" />}
+                      className="text-xs py-1 px-2.5"
+                    >
+                      Tax Invoice
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -331,6 +373,13 @@ export function AgentCommissions() {
           </div>
         </div>
       </Modal>
+
+      <InvoiceModal
+        isOpen={!!selectedCommissionInvoice}
+        onClose={() => setSelectedCommissionInvoice(null)}
+        invoice={selectedCommissionInvoice}
+        title="Agent Commission Tax Invoice & Payment Receipt"
+      />
     </DashboardLayout>
   );
 }

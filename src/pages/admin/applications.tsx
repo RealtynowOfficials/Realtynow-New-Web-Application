@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { Card, Button, Badge, EmptyState, Skeleton } from '../../components/ui';
-import { DataTable, type Column } from '../../components/data-table';
+import { useToast } from '../../components/toast';
+import { Card, Button, EmptyState, Skeleton, Modal } from '../../components/ui';
+import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { formatDate, cn } from '../../lib/utils';
 import type { AgentApplication, BuilderApplication, PartnerApplication } from '../../lib/types';
 import {
-  CheckCircle2, Eye, Clock, FileText,
-  Building2, User, Phone, Mail, MapPin, Award, BadgeCheck, Calendar, Handshake,
+  CheckCircle2, Eye, Clock, FileText, Trash2, AlertTriangle,
+  Building2, User, Phone, Mail, MapPin, Award, Handshake,
 } from 'lucide-react';
 import { ApplicationReviewDrawer } from '../../components/admin/ApplicationReviewDrawer';
 
@@ -147,9 +148,11 @@ function ClickableStatCard({
 function AgentAppCard({
   app,
   onReview,
+  onDelete,
 }: {
   app: AgentApplication;
   onReview: (a: AgentApplication) => void;
+  onDelete?: (a: AgentApplication) => void;
 }) {
   const { t } = useLanguageContext();
   const name = `${app.first_name ?? ''} ${app.last_name ?? ''}`.trim() || app.email;
@@ -266,9 +269,11 @@ function AgentAppCard({
 function BuilderAppCard({
   app,
   onReview,
+  onDelete,
 }: {
   app: BuilderApplication;
   onReview: (a: BuilderApplication) => void;
+  onDelete?: (a: BuilderApplication) => void;
 }) {
   const { t } = useLanguageContext();
   const name = app.company_name || app.contact_name || app.email;
@@ -348,17 +353,27 @@ function BuilderAppCard({
         </div>
       </div>
 
-      {/* Review Button */}
-      <div className="mt-auto pt-1">
+      {/* Action Buttons */}
+      <div className="mt-auto pt-1 flex items-center gap-2">
         <button
           type="button"
           onClick={() => onReview(app)}
-          className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
+          className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
         >
           <Eye className="h-3.5 w-3.5 text-slate-400 group-hover/btn:text-red-500 transition-colors" />
           <span>{t('admin.reviewApplication', 'Review Application')}</span>
           <span className="text-slate-300 group-hover/btn:text-red-500 group-hover/btn:translate-x-0.5 transition-all font-bold">→</span>
         </button>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(app)}
+            title="Delete Application"
+            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50/40 transition-colors cursor-pointer shrink-0"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -368,9 +383,11 @@ function BuilderAppCard({
 function PartnerAppCard({
   app,
   onReview,
+  onDelete,
 }: {
   app: PartnerApplication;
   onReview: (a: PartnerApplication) => void;
+  onDelete?: (a: PartnerApplication) => void;
 }) {
   const { t } = useLanguageContext();
   const status = app.status || 'submitted';
@@ -441,17 +458,27 @@ function PartnerAppCard({
         </div>
       </div>
 
-      {/* Review Button */}
-      <div className="mt-auto pt-1">
+      {/* Action Buttons */}
+      <div className="mt-auto pt-1 flex items-center gap-2">
         <button
           type="button"
           onClick={() => onReview(app)}
-          className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
+          className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs shadow-2xs hover:border-red-500 hover:text-red-600 hover:bg-red-50/40 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer group/btn"
         >
           <Eye className="h-3.5 w-3.5 text-slate-400 group-hover/btn:text-red-500 transition-colors" />
           <span>{t('admin.reviewApplication', 'Review Application')}</span>
           <span className="text-slate-300 group-hover/btn:text-red-500 group-hover/btn:translate-x-0.5 transition-all font-bold">→</span>
         </button>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(app)}
+            title="Delete Application"
+            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50/40 transition-colors cursor-pointer shrink-0"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -459,7 +486,11 @@ function PartnerAppCard({
 
 // ─── Admin Agent Applications ─────────────────────────────────────────────────
 export function AdminAgentApplications() {
+  const { addToast } = useToast();
   const [viewing, setViewing] = useState<AgentApplication | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get('status');
@@ -487,6 +518,36 @@ export function AdminAgentApplications() {
 
   const { t } = useLanguageContext();
   const adminSections = getAdminSections(t);
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('agent_applications').delete().in('id', ids);
+      if (error) throw error;
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} application${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['admin-agent-applications'] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete application(s).');
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = (ids: string[]) => {
+    setSelectedIds(new Set(ids));
+  };
 
   const columns: Column<AgentApplication>[] = [
     {
@@ -521,11 +582,22 @@ export function AdminAgentApplications() {
     },
     {
       key: 'id',
-      header: '',
+      header: t('admin.actions', 'Actions'),
+      className: 'text-right whitespace-nowrap',
       render: (a) => (
-        <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(a)}>
-          {t('admin.review', 'Review')}
-        </Button>
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(a)}>
+            {t('admin.review', 'Review')}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setToDelete([a.id])}
+            title={t('common.delete', 'Delete')}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -581,6 +653,17 @@ export function AdminAgentApplications() {
         />
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mb-4">
+          <BulkActionsBar
+            selectedCount={selectedIds.size}
+            totalCount={filteredApplications.length}
+            onClear={() => setSelectedIds(new Set())}
+            onDelete={() => setToDelete(Array.from(selectedIds))}
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
@@ -601,12 +684,16 @@ export function AdminAgentApplications() {
             rows={filteredApplications}
             columns={columns as any}
             getRowId={(r: any) => r.id}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onSelectAll={selectAll}
             searchable
             searchPlaceholder={t('admin.searchAgentApplications', 'Search by name, phone, email, specialization...')}
             cardRender={(row) => (
               <AgentAppCard
                 app={row as AgentApplication}
                 onReview={(a) => setViewing(a)}
+                onDelete={(a) => setToDelete([a.id])}
               />
             )}
           />
@@ -624,13 +711,52 @@ export function AdminAgentApplications() {
           type="agent"
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title="Delete Agent Application"
+        >
+          <div className="space-y-4 pt-2">
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold">
+                  Are you sure you want to delete {toDelete.length === 1 ? 'this application' : `${toDelete.length} applications`}?
+                </p>
+                <p className="mt-1 text-xs text-red-700">
+                  This action is permanent and cannot be undone. All submitted registration details and documents will be permanently removed.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Yes, Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </DashboardLayout>
   );
 }
 
 // ─── Admin Builder Applications ───────────────────────────────────────────────
 export function AdminBuilderApplications() {
+  const { addToast } = useToast();
   const [viewing, setViewing] = useState<BuilderApplication | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get('status');
@@ -658,6 +784,36 @@ export function AdminBuilderApplications() {
 
   const { t } = useLanguageContext();
   const adminSections = getAdminSections(t);
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('builder_applications').delete().in('id', ids);
+      if (error) throw error;
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} builder application${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['admin-builder-applications'] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete application(s).');
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = (ids: string[]) => {
+    setSelectedIds(new Set(ids));
+  };
 
   const columns: Column<BuilderApplication>[] = [
     {
@@ -688,11 +844,22 @@ export function AdminBuilderApplications() {
     },
     {
       key: 'id',
-      header: '',
+      header: t('admin.actions', 'Actions'),
+      className: 'text-right whitespace-nowrap',
       render: (b) => (
-        <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(b)}>
-          {t('admin.review', 'Review')}
-        </Button>
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(b)}>
+            {t('admin.review', 'Review')}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setToDelete([b.id])}
+            title={t('common.delete', 'Delete')}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -748,6 +915,17 @@ export function AdminBuilderApplications() {
         />
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mb-4">
+          <BulkActionsBar
+            selectedCount={selectedIds.size}
+            totalCount={filteredApplications.length}
+            onClear={() => setSelectedIds(new Set())}
+            onDelete={() => setToDelete(Array.from(selectedIds))}
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
@@ -768,12 +946,16 @@ export function AdminBuilderApplications() {
             rows={filteredApplications}
             columns={columns as any}
             getRowId={(r: any) => r.id}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onSelectAll={selectAll}
             searchable
             searchPlaceholder={t('admin.searchBuilderApplications', 'Search by company, contact, city, RERA...')}
             cardRender={(row) => (
               <BuilderAppCard
                 app={row as BuilderApplication}
                 onReview={(b) => setViewing(b)}
+                onDelete={(b) => setToDelete([b.id])}
               />
             )}
           />
@@ -791,13 +973,52 @@ export function AdminBuilderApplications() {
           type="builder"
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title="Delete Builder Application"
+        >
+          <div className="space-y-4 pt-2">
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold">
+                  Are you sure you want to delete {toDelete.length === 1 ? 'this application' : `${toDelete.length} applications`}?
+                </p>
+                <p className="mt-1 text-xs text-red-700">
+                  This action is permanent and cannot be undone. All submitted registration details and documents will be permanently removed.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Yes, Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </DashboardLayout>
   );
 }
 
 // ─── Admin Partner Applications ───────────────────────────────────────────────
 export function AdminPartnerApplications() {
+  const { addToast } = useToast();
   const [viewing, setViewing] = useState<PartnerApplication | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get('status');
@@ -825,6 +1046,36 @@ export function AdminPartnerApplications() {
 
   const { t } = useLanguageContext();
   const adminSections = getAdminSections(t);
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('partner_applications').delete().in('id', ids);
+      if (error) throw error;
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} partner application${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['admin-partner-applications'] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete application(s).');
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = (ids: string[]) => {
+    setSelectedIds(new Set(ids));
+  };
 
   const columns: Column<PartnerApplication>[] = [
     {
@@ -855,11 +1106,22 @@ export function AdminPartnerApplications() {
     },
     {
       key: 'id',
-      header: '',
+      header: t('admin.actions', 'Actions'),
+      className: 'text-right whitespace-nowrap',
       render: (p) => (
-        <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(p)}>
-          {t('admin.review', 'Review')}
-        </Button>
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setViewing(p)}>
+            {t('admin.review', 'Review')}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setToDelete([p.id])}
+            title={t('common.delete', 'Delete')}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -915,6 +1177,17 @@ export function AdminPartnerApplications() {
         />
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mb-4">
+          <BulkActionsBar
+            selectedCount={selectedIds.size}
+            totalCount={filteredApplications.length}
+            onClear={() => setSelectedIds(new Set())}
+            onDelete={() => setToDelete(Array.from(selectedIds))}
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
@@ -935,12 +1208,16 @@ export function AdminPartnerApplications() {
             rows={filteredApplications}
             columns={columns as any}
             getRowId={(r: any) => r.id}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onSelectAll={selectAll}
             searchable
             searchPlaceholder={t('admin.searchPartnerApplications', 'Search by name, phone, email, company...')}
             cardRender={(row) => (
               <PartnerAppCard
                 app={row as PartnerApplication}
                 onReview={(p) => setViewing(p)}
+                onDelete={(p) => setToDelete([p.id])}
               />
             )}
           />
@@ -957,6 +1234,41 @@ export function AdminPartnerApplications() {
           application={applications.find((a) => a.id === viewing.id) ?? viewing}
           type="partner"
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title="Delete Partner Application"
+        >
+          <div className="space-y-4 pt-2">
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold">
+                  Are you sure you want to delete {toDelete.length === 1 ? 'this application' : `${toDelete.length} applications`}?
+                </p>
+                <p className="mt-1 text-xs text-red-700">
+                  This action is permanent and cannot be undone. All submitted registration details and documents will be permanently removed.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Yes, Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </DashboardLayout>
   );

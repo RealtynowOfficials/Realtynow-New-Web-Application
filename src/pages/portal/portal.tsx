@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Building2, Heart, MessageSquare, Eye, Wallet, TrendingUp, Home, Plus, Clock, CheckCircle2, Star, Crown, Sparkles, Building } from 'lucide-react';
-import { PlanDetailsModal } from '../../components/portal/plan-details-modal';
+import { Building2, Heart, MessageSquare, Eye, Wallet, TrendingUp, Home, Plus, Clock, CheckCircle2, Star, Crown, Sparkles } from 'lucide-react';
 import { PackageRenewalWidget } from '../../components/portal/PackageRenewalWidget';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
@@ -80,8 +79,8 @@ export function PortalDashboard() {
   return (
     <DashboardLayout
       sections={sections}
-      title={t('nav.dashboard', 'Dashboard')}
-      badge={profile?.first_name ?? undefined}
+      title={t('portal.dashboard', 'Dashboard')}
+      badge="Buyer / Owner"
     >
       <PageHeader
         title={`${t('portal.welcomeBack', 'Welcome back')}, ${profile?.first_name ?? ''}`}
@@ -458,15 +457,16 @@ import {
   fetchActiveCustomerSubscription,
   fetchCustomerSubscriptionHistory,
   type SubscriptionPlan,
-  type ActiveSubscriptionSummary,
 } from '../../lib/subscriptions';
-import { Zap, Shield, Phone, Calendar, ArrowRight, Check } from 'lucide-react';
+import { Zap, Calendar, Check, FileText } from 'lucide-react';
+import { InvoiceModal } from '../../components/invoices/InvoiceModal';
 
 export function PortalSubscription() {
   const { t } = useLanguageContext();
   const { user } = useAuth();
   const sections = getPortalSections(t);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
 
   // 1. Fetch Active Subscription
   const { data: mySub, refetch: refetchMySub, isLoading: loadingMySub } = useQuery({
@@ -766,6 +766,7 @@ export function PortalSubscription() {
                   <th className="px-4 py-3">Start Date</th>
                   <th className="px-4 py-3">Expiry Date</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Invoice</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-navy-50 font-medium text-navy-700">
@@ -790,6 +791,40 @@ export function PortalSubscription() {
                         {record.status}
                       </span>
                     </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          const inv = record.invoice || {
+                            invoice_number: record.invoice_number || `RN-${new Date(record.start_date).getFullYear()}-${String(record.id).slice(0, 6)}`,
+                            customer: {
+                              name: user?.user_metadata?.full_name || 'Valued Member',
+                              email: user?.email || '',
+                              phone: user?.user_metadata?.phone || '',
+                            },
+                            subtotal: Number(record.amount_paid) || 0,
+                            tax_amount: Math.round(Number(record.amount_paid) * 0.18 * 100) / 100,
+                            total_amount: Math.round(Number(record.amount_paid) * 1.18 * 100) / 100,
+                            invoice_date: record.start_date,
+                            status: 'paid',
+                            items: [
+                              {
+                                title: `${record.plan?.name || 'RealtyNow Subscription'} Plan`,
+                                quantity: 1,
+                                unit_price: Number(record.amount_paid) || 0,
+                                total: Number(record.amount_paid) || 0,
+                              }
+                            ]
+                          };
+                          setSelectedInvoice(inv);
+                        }}
+                        icon={<FileText className="h-3.5 w-3.5 text-red-600" />}
+                        className="text-xs py-1 px-2.5"
+                      >
+                        Invoice PDF
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -797,6 +832,13 @@ export function PortalSubscription() {
           </div>
         </div>
       )}
+
+      <InvoiceModal
+        isOpen={!!selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        invoice={selectedInvoice}
+        title="Subscription Tax Invoice & Receipt"
+      />
     </DashboardLayout>
   );
 }
@@ -805,6 +847,7 @@ export function PortalInvoices() {
   const { t } = useLanguageContext();
   const { user } = useAuth();
   const sections = getPortalSections(t);
+  const [activeInvoice, setActiveInvoice] = useState<any | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['portal-invoices', user?.id],
@@ -834,18 +877,54 @@ export function PortalInvoices() {
           </div>
         ) : data && data.length > 0 ? (
           data.map((p) => (
-            <div key={p.id} className="flex items-center justify-between p-4">
+            <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4">
               <div>
                 <p className="text-sm font-semibold text-navy-900">
                   {p.invoice_number ?? p.reference ?? t('portal.payment', 'Payment')}
                 </p>
                 <p className="text-xs text-navy-500">{formatDate(p.created_at)}</p>
+                {p.gateway_payment_id && (
+                  <p className="text-[10px] text-navy-400 font-mono mt-0.5">
+                    Txn ID: {p.gateway_payment_id}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="font-semibold text-navy-900">{formatPrice(p.amount)}</span>
                 <Badge variant={p.status === 'paid' ? 'success' : p.status === 'pending' ? 'warning' : 'error'}>
                   {p.status}
                 </Badge>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setActiveInvoice({
+                      invoice_number: p.invoice_number || `RN-${new Date(p.created_at).getFullYear()}-${String(p.id).slice(0, 6)}`,
+                      customer: {
+                        name: user?.user_metadata?.full_name || 'Valued Member',
+                        email: user?.email || '',
+                      },
+                      subtotal: Math.round((Number(p.amount) / 1.18) * 100) / 100,
+                      tax_amount: Math.round((Number(p.amount) - (Number(p.amount) / 1.18)) * 100) / 100,
+                      total_amount: Number(p.amount),
+                      invoice_date: p.created_at,
+                      status: p.status,
+                      gateway_payment_id: p.gateway_payment_id,
+                      items: [
+                        {
+                          title: p.description || 'RealtyNow Subscription & Listing Package',
+                          quantity: 1,
+                          unit_price: Math.round((Number(p.amount) / 1.18) * 100) / 100,
+                          total: Math.round((Number(p.amount) / 1.18) * 100) / 100,
+                        }
+                      ]
+                    });
+                  }}
+                  icon={<FileText className="h-3.5 w-3.5 text-red-600" />}
+                  className="text-xs py-1 px-2.5"
+                >
+                  View Invoice
+                </Button>
               </div>
             </div>
           ))
@@ -857,6 +936,13 @@ export function PortalInvoices() {
           />
         )}
       </Card>
+
+      <InvoiceModal
+        isOpen={!!activeInvoice}
+        onClose={() => setActiveInvoice(null)}
+        invoice={activeInvoice}
+        title="Official Tax Invoice & Payment Receipt"
+      />
     </DashboardLayout>
   );
 }

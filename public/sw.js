@@ -1,24 +1,38 @@
-const CACHE_NAME = 'realtynow-pwa-v3';
+// Build version placeholder: stamped during build with unique timestamp
+const BUILD_VERSION = '__SW_BUILD_VERSION__';
+const CACHE_NAME = 'realtynow-pwa-' + (BUILD_VERSION.startsWith('__') ? 'v4-dev' : BUILD_VERSION);
+
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
+  '/favicon.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
   '/maskable-icon-512x512.png',
   '/apple-touch-icon.png',
 ];
 
-// 1. Install Event - Pre-cache essential app shell assets
+// 0. Listen for explicit SKIP_WAITING messages from client
+self.addEventListener('message', (event) => {
+  if (event.data && (event.data.type === 'SKIP_WAITING' || event.data === 'skipWaiting')) {
+    self.skipWaiting();
+  }
+});
+
+// 1. Install Event - Pre-cache essential app shell assets & activate immediately
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches
       .open(CACHE_NAME)
       .then((cache) => {
         return cache.addAll(PRECACHE_ASSETS);
       })
-      .then(() => self.skipWaiting()),
+      .catch((err) => {
+        console.warn('[SW] Precache asset fetch warning:', err);
+      }),
   );
 });
 
@@ -28,7 +42,14 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((cacheNames) => {
-        return Promise.all(cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name)));
+        return Promise.all(
+          cacheNames
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => {
+              console.log('[SW] Deleting stale cache:', name);
+              return caches.delete(name);
+            }),
+        );
       })
       .then(() => self.clients.claim()),
   );

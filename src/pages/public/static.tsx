@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Calendar,
-  ArrowLeft,
   Search as SearchIcon,
   ChevronRight,
   MapPin,
@@ -20,7 +19,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useRealtimeCount } from '../../lib/realtime';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { Card, EmptyState, Button, Skeleton, Input, Textarea } from '../../components/ui';
+import { Card, Button, Skeleton, Input, Textarea } from '../../components/ui';
 import { cn } from '../../lib/utils';
 
 export function BlogListPage() {
@@ -1212,7 +1211,7 @@ export function ContactPage() {
               <div className="flex items-start gap-3">
                 <MapPin className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />{' '}
                 <span className="text-navy-700">
-                  #19, Road No. 2B, Chandrapuri Colony, LB Nagar, Hyderabad 500081, Telangana
+                  #19, Road No. 2B, Chandrapuri Colony, LB Nagar, Hyderabad - 500081, Telangana, India
                 </span>
               </div>
               <div className="flex items-center gap-3">

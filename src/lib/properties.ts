@@ -278,10 +278,15 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
   }
 
   if (activePurpose) {
-    if (activePurpose.toLowerCase() === 'pg') {
+    const pLower = activePurpose.toLowerCase().trim();
+    if (pLower === 'pg' || pLower === 'coliving' || pLower === 'hostel') {
       q = q.or('purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,search_text.ilike.%pg%');
+    } else if (pLower === 'buy' || pLower === 'sale' || pLower === 'purchase') {
+      q = q.or('purpose.ilike.%Sale%,purpose.ilike.%Buy%');
+    } else if (pLower === 'rent' || pLower === 'lease') {
+      q = q.or('purpose.ilike.%Rent%,purpose.ilike.%Lease%');
     } else {
-      q = q.eq('purpose', activePurpose);
+      q = q.ilike('purpose', `%${activePurpose}%`);
     }
   }
 
@@ -289,55 +294,105 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
   const categorySlug = normalizeCategorySlug(filters.category || filters.type);
   if (categorySlug) {
     switch (categorySlug) {
-      case 'apartment':
+      case 'apartment-flats':
         q = q.or(
-          'property_type_name.ilike.%Apartment%,property_type_name.ilike.%Flat%,property_type_name.ilike.%Builder Floor%,property_type_name.ilike.%Studio%,property_type_name.ilike.%Penthouse%,title.ilike.%Apartment%,title.ilike.%Flat%,title.ilike.%Penthouse%'
+          'property_type_name.ilike.%Apartment%,property_type_name.ilike.%Flat%,property_type_name.ilike.%Builder Floor%,property_type_name.ilike.%Studio%,title.ilike.%Apartment%,title.ilike.%Flat%,title.ilike.%BHK%,title.ilike.%Residency%'
         );
         break;
 
-      case 'villa':
+      case 'luxury-villas':
         q = q.or(
-          'property_type_name.ilike.%Villa%,property_type_name.ilike.%Bungalow%,property_type_name.ilike.%Duplex%,title.ilike.%Villa%,title.ilike.%Villas%,title.ilike.%Vilas%,title.ilike.%Duplex%,property_sub_type.ilike.%villa%'
+          'is_luxury.eq.true,property_type_name.ilike.%Villa%,property_type_name.ilike.%Bungalow%,property_type_name.ilike.%Mansion%,title.ilike.%Villa%,title.ilike.%Villas%,title.ilike.%Bungalow%,property_sub_type.ilike.%villa%'
         );
         break;
 
-      case 'independent-house':
+      case 'independent-houses':
         q = q.or(
           'property_type_name.ilike.%Independent House%,property_type_name.ilike.%Row House%,property_type_name.ilike.%Individual House%,title.ilike.%Independent House%,title.ilike.%Row House%,title.ilike.%Individual House%,title.ilike.%House%'
         );
         break;
 
-      case 'commercial-office':
+      case 'gated-community-homes':
         q = q.or(
-          'property_type_name.ilike.%Office%,property_type_name.ilike.%Commercial Space%,property_type_name.ilike.%IT Park%,property_type_name.ilike.%Business Center%,title.ilike.%Office%,title.ilike.%IT Park%'
+          'property_type_name.ilike.%Gated%,title.ilike.%Gated%,title.ilike.%Township%,features->>gated_community.eq.true'
         );
         break;
 
-      case 'retail-shop':
+      case 'open-plots-land':
+        q = q.or(
+          'listing_category.eq.Plot,property_type_category.eq.Plot,property_type_name.ilike.%Plot%,property_type_name.ilike.%Land%,title.ilike.%Plot%,title.ilike.%Plots%,title.ilike.%DTCP%,title.ilike.%HMDA%,title.ilike.%Venture%,property_sub_type.ilike.%Plot%'
+        );
+        break;
+
+      case 'farm-houses':
+        q = q.or(
+          'title.ilike.%Farm%,title.ilike.%Farmhouse%,title.ilike.%Farm House%,title.ilike.%Farm Land%,property_sub_type.ilike.%Farm%,property_type_name.ilike.%Farm%'
+        );
+        break;
+
+      case 'new-projects':
+        q = q.or(
+          'project_id.not.is.null,title.ilike.%New Project%,title.ilike.%Launch%,property_type_name.ilike.%Project%'
+        );
+        break;
+
+      case 'duplex-houses':
+        q = q.or(
+          'title.ilike.%Duplex%,title.ilike.%Triplex%,property_type_name.ilike.%Duplex%,property_sub_type.ilike.%duplex%'
+        );
+        break;
+
+      case 'pent-houses':
+        q = q.or(
+          'title.ilike.%Penthouse%,title.ilike.%Pent House%,title.ilike.%Sky Villa%,property_type_name.ilike.%Penthouse%'
+        );
+        break;
+
+      case 'agriculture-land':
+        q = q.or(
+          'title.ilike.%Agricultural%,title.ilike.%Agriculture%,title.ilike.%Pattadar%,property_sub_type.ilike.%Agricultural%'
+        );
+        break;
+
+      case 'owner-properties':
+        q = q.or('verified_status.eq.Owner Listed');
+        break;
+
+      case 'builder-share-properties':
+        q = q.or('builder_id.not.is.null,verified_status.eq.Builder Listed,title.ilike.%Builder Share%');
+        break;
+
+      case 'commercial-spaces':
+        q = q.or(
+          'property_type_category.eq.Commercial,listing_category.eq.Commercial,property_type_name.ilike.%Office%,property_type_name.ilike.%Commercial Space%,property_type_name.ilike.%IT Park%,title.ilike.%Office%,title.ilike.%Commercial%'
+        );
+        break;
+
+      case 'shops-showrooms':
         q = q.or(
           'property_type_name.ilike.%Shop%,property_type_name.ilike.%Retail%,property_type_name.ilike.%Showroom%,title.ilike.%Shop%,title.ilike.%Showroom%,title.ilike.%Retail%'
         );
         break;
 
-      case 'warehouse':
+      case 'shopping-malls':
         q = q.or(
-          'property_type_name.ilike.%Warehouse%,property_type_name.ilike.%Godown%,property_type_name.ilike.%Industrial Shed%,property_type_name.ilike.%Cold Storage%,title.ilike.%Warehouse%,title.ilike.%Godown%'
+          'property_type_name.ilike.%Mall%,title.ilike.%Mall%,title.ilike.%Shopping Mall%,title.ilike.%Commercial Complex%'
         );
         break;
 
-      case 'plots':
+      case 'godowns-warehouses':
         q = q.or(
-          'property_type_category.eq.Plot,property_type_name.ilike.%Plot%,property_type_name.ilike.%Land%,title.ilike.%Plot%,title.ilike.%Plots%,title.ilike.%Land%'
+          'property_type_name.ilike.%Warehouse%,property_type_name.ilike.%Godown%,property_type_name.ilike.%Industrial Shed%,title.ilike.%Warehouse%,title.ilike.%Godown%'
         );
         break;
 
-      case 'co-working':
+      case 'pg-coliving-spaces':
         q = q.or(
-          'purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,property_type_name.ilike.%PG%,property_type_name.ilike.%Co-working%,property_type_name.ilike.%Coworking%,property_type_name.ilike.%Shared Office%,title.ilike.%Co-working%,title.ilike.%PG%'
+          'purpose.ilike.pg,purpose.ilike.coliving,purpose.ilike.hostel,property_type_name.ilike.%PG%,property_type_name.ilike.%Co-living%,property_type_name.ilike.%Hostel%,title.ilike.%PG%,title.ilike.%Co-living%'
         );
         break;
     }
-  } else if (filters.category && !categorySlug) {
+  } else if (filters.category) {
     q = q.or(`property_type_category.ilike.%${filters.category}%,property_type_name.ilike.%${filters.category}%,title.ilike.%${filters.category}%`);
   }
 
@@ -345,6 +400,21 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
     const rawCity = String(filters.city_id).trim();
     const isUuid = /^[0-9a-f-]{36}$/i.test(rawCity);
     const cleanCityName = rawCity.replace(/^city-/i, '').replace(/[-_]/g, ' ').trim();
+
+    const KNOWN_CITY_NAME_MAP: Record<string, { name: string; state: string }> = {
+      hyderabad: { name: 'Hyderabad', state: 'Telangana' },
+      bengaluru: { name: 'Bengaluru', state: 'Karnataka' },
+      bangalore: { name: 'Bengaluru', state: 'Karnataka' },
+      mumbai: { name: 'Mumbai', state: 'Maharashtra' },
+      pune: { name: 'Pune', state: 'Maharashtra' },
+      gurugram: { name: 'Gurugram', state: 'Haryana' },
+      gurgaon: { name: 'Gurugram', state: 'Haryana' },
+      noida: { name: 'Noida', state: 'Uttar Pradesh' },
+      chennai: { name: 'Chennai', state: 'Tamil Nadu' },
+      delhi: { name: 'Delhi', state: 'Delhi' },
+      kolkata: { name: 'Kolkata', state: 'West Bengal' },
+      ahmedabad: { name: 'Ahmedabad', state: 'Gujarat' },
+    };
 
     const knownMeta = isUuid
       ? filters.city_id === 'fa963656-a6dc-4167-ae42-6dab041befe6' || filters.city_id === '04ec1d24-d2e8-4ee7-91aa-90fb4dfd3b9e'
@@ -368,7 +438,7 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
         : filters.city_id === '4098e626-f00c-4fb0-8052-724927539d6d'
         ? { name: 'Ahmedabad', state: 'Gujarat' }
         : null
-      : null;
+      : KNOWN_CITY_NAME_MAP[cleanCityName.toLowerCase()] || null;
 
     const cityName = knownMeta?.name || cleanCityName;
     const stateName = knownMeta?.state || null;
@@ -389,6 +459,20 @@ export function buildPublishedQuery(filters: PropertyFilters = {}) {
     if (stateName) {
       parts.push(`draft_data->>state_name.ilike.%${stateName}%`);
       parts.push(`state.ilike.%${stateName}%`);
+      parts.push(`address.ilike.%${stateName}%`);
+      parts.push(`search_text.ilike.%${stateName}%`);
+    }
+    if (cityName && cityName.toLowerCase() === 'hyderabad') {
+      const hyderabadSuburbs = [
+        'Raviryal', 'Basaguda', 'Taramatipet', 'Munuganoor', 'Munganoor',
+        'Shadnagar', 'Yacharam', 'Serilingampalle', 'Lingampally',
+        'Kuntloor', 'Kamkole', 'Bodishetpally', 'Gunded', 'Balanagar'
+      ];
+      for (const sub of hyderabadSuburbs) {
+        parts.push(`address.ilike.%${sub}%`);
+        parts.push(`locality.ilike.%${sub}%`);
+        parts.push(`search_text.ilike.%${sub}%`);
+      }
     }
     // If locality is also specified, ensure locality matches satisfy the city filter
     if (filters.locality_id) {
@@ -628,17 +712,56 @@ export async function fetchProperty(id: string) {
   const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(targetId);
 
   if (!isUuid) {
-    // Search fallback if input isn't a 36-char UUID
-    const { data: searchMatch } = await supabase
-      .from('v_properties_search')
+    // 1. First priority: Exact match on seo_slug in properties table
+    const { data: seoMatch } = await supabase
+      .from('properties')
       .select('id')
-      .ilike('title', `%${targetId}%`)
+      .eq('seo_slug', targetId)
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (searchMatch?.id) {
-      targetId = searchMatch.id;
+
+    if (seoMatch?.id) {
+      targetId = seoMatch.id;
     } else {
-      return null;
+      // 2. Second priority: Match seo_slug in search view
+      const { data: vSeoMatch } = await supabase
+        .from('v_properties_search')
+        .select('id')
+        .eq('seo_slug', targetId)
+        .limit(1)
+        .maybeSingle();
+
+      if (vSeoMatch?.id) {
+        targetId = vSeoMatch.id;
+      } else {
+        // 3. Third priority: Fuzzy title or slug match (clean hyphens to spaces)
+        const cleanSearch = targetId.replace(/[-_]+/g, ' ').trim();
+        const { data: searchMatch } = await supabase
+          .from('v_properties_search')
+          .select('id')
+          .or(`title.ilike.%${cleanSearch}%,title.ilike.%${targetId}%,seo_slug.ilike.%${targetId}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (searchMatch?.id) {
+          targetId = searchMatch.id;
+        } else {
+          // 4. Fallback search directly on properties table
+          const { data: propMatch } = await supabase
+            .from('properties')
+            .select('id')
+            .or(`title.ilike.%${cleanSearch}%,seo_slug.ilike.%${targetId}%`)
+            .limit(1)
+            .maybeSingle();
+
+          if (propMatch?.id) {
+            targetId = propMatch.id;
+          } else {
+            return null;
+          }
+        }
+      }
     }
   }
 
@@ -699,16 +822,19 @@ export async function updatePropertyStatus(id: string, status: PropertyStatus, r
     return rejectProperty(id, reason);
   }
 
+  const isSubmittedOrPending = status === 'submitted' || status === 'pending_verification';
+
   const { data, error } = await supabase
     .from('properties')
     .update({
       status,
       approval_status:
-        status === 'submitted' || status === 'pending_verification'
+        isSubmittedOrPending
           ? 'Pending'
           : status === 'changes_requested'
             ? 'Changes Requested'
             : null,
+      is_draft: status === 'draft',
       is_live: false,
       rejection_reason: null,
       updated_at: new Date().toISOString(),
@@ -903,7 +1029,29 @@ export async function adminRejectWithAi(propertyId: string, reason: string, rema
 }
 
 export async function submitPropertyForReview(id: string) {
-  return updatePropertyStatus(id, 'submitted');
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user?.id) {
+    await ensureUserProfile(userData.user.id);
+  }
+
+  const { data, error } = await supabase
+    .from('properties')
+    .update({
+      status: 'submitted',
+      approval_status: 'Pending',
+      is_draft: false,
+      is_live: false,
+      rejection_reason: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (error) throw error;
+  triggerAiVerification(id);
+  triggerPropertySeoGeneration(id);
+  return data;
 }
 
 export async function savePropertyDraft(draftId: string | null, payload: any, submissionId?: string) {
@@ -934,24 +1082,37 @@ export async function savePropertyDraft(draftId: string | null, payload: any, su
     }
   }
 
+  // Always enforce draft status: draft saves/autosaves must NEVER submit to admin
+  const draftPayload = {
+    ...payload,
+    status: 'draft',
+    approval_status: null,
+    is_draft: true,
+    is_live: false,
+  };
+
   const executeSave = async () => {
     if (draftId) {
+      // Guard: Only update if the property is still a draft, so background autosaves
+      // never overwrite an already-submitted/approved/published property back to draft
       const { data, error } = await supabase
         .from('properties')
         .update({
-          ...payload,
+          ...draftPayload,
           updated_at: new Date().toISOString(),
         })
         .eq('id', draftId)
+        .eq('status', 'draft')
         .select()
-        .single();
+        .maybeSingle();
+
       if (error) throw error;
       return data;
     } else if (submissionId) {
       const { data, error } = await supabase
         .from('properties')
         .upsert(
-          { ...payload, submission_id: submissionId },
+          { ...draftPayload, submission_id: submissionId },
           { onConflict: 'submission_id' }
         )
         .select()
@@ -961,9 +1122,7 @@ export async function savePropertyDraft(draftId: string | null, payload: any, su
     } else {
       const { data, error } = await supabase
         .from('properties')
-        .insert({
-          ...payload,
-        })
+        .insert(draftPayload)
         .select()
         .single();
       if (error) throw error;

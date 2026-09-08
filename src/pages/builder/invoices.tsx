@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit3, Trash2, Receipt, IndianRupee, Clock, ExternalLink } from 'lucide-react';
+import { Plus, Edit3, Trash2, Receipt, IndianRupee, Clock, FileText, CreditCard } from 'lucide-react';
+import { InvoiceModal } from '../../components/invoices/InvoiceModal';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
@@ -16,7 +17,7 @@ import type { BuilderInvoice, BuilderInvoiceStatus } from '../../lib/types';
 
 type InvoiceRow = BuilderInvoice & {
   builder_bookings: { id: string; booking_date: string; builder_units: { unit_number: string } | null } | null;
-  builder_customers: { name: string } | null;
+  builder_customers: { name: string; phone?: string; email?: string } | null;
 };
 
 interface BookingOption {
@@ -69,6 +70,78 @@ export function BuilderInvoices() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<string | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<any | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
+
+  const handlePayWithRazorpay = async (i: InvoiceRow) => {
+    setPayingId(i.id);
+    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_TZ8MvRLv665guj';
+    const totalAmount = Number(i.total_amount ?? i.amount + i.tax_amount);
+
+    if (typeof window !== 'undefined' && window.Razorpay) {
+      const options = {
+        key: razorpayKey,
+        amount: Math.round(totalAmount * 100),
+        currency: 'INR',
+        name: 'RealtyNow Builder Invoicing',
+        description: `Installment Invoice #${i.invoice_number}`,
+        image: 'https://realtynow.in/pwa-512x512.png',
+        prefill: {
+          name: i.builder_customers?.name || 'Valued Buyer',
+          email: user?.email || '',
+          contact: i.builder_customers?.phone || user?.user_metadata?.phone || '',
+        },
+        notes: {
+          user_phone: i.builder_customers?.phone || user?.user_metadata?.phone || '',
+          user_id: user?.id || '',
+          invoice_number: i.invoice_number,
+          builder_id: i.builder_id || '',
+          customer_name: i.builder_customers?.name || '',
+          receipt_no: `INV-${i.invoice_number}`,
+        },
+        theme: {
+          color: '#dc2626',
+        },
+        handler: async function (response: any) {
+          try {
+            await supabase
+              .from('builder_invoices')
+              .update({
+                status: 'paid',
+              })
+              .eq('id', i.id);
+
+            await logBuilderAudit('update', 'builder_invoice', i.id, {
+              status: 'paid',
+              razorpay_payment_id: response.razorpay_payment_id,
+            });
+
+            addToast('success', `Payment for invoice ${i.invoice_number} processed successfully!`);
+            queryClient.invalidateQueries({ queryKey: ['builder-invoices'] });
+          } catch (err: any) {
+            addToast('error', err.message || 'Failed to update payment status');
+          } finally {
+            setPayingId(null);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setPayingId(null);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (resp: any) {
+        addToast('error', resp?.error?.description || 'Payment was unsuccessful');
+        setPayingId(null);
+      });
+      rzp.open();
+    } else {
+      addToast('error', 'Payment gateway is initializing. Please try again in a few seconds.');
+      setPayingId(null);
+    }
+  };
 
   const realtimeTick = useRealtimeCount('builder_invoices');
 
@@ -259,23 +332,69 @@ export function BuilderInvoices() {
         key: 'actions',
         header: 'Actions',
         render: (i) => (
-          <div className="flex gap-1">
-            {i.pdf_url && (
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<FileText className="h-3.5 w-3.5 text-red-600" />}
+              onClick={() => {
+                const totalAmt = Number(i.total_amount ?? i.amount + i.tax_amount);
+                setPreviewInvoice({
+                  id: i.id,
+                  invoice_number: i.invoice_number,
+                  customer: {
+                    name: i.builder_customers?.name || 'Valued Customer',
+                    address: i.builder_bookings?.builder_units?.unit_number
+                      ? `Unit ${i.builder_bookings.builder_units.unit_number}, Real Estate Project`
+                      : 'Registered Client, India',
+                  },
+                  subtotal: Number(i.amount),
+                  tax_amount: Number(i.tax_amount),
+                  tax_percentage: 18,
+                  total_amount: totalAmt,
+                  payment_status: i.status,
+                  status: i.status,
+                  invoice_date: i.issued_date,
+                  due_date: i.due_date || i.issued_date,
+                  items: [
+                    {
+                      title: i.builder_bookings?.builder_units?.unit_number
+                        ? `Milestone Payment - Unit ${i.builder_bookings.builder_units.unit_number}`
+                        : 'Property Construction & Booking Milestone Installment',
+                      description: `Invoice Ref: ${i.invoice_number}`,
+                      quantity: 1,
+                      unit_price: Number(i.amount),
+                      total: Number(i.amount),
+                    }
+                  ]
+                });
+              }}
+              title="View & Download PDF"
+              className="text-xs py-1 px-2.5"
+            >
+              Invoice PDF
+            </Button>
+            {i.status !== 'paid' && (
               <Button
                 size="sm"
-                variant="ghost"
-                icon={<ExternalLink className="h-4 w-4" />}
-                onClick={() => window.open(i.pdf_url!, '_blank')}
-                title="Preview / Download"
-              />
+                variant="primary"
+                icon={<CreditCard className="h-3.5 w-3.5" />}
+                loading={payingId === i.id}
+                onClick={() => handlePayWithRazorpay(i)}
+                title="Pay online via Razorpay"
+                className="text-xs py-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Pay Online
+              </Button>
             )}
-            <Button size="sm" variant="ghost" icon={<Edit3 className="h-4 w-4" />} onClick={() => openEdit(i)} />
+            <Button size="sm" variant="ghost" icon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => openEdit(i)} title="Edit" />
             <Button
               size="sm"
               variant="ghost"
               className="text-error-600"
-              icon={<Trash2 className="h-4 w-4" />}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
               onClick={() => setToDelete(i.id)}
+              title="Delete"
             />
           </div>
         ),
@@ -426,6 +545,13 @@ export function BuilderInvoices() {
       >
         <p className="text-sm text-navy-700">This will permanently delete this invoice.</p>
       </Modal>
+
+      <InvoiceModal
+        isOpen={!!previewInvoice}
+        onClose={() => setPreviewInvoice(null)}
+        invoice={previewInvoice}
+        title="Builder Installment Tax Invoice & Receipt"
+      />
     </DashboardLayout>
   );
 }

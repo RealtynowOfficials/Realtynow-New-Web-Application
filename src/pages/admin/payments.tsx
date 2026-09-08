@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Search, Download, ExternalLink, Calendar, Filter, FileText } from 'lucide-react';
+import { Search, Download, Calendar, Filter, FileText } from 'lucide-react';
 import { PaymentTransaction, Invoice } from '../../lib/enterprise-types';
+import { InvoiceModal } from '../../components/invoices/InvoiceModal';
 
 export default function AdminPaymentsPage() {
   const [payments, setPayments] = useState<PaymentTransaction[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'payments' | 'invoices'>('payments');
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -152,8 +154,40 @@ export default function AdminPaymentsPage() {
                         </span>
                       </td>
                       <td className="p-4 text-right">
-                        <button className="text-gray-400 hover:text-primary-600 transition-colors">
-                          <ExternalLink className="h-5 w-5" />
+                        <button
+                          onClick={() => {
+                            const gross = Number(payment.amount) || 0;
+                            const subtotal = Math.round((gross / 1.18) * 100) / 100;
+                            const tax = Math.round((gross - subtotal) * 100) / 100;
+                            setSelectedInvoice({
+                              invoice_number: payment.invoice_number || `RN-${new Date(payment.created_at).getFullYear()}-${String(payment.id).slice(0, 6)}`,
+                              customer: {
+                                name: (payment as any).user?.name || (payment as any).user_email || 'RealtyNow Customer',
+                                email: (payment as any).user_email || '',
+                              },
+                              subtotal,
+                              tax_amount: tax,
+                              tax_percentage: 18,
+                              total_amount: gross,
+                              payment_status: payment.status,
+                              status: payment.status,
+                              gateway_payment_id: payment.gateway_payment_id,
+                              invoice_date: payment.created_at,
+                              items: [
+                                {
+                                  title: payment.description || ((payment as any).packages?.name ? `${(payment as any).packages.name} Package` : 'RealtyNow Subscription & Listing Package'),
+                                  quantity: 1,
+                                  unit_price: subtotal,
+                                  total: subtotal,
+                                }
+                              ]
+                            });
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer text-xs font-semibold"
+                          title="Generate Tax Invoice & Receipt"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Invoice
                         </button>
                       </td>
                     </tr>
@@ -209,9 +243,14 @@ export default function AdminPaymentsPage() {
                         </span>
                       </td>
                       <td className="p-4 text-right">
-                        <a href={invoice.pdf_url || undefined} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-primary-600 transition-colors inline-block mr-2">
-                          <FileText className="h-5 w-5" />
-                        </a>
+                        <button
+                          onClick={() => setSelectedInvoice(invoice)}
+                          title="View & Download PDF"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer text-xs font-semibold"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Invoice PDF
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -221,6 +260,13 @@ export default function AdminPaymentsPage() {
           </div>
         </div>
       )}
+
+      <InvoiceModal
+        isOpen={!!selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        invoice={selectedInvoice}
+        title="RealtyNow Official Tax Invoice & Receipt"
+      />
     </div>
   );
 }

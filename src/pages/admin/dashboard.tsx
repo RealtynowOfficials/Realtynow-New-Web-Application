@@ -162,8 +162,8 @@ export function AdminDashboard() {
   return (
     <DashboardLayout
       sections={sections}
-      title={t('nav.dashboard', 'Admin Dashboard')}
-      badge="Independent Portal"
+      title={t('nav.adminDashboard', 'Admin Dashboard')}
+      badge={currentRole === 'super_admin' ? 'Super Admin' : 'Admin'}
     >
       {/* ADMIN SESSION HEADER CARD */}
       <div className="mb-6 rounded-2xl border border-slate-800 bg-navy-950 p-6 text-white shadow-xl">

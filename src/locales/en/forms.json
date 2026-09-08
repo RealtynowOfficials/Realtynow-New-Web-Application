@@ -23,5 +23,10 @@
   "submitReview": "Submit review",
   "rating": "Rating",
   "comment": "Comment",
-  "shareExperience": "Share your experience with this property"
+  "shareExperience": "Share your experience with this property",
+  "firstName": "First Name",
+  "lastName": "Last Name",
+  "mobileNumber": "Mobile Number (10 digits)",
+  "password": "Password",
+  "submit": "Submit"
 }

@@ -1,5 +1,3 @@
-import { supabase } from './supabase';
-import { ALL_INDIAN_CITIES, type IndianCity } from './indian-cities';
 
 export interface StructuredCity {
   id: string;
@@ -156,6 +154,13 @@ export const CITY_AREAS_MASTER: Record<string, string[]> = {
     'Shadnagar',
     'Kothur',
     'Thimmapur',
+    'Yacharam',
+    'Future City',
+    'Mucherla',
+    'Pharma City',
+    'Kadthal',
+    'Amangal',
+    'Chevella',
   ],
 
   bengaluru: [

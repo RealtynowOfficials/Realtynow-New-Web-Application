@@ -17,9 +17,19 @@ export async function fetchRoleLeads(role: RoleType) {
     if (!error && enquiries && enquiries.length > 0) {
       enquiries.forEach((enq: any) => {
         const leadStatus =
-          enq.status === 'new' ? 'new' :
+          enq.lead_status ||
+          (enq.status === 'new' ? 'new' :
           enq.status === 'contacted' ? 'contacted' :
-          enq.status === 'closed' ? 'won' : 'new';
+          enq.status === 'closed' ? 'won' : 'new');
+
+        const isFreeListing = enq.service_type === 'FREE_LIST_PROPERTY' || enq.source?.includes('free_list');
+        const freeListingData = enq.service_data || {};
+        const sourceLabel = isFreeListing
+          ? `Free Listing (${freeListingData.intent === 'rent' ? 'Rent' : 'Sell'}: ${freeListingData.property_type || 'Property'})`
+          : enq.properties?.title ? `Property: ${enq.properties.title}` : enq.service_type || 'Website Inquiry';
+        const propTitle = isFreeListing
+          ? `${freeListingData.property_type || 'Property'} in ${enq.location || enq.city || 'Hyderabad'}`
+          : enq.properties?.title || 'General Inquiry';
 
         leadsList.push({
           id: enq.id,
@@ -27,14 +37,16 @@ export async function fetchRoleLeads(role: RoleType) {
           email: enq.email || '',
           phone: enq.phone || '',
           message: enq.message || '',
-          source: enq.properties?.title ? `Property: ${enq.properties.title}` : 'Website Inquiry',
+          source: sourceLabel,
           property_id: enq.property_id,
-          property_title: enq.properties?.title || 'General Inquiry',
-          assigned_to: enq.agent_id || null,
+          property_title: propTitle,
+          assigned_to: enq.assigned_to || enq.agent_id || null,
           lead_status: leadStatus,
-          priority: enq.message && enq.message.length > 20 ? 'high' : 'medium',
+          priority: enq.priority || (enq.message && enq.message.length > 20 ? 'high' : 'medium'),
           created_at: enq.created_at || new Date().toISOString(),
           budget: enq.properties?.price || null,
+          service_type: enq.service_type,
+          service_data: enq.service_data,
         });
       });
     }
@@ -103,6 +115,7 @@ export async function createLead(data: {
   agent_id?: string;
   status?: string;
   source?: string;
+  priority?: string;
 }) {
   try {
     const { data: created, error } = await supabase
@@ -243,6 +256,118 @@ export async function toggleAgentStatus(agentId: string, currentStatus: string) 
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Permanently delete member accounts.
+ * Performs direct database table deletion using the authenticated admin session.
+ */
+export async function deleteDirectoryMembers(ids: string[], role: RoleType) {
+  if (!ids || ids.length === 0) return { success: true, count: 0 };
+
+  if (role === 'agent' || (role as string) === 'customer') {
+    // 1. Pre-clean foreign key references to prevent constraint errors
+    try {
+      await Promise.allSettled([
+        // Clear referrals referencing these agents
+        supabase.from('referrals').update({ agent_id: null, assigned_agent_id: null }).in('agent_id', ids),
+        supabase.from('referrals').update({ agent_id: null, assigned_agent_id: null }).in('assigned_agent_id', ids),
+        supabase.from('referrals').update({ assigned_by: null }).in('assigned_by', ids),
+        // Delete property assignments
+        supabase.from('property_assignments').delete().in('agent_id', ids),
+        supabase.from('property_assignments').delete().in('assigned_to', ids),
+        // Clear agent assignments on properties
+        supabase.from('properties').update({ agent_id: null, assigned_agent_id: null }).in('agent_id', ids),
+        supabase.from('properties').update({ agent_id: null, assigned_agent_id: null }).in('assigned_agent_id', ids),
+        // Clear enquiries & appointments
+        supabase.from('enquiries').update({ agent_id: null, assigned_to: null }).in('agent_id', ids),
+        supabase.from('enquiries').update({ agent_id: null, assigned_to: null }).in('assigned_to', ids),
+        supabase.from('appointments').update({ agent_id: null }).in('agent_id', ids),
+        // Clean CRM leads & follow-ups
+        supabase.from('crm_leads').update({ agent_id: null }).in('agent_id', ids),
+        supabase.from('role_follow_ups').delete().in('user_id', ids),
+        supabase.from('role_follow_ups').delete().in('agent_id', ids),
+        // Clean compliance documents & payout withdrawals
+        supabase.from('role_compliance_documents').delete().in('user_id', ids),
+        supabase.from('payout_withdrawals').delete().in('user_id', ids),
+        // Clean access requests & applications
+        supabase.from('agent_requests').delete().in('user_id', ids),
+        supabase.from('agent_applications').delete().in('user_id', ids),
+        supabase.from('agent_applications').delete().in('profile_id', ids),
+        supabase.from('notifications').delete().in('user_id', ids),
+      ]);
+    } catch (e) {
+      console.warn('Pre-delete cleanup warning:', e);
+    }
+
+    // 2. Perform main profiles deletion
+    const { error } = await supabase.from('profiles').delete().in('id', ids);
+    if (error) {
+      // Fallback to edge function if deployed
+      try {
+        const { data, error: funcErr } = await supabase.functions.invoke('admin-delete-members', {
+          body: { ids },
+          headers: { 'x-action': 'delete-agents' },
+        });
+        if (!funcErr && data?.success) return data;
+      } catch {
+        // ignore
+      }
+      throw new Error(error.message || 'Failed to delete agent account(s)');
+    }
+    return { success: true, count: ids.length };
+  } else if (role === 'builder') {
+    try {
+      await Promise.allSettled([
+        supabase.from('builder_projects').delete().in('builder_id', ids),
+        supabase.from('builder_applications').delete().in('builder_id', ids),
+        supabase.from('role_compliance_documents').delete().in('user_id', ids),
+      ]);
+    } catch (e) {
+      console.warn('Pre-delete cleanup warning:', e);
+    }
+
+    const { error } = await supabase.from('builders').delete().in('id', ids);
+    if (error) {
+      try {
+        const { data, error: funcErr } = await supabase.functions.invoke('admin-delete-members', {
+          body: { ids },
+          headers: { 'x-action': 'delete-builders' },
+        });
+        if (!funcErr && data?.success) return data;
+      } catch {
+        // ignore
+      }
+      throw new Error(error.message || 'Failed to delete builder account(s)');
+    }
+    return { success: true, count: ids.length };
+  } else {
+    try {
+      await Promise.allSettled([
+        supabase.from('referrals').delete().in('partner_id', ids),
+        supabase.from('partner_commissions').delete().in('partner_id', ids),
+        supabase.from('partner_applications').delete().in('partner_id', ids),
+        supabase.from('role_compliance_documents').delete().in('user_id', ids),
+      ]);
+    } catch (e) {
+      console.warn('Pre-delete cleanup warning:', e);
+    }
+
+    const { error } = await supabase.from('partners').delete().in('id', ids);
+    if (error) {
+      try {
+        const { data, error: funcErr } = await supabase.functions.invoke('admin-delete-members', {
+          body: { ids },
+          headers: { 'x-action': 'delete-partners' },
+        });
+        if (!funcErr && data?.success) return data;
+      } catch {
+        // ignore
+      }
+      throw new Error(error.message || 'Failed to delete partner account(s)');
+    }
+    return { success: true, count: ids.length };
+  }
 }
 
 // ─── PROPERTY ASSIGNMENTS ────────────────────────────────────────────────────

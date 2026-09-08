@@ -73,6 +73,9 @@ const BorewellServicesPage = lazy(() =>
   import('./pages/public/borewell-services').then((m) => ({ default: m.BorewellServicesPage })),
 );
 const HomeLoansPage = lazy(() => import('./pages/public/home-loans').then((m) => ({ default: m.HomeLoansPage })));
+const FreeListPropertyPage = lazy(() =>
+  import('./pages/public/free_list_property').then((m) => ({ default: m.FreeListPropertyPage })),
+);
 
 const OtpLoginPage = lazy(() => import('./pages/auth/otp-login').then((m) => ({ default: m.OtpLoginPage })));
 const AdminLoginPage = lazy(() => import('./pages/auth/admin-login').then((m) => ({ default: m.AdminLoginPage })));
@@ -183,6 +186,7 @@ const AdminPropertyPageSettings = lazy(() =>
 const AdminLanguages = lazy(() => import('./pages/admin/languages').then((m) => ({ default: m.AdminLanguagesPage })));
 const AdminHomepageCMS = lazy(() => import('./pages/admin/cms').then((m) => ({ default: m.AdminHomepageCMS })));
 const AdminAllLeadsPage = lazy(() => import('./pages/admin/leads').then((m) => ({ default: m.AdminAllLeadsPage })));
+const AdminNewLeadsPage = lazy(() => import('./pages/admin/new-leads').then((m) => ({ default: m.AdminNewLeadsPage })));
 const AdminCRMDashboard = lazy(() => import('./pages/admin/crm').then((m) => ({ default: m.default })));
 const AdminPackagesPage = lazy(() => import('./pages/admin/packages').then((m) => ({ default: m.default })));
 const AdminPaymentsPage = lazy(() => import('./pages/admin/payments').then((m) => ({ default: m.default })));
@@ -408,6 +412,9 @@ function AppRoutes() {
                 { path: '/builders', element: <BuildersPage /> },
                 { path: '/builders/:id', element: <BuilderProfilePage /> },
                 { path: '/hyderabad-localities', element: <HyderabadLocalitiesPage /> },
+                { path: '/explore-hyderabad', element: <HyderabadLocalitiesPage /> },
+                { path: '/localities', element: <HyderabadLocalitiesPage /> },
+                { path: '/localities/hyderabad', element: <HyderabadLocalitiesPage /> },
                 { path: '/emi-calculator', element: <EMICalculatorPage /> },
                 { path: '/borewell-services', element: <BorewellServicesPage /> },
                 { path: '/home-loans', element: <HomeLoansPage /> },
@@ -419,6 +426,15 @@ function AppRoutes() {
                 { path: '/register', element: <Navigate to="/signup" replace /> },
               ],
             },
+            {
+              path: '/free_list_property',
+              element: (
+                <Suspense fallback={<PageLoader />}>
+                  <FreeListPropertyPage />
+                </Suspense>
+              ),
+            },
+            { path: '/free-list-property', element: <Navigate to="/free_list_property" replace /> },
             {
               // Same OTP login page for every role — role is whatever the
               // matched/created profile already has, never chosen at login.
@@ -594,6 +610,7 @@ function AppRoutes() {
               element: <AdminProtectedRoute />,
               children: [
                 { path: '/admin', element: <AdminDashboard /> },
+                { path: '/admin/new-leads', element: <AdminNewLeadsPage /> },
                 { path: '/admin/properties', element: <AdminProperties /> },
                 { path: '/admin/properties/edit/:id', element: <AdminPropertyEditor /> },
                 { path: '/admin/bulk-import', element: <AdminBulkImport /> },

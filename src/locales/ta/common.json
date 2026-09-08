@@ -90,5 +90,17 @@
   "saveProperty": "சொத்தை சேமி",
   "share": "பகிர்",
   "print": "அச்சிடு",
-  "prev": "முந்தைய"
+  "prev": "முந்தைய",
+  "justNow": "just now",
+  "mAgo": "m ago",
+  "hAgo": "h ago",
+  "dAgo": "d ago",
+  "all": "All",
+  "refresh": "Refresh",
+  "view": "View",
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "approved": "Approved",
+  "rejected": "Rejected"
 }

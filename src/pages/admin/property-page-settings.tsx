@@ -8,7 +8,7 @@ import { useLanguageContext } from '../../lib/i18n/language-context';
 import { Card, Button, Input, Textarea, Switch } from '../../components/ui';
 import { useToast } from '../../components/toast';
 
-interface PageSettings {
+export interface PageSettings {
   show_specifications: boolean;
   show_amenities: boolean;
   show_floor_plans: boolean;
@@ -26,6 +26,25 @@ interface PageSettings {
   promo_banner_body: string | null;
   promo_banner_link: string | null;
 }
+
+export const DEFAULT_PAGE_SETTINGS: PageSettings = {
+  show_specifications: true,
+  show_amenities: true,
+  show_floor_plans: true,
+  show_gallery: true,
+  show_videos: true,
+  show_virtual_tour: true,
+  show_location_map: true,
+  show_nearby: true,
+  show_price_history: true,
+  show_reviews: true,
+  show_faqs: true,
+  show_similar_properties: true,
+  show_emi_calculator: true,
+  promo_banner_title: null,
+  promo_banner_body: null,
+  promo_banner_link: null,
+};
 
 const SECTION_TOGGLES: { key: keyof PageSettings; label: string }[] = [
   { key: 'show_specifications', label: 'Specifications tab' },
@@ -53,26 +72,70 @@ export function AdminPropertyPageSettings() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin-property-page-settings'],
     queryFn: async () => {
-      const { data } = await supabase.from('property_page_settings').select('*').eq('id', true).maybeSingle();
-      return data as PageSettings | null;
+      const { data, error } = await supabase.from('property_page_settings').select('*').eq('id', true).maybeSingle();
+      if (error) {
+        console.error('Error loading property page settings:', error);
+        return DEFAULT_PAGE_SETTINGS;
+      }
+      return (data as PageSettings) ?? DEFAULT_PAGE_SETTINGS;
     },
   });
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (data) {
+      setForm({ ...DEFAULT_PAGE_SETTINGS, ...data });
+    }
   }, [data]);
 
   const save = async () => {
     if (!form) return;
     setSaving(true);
     try {
+      // 1. Persist to database
       const { error } = await supabase
         .from('property_page_settings')
-        .update({ ...form, updated_at: new Date().toISOString() })
-        .eq('id', true);
+        .upsert({
+          ...form,
+          id: true,
+          updated_at: new Date().toISOString(),
+        });
+
       if (error) throw error;
-      queryClient.invalidateQueries({ queryKey: ['admin-property-page-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['property-page-settings'] });
+
+      // 2. Insert Audit Log
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        if (auth.user) {
+          const changedKeys = SECTION_TOGGLES.filter(
+            (s) => (data ? data[s.key] : true) !== form[s.key],
+          ).map((s) => ({
+            setting: s.label,
+            old_value: data ? data[s.key] : true,
+            new_value: form[s.key],
+          }));
+
+          if (changedKeys.length > 0 || (data?.promo_banner_title !== form.promo_banner_title)) {
+            await supabase.from('audit_logs').insert({
+              actor_id: auth.user.id,
+              action: 'UPDATE_PROPERTY_PAGE_SETTINGS',
+              entity: 'property_page_settings',
+              entity_id: 'global',
+              metadata: {
+                changes: changedKeys,
+                promo_banner_title: form.promo_banner_title,
+                timestamp: new Date().toISOString(),
+              },
+            });
+          }
+        }
+      } catch (auditErr) {
+        console.warn('Audit log write skipped:', auditErr);
+      }
+
+      // 3. Invalidate React Query caches for immediate UI refresh across all tabs
+      await queryClient.invalidateQueries({ queryKey: ['admin-property-page-settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['property-page-settings'] });
+
       toast.addToast('success', 'Property page settings saved');
     } catch (err) {
       toast.addToast('error', err instanceof Error ? err.message : 'Failed to save settings');
@@ -84,7 +147,7 @@ export function AdminPropertyPageSettings() {
   const sections = getAdminSections(t);
 
   return (
-    <DashboardLayout sections={sections} title="Property Page Settings">
+    <DashboardLayout sections={sections} title="Property Page Settings" badge="Admin">
       <PageHeader
         title="Property Page Settings"
         subtitle="Control which sections appear on every property landing page, site-wide."
@@ -105,9 +168,15 @@ export function AdminPropertyPageSettings() {
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
               {SECTION_TOGGLES.map((s) => (
-                <div key={s.key} className="flex items-center justify-between rounded-xl border border-navy-100 px-4 py-3">
+                <div
+                  key={s.key}
+                  className="flex items-center justify-between rounded-xl border border-navy-100 px-4 py-3 bg-white hover:border-navy-200 transition-colors"
+                >
                   <span className="text-sm font-medium text-navy-800">{s.label}</span>
-                  <Switch checked={Boolean(form[s.key])} onChange={(v) => setForm((f) => (f ? { ...f, [s.key]: v } : f))} />
+                  <Switch
+                    checked={Boolean(form[s.key])}
+                    onChange={(v) => setForm((f) => (f ? { ...f, [s.key]: v } : f))}
+                  />
                 </div>
               ))}
             </div>

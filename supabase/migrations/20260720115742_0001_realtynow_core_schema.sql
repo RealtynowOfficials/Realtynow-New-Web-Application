@@ -523,8 +523,22 @@ create table if not exists public.customer_subscriptions (
 );
 alter table public.customer_subscriptions enable row level security;
 drop policy if exists "cust_subs_own" on public.customer_subscriptions;
-create policy "cust_subs_own" on public.customer_subscriptions for all
-  to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' and table_name = 'customer_subscriptions' and column_name = 'customer_id'
+  ) then
+    create policy "cust_subs_own" on public.customer_subscriptions for all
+      to authenticated using (auth.uid() = customer_id) with check (auth.uid() = customer_id);
+  elsif exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' and table_name = 'customer_subscriptions' and column_name = 'user_id'
+  ) then
+    create policy "cust_subs_own" on public.customer_subscriptions for all
+      to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  end if;
+end $$;
 
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),

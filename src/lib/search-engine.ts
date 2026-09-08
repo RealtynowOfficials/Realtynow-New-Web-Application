@@ -57,18 +57,24 @@ export interface LocationDiscoveryResult {
 
 // ─── Constants ────────────────────────────────────────────────
 
-const CATEGORY_META: Record<CategorySlug, { label: string; pluralLabel: string; emoji: string; keywords: string[] }> = {
+const CATEGORY_META: Partial<Record<CategorySlug, { label: string; pluralLabel: string; emoji: string; keywords: string[] }>> = {
+  'apartment-flats': {
+    label: 'Apartment Flat',
+    pluralLabel: 'Apartment Flats',
+    emoji: '🏢',
+    keywords: ['apartment', 'apartments', 'flat', 'flats', 'builder floor', 'studio', 'penthouse', 'apartmnt', 'appartment'],
+  },
   apartment: {
     label: 'Apartment',
     pluralLabel: 'Apartments',
     emoji: '🏢',
     keywords: ['apartment', 'apartments', 'flat', 'flats', 'builder floor', 'studio', 'penthouse', 'apartmnt', 'appartment'],
   },
-  villa: {
-    label: 'Villa',
-    pluralLabel: 'Villas',
-    emoji: '🏡',
-    keywords: ['villa', 'villas', 'vilas', 'vila', 'bungalow', 'bungalows', 'duplex', 'triplex', 'gated villa', 'luxury villa'],
+  'independent-houses': {
+    label: 'Independent House',
+    pluralLabel: 'Independent Houses',
+    emoji: '🏘️',
+    keywords: ['house', 'houses', 'home', 'homes', 'independent house', 'independent houses', 'row house', 'row houses', 'individual house', 'kothi', 'haveli'],
   },
   'independent-house': {
     label: 'Independent House',
@@ -76,11 +82,83 @@ const CATEGORY_META: Record<CategorySlug, { label: string; pluralLabel: string; 
     emoji: '🏘️',
     keywords: ['house', 'houses', 'home', 'homes', 'independent house', 'independent houses', 'row house', 'row houses', 'individual house', 'kothi', 'haveli'],
   },
+  'gated-community-homes': {
+    label: 'Gated Community',
+    pluralLabel: 'Gated Community Homes',
+    emoji: '🛡️',
+    keywords: ['gated community', 'gated villa', 'gated society', 'township'],
+  },
+  'open-plots-land': {
+    label: 'Plot & Land',
+    pluralLabel: 'Open Plots & Land',
+    emoji: '🌳',
+    keywords: ['plot', 'plots', 'land', 'lands', 'open plot', 'open plots', 'plot land', 'land plot', 'hmda', 'dtcp', 'residential plot', 'residential plots', 'gated plot', 'farm land', 'farm plots'],
+  },
   plots: {
     label: 'Plot',
     pluralLabel: 'Plots',
     emoji: '🌳',
     keywords: ['plot', 'plots', 'land', 'lands', 'open plot', 'open plots', 'plot land', 'land plot', 'hmda', 'dtcp', 'residential plot', 'residential plots', 'gated plot', 'farm land', 'farm plots'],
+  },
+  'luxury-villas': {
+    label: 'Luxury Villa',
+    pluralLabel: 'Luxury Villas',
+    emoji: '✨',
+    keywords: ['villa', 'villas', 'vilas', 'vila', 'bungalow', 'bungalows', 'duplex', 'triplex', 'gated villa', 'luxury villa'],
+  },
+  villa: {
+    label: 'Villa',
+    pluralLabel: 'Villas',
+    emoji: '🏡',
+    keywords: ['villa', 'villas', 'vilas', 'vila', 'bungalow', 'bungalows', 'duplex', 'triplex', 'gated villa', 'luxury villa'],
+  },
+  'farm-houses': {
+    label: 'Farm House',
+    pluralLabel: 'Farm Houses',
+    emoji: '🌲',
+    keywords: ['farm house', 'farmhouse', 'weekend home', 'resort villa'],
+  },
+  'new-projects': {
+    label: 'New Project',
+    pluralLabel: 'New Projects',
+    emoji: '🏗️',
+    keywords: ['new project', 'new launch', 'pre-launch', 'rera project'],
+  },
+  'duplex-houses': {
+    label: 'Duplex House',
+    pluralLabel: 'Duplex Houses',
+    emoji: '📐',
+    keywords: ['duplex', 'duplex house', 'triplex'],
+  },
+  'pent-houses': {
+    label: 'Pent House',
+    pluralLabel: 'Pent Houses',
+    emoji: '🏙️',
+    keywords: ['penthouse', 'pent house', 'sky villa'],
+  },
+  'agriculture-land': {
+    label: 'Agriculture Land',
+    pluralLabel: 'Agriculture Land',
+    emoji: '🌱',
+    keywords: ['agricultural land', 'agriculture land', 'farm land', 'agri land'],
+  },
+  'owner-properties': {
+    label: 'Owner Property',
+    pluralLabel: 'Owner Properties',
+    emoji: '👤',
+    keywords: ['owner listed', 'direct owner', 'zero brokerage'],
+  },
+  'builder-share-properties': {
+    label: 'Builder Share',
+    pluralLabel: 'Builder Share Properties',
+    emoji: '🤝',
+    keywords: ['builder share', 'builder floor', 'investor share'],
+  },
+  'commercial-spaces': {
+    label: 'Commercial Space',
+    pluralLabel: 'Commercial Spaces',
+    emoji: '💼',
+    keywords: ['office', 'offices', 'commercial', 'commercial property', 'commercial properties', 'it park', 'business center', 'commercial office', 'commercial space'],
   },
   'commercial-office': {
     label: 'Commercial Office',
@@ -88,17 +166,41 @@ const CATEGORY_META: Record<CategorySlug, { label: string; pluralLabel: string; 
     emoji: '💼',
     keywords: ['office', 'offices', 'commercial', 'commercial property', 'commercial properties', 'it park', 'business center', 'commercial office', 'commercial space'],
   },
+  'shops-showrooms': {
+    label: 'Shop & Showroom',
+    pluralLabel: 'Shops & Showrooms',
+    emoji: '🏬',
+    keywords: ['shop', 'shops', 'retail', 'showroom', 'showrooms', 'commercial shop'],
+  },
   'retail-shop': {
     label: 'Retail Shop',
     pluralLabel: 'Retail Shops',
     emoji: '🏬',
     keywords: ['shop', 'shops', 'retail', 'showroom', 'showrooms', 'commercial shop'],
   },
+  'shopping-malls': {
+    label: 'Shopping Mall',
+    pluralLabel: 'Shopping Malls',
+    emoji: '🛍️',
+    keywords: ['shopping mall', 'mall', 'commercial complex'],
+  },
+  'godowns-warehouses': {
+    label: 'Godown / Warehouse',
+    pluralLabel: 'Godowns / Warehouses',
+    emoji: '🏭',
+    keywords: ['warehouse', 'warehouses', 'godown', 'godowns', 'industrial shed', 'cold storage'],
+  },
   warehouse: {
     label: 'Warehouse',
     pluralLabel: 'Warehouses',
     emoji: '🏭',
     keywords: ['warehouse', 'warehouses', 'godown', 'godowns', 'industrial shed', 'cold storage'],
+  },
+  'pg-coliving-spaces': {
+    label: 'PG & Co-Living',
+    pluralLabel: 'PG & Co-Living Spaces',
+    emoji: '🧑‍🤝‍🧑',
+    keywords: ['pg', 'coliving', 'co-living', 'hostel', 'shared accommodation'],
   },
   'co-working': {
     label: 'Co-working',
@@ -468,7 +570,7 @@ export async function fetchSearchCategoryCounts(
     const totalCount = rows.length;
 
     // Tally counts across all canonical categories
-    const counts: Record<CategorySlug, number> = {
+    const counts: Partial<Record<CategorySlug, number>> = {
       apartment: 0,
       'independent-house': 0,
       villa: 0,

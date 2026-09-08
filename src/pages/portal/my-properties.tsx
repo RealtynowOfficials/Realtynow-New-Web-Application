@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { Edit3, Trash2, Send, Eye, Building2, Share2, MapPin } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Edit3, Trash2, Send, Eye, Building2, Share2, MapPin, RotateCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { SharePropertyModal } from '../../components/ui/share-property-modal';
+import { useToast } from '../../components/toast';
 
 import { getPortalSections, getAgentSections } from './sections';
 import { Button, Card, EmptyState, Modal, Badge, Select, Input } from '../../components/ui';
@@ -14,9 +15,10 @@ import { StatusBadge } from '../../components/property-card';
 import { DataTable, type Column, BulkActionsBar } from '../../components/data-table';
 import { submitPropertyForReview } from '../../lib/properties';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate , generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
-import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
+import { formatPrice, formatDate, generatePropertyUrl, getPropertyPrice } from '../../lib/utils';
+import { getPriceUnitLabel } from '../../lib/plot-pricing';
 import { PropertyPriceCell } from '../../components/ui/property-price-cell';
+import { formatPropertyLocation } from '../../lib/location-formatter';
 import type { Property } from '../../lib/types';
 import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from '../../lib/property-images';
 import { ExportMenu } from '../../components/export-menu';
@@ -26,6 +28,8 @@ import { PostPropertyLink } from '../../components/post-property-link';
 import { EditPropertyModal } from '../../components/portal/edit-property-modal';
 import { EnableNotificationsCard } from '../../components/enable-notifications-card';
 import { fetchActiveCustomerSubscription } from '../../lib/subscriptions';
+import { CITY_AREAS_MASTER } from '../../lib/location-service';
+import { DEFAULT_PROPERTY_TYPES, fetchAllPropertyTypes } from '../../lib/indian-cities';
 
 const MY_PROPERTIES_EXPORT_COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -40,7 +44,9 @@ const MY_PROPERTIES_EXPORT_COLUMNS = [
 
 interface MyPropertiesFilterState {
   city: string;
+  area: string;
   type: string;
+  purpose: string;
   minPrice: string;
   maxPrice: string;
 }
@@ -49,13 +55,30 @@ export function PortalMyProperties() {
   const { t } = useLanguageContext();
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<string>('all');
+  const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<string>(() => searchParams.get('tab') || 'all');
+
+  useEffect(() => {
+    const paramTab = searchParams.get('tab');
+    if (paramTab && ['all', 'draft', 'pending', 'published', 'rejected'].includes(paramTab)) {
+      setTab(paramTab);
+    }
+  }, [searchParams]);
   const [toDelete, setToDelete] = useState<string | null>(null);
+  const [propertyToSubmit, setPropertyToSubmit] = useState<Property | null>(null);
   const [shareProperty, setShareProperty] = useState<Property | null>(null);
   const [editPropertyId, setEditPropertyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleRows, setVisibleRows] = useState<Property[]>([]);
-  const [rich, setRich] = useState<MyPropertiesFilterState>({ city: '', type: '', minPrice: '', maxPrice: '' });
+  const [rich, setRich] = useState<MyPropertiesFilterState>({
+    city: '',
+    area: '',
+    type: '',
+    purpose: '',
+    minPrice: '',
+    maxPrice: '',
+  });
   const savedFilters = useSavedFilters<MyPropertiesFilterState>('portal-my-properties');
 
   const sections = profile?.role === 'agent' ? getAgentSections(t) : getPortalSections(t);
@@ -65,12 +88,21 @@ export function PortalMyProperties() {
     queryFn: async () => {
       const { data } = await supabase
         .from('properties')
-        .select('*, cities(name), localities(name), property_types(name)')
+        .select('*, cities(id, name), localities(id, name), property_types(id, name, category)')
         .eq('owner_id', user!.id)
         .order('created_at', { ascending: false });
       return (data ?? []).map((p) => mapJoined(p as unknown as Record<string, unknown>)) as unknown as Property[];
     },
     enabled: !!user,
+  });
+
+  // Query DB property types to merge with defaults
+  const { data: dbTypes } = useQuery({
+    queryKey: ['portal-property-types-list'],
+    queryFn: async () => {
+      return await fetchAllPropertyTypes();
+    },
+    staleTime: 1000 * 60 * 30,
   });
 
   const { data: mySub } = useQuery({
@@ -113,10 +145,47 @@ export function PortalMyProperties() {
     }).length;
   };
 
+  // Master lists for Hyderabad areas and property types
+  const filterOptions = useMemo(() => {
+    // 1. Hyderabad Master Localities + user dynamic localities
+    const areaSet = new Set<string>(CITY_AREAS_MASTER.hyderabad || []);
+    (data ?? []).forEach((p) => {
+      if (p.locality_name) areaSet.add(p.locality_name.trim());
+      if ((p as any).locality?.name) areaSet.add((p as any).locality.name.trim());
+    });
+    const sortedAreas = Array.from(areaSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+
+    // 2. Property types roster (defaults + db + user records)
+    const typeMap = new Map<string, string>();
+    DEFAULT_PROPERTY_TYPES.forEach((pt) => typeMap.set(pt.name.toLowerCase().trim(), pt.name));
+    (dbTypes ?? []).forEach((pt) => typeMap.set(pt.name.toLowerCase().trim(), pt.name));
+    (data ?? []).forEach((p) => {
+      if (p.property_type_name) typeMap.set(p.property_type_name.toLowerCase().trim(), p.property_type_name.trim());
+      if ((p as any).property_types?.name) typeMap.set((p as any).property_types.name.toLowerCase().trim(), (p as any).property_types.name.trim());
+    });
+    const sortedTypes = Array.from(typeMap.values()).sort((a, b) => a.localeCompare(b));
+
+    return {
+      areas: sortedAreas,
+      types: sortedTypes,
+      cities: [
+        { value: '', label: 'All Hyderabad Regions' },
+        { value: 'Hyderabad', label: 'Hyderabad (City-Wide)' },
+        { value: 'Secunderabad', label: 'Secunderabad' },
+      ],
+      purposes: [
+        { value: '', label: 'All Purposes' },
+        { value: 'For Sale', label: 'For Sale' },
+        { value: 'For Rent', label: 'For Rent / Lease' },
+      ],
+    };
+  }, [data, dbTypes]);
+
   const filtered = useMemo(() => {
     return (data ?? []).filter((p) => {
+      // 1. Status Tab filter
       if (tab === 'all') {
-        /* no-op, status-tab passes everything through */
+        /* no-op */
       } else if (tab === 'draft') {
         if (p.status !== 'draft') return false;
       } else if (tab === 'pending') {
@@ -127,27 +196,88 @@ export function PortalMyProperties() {
         if (p.status === 'draft' || !(['rejected', 'changes_requested'].includes(p.status) || p.approval_status === 'Rejected')) return false;
       } else if (p.status !== tab) return false;
 
-      if (rich.city && p.city_id !== rich.city) return false;
-      if (rich.type && p.property_type_id !== rich.type) return false;
-      if (rich.minPrice && p.price < Number(rich.minPrice)) return false;
-      if (rich.maxPrice && p.price > Number(rich.maxPrice)) return false;
+      // 2. Hyderabad Area / Locality filter
+      if (rich.area) {
+        const areaLower = rich.area.toLowerCase().trim();
+        const pLoc = (p.locality_name || (p as any).locality?.name || '').toLowerCase();
+        const pAddr = (p.address || '').toLowerCase();
+        const pTitle = (p.title || '').toLowerCase();
+        const pDesc = (p.description || '').toLowerCase();
+        const match =
+          pLoc.includes(areaLower) ||
+          pAddr.includes(areaLower) ||
+          pTitle.includes(areaLower) ||
+          pDesc.includes(areaLower);
+        if (!match) return false;
+      }
+
+      // 3. City / Region filter
+      if (rich.city) {
+        const cityLower = rich.city.toLowerCase().trim();
+        const pCity = (p.city_name || (p as any).cities?.name || (p as any).city || 'Hyderabad').toLowerCase();
+        const pAddr = (p.address || '').toLowerCase();
+        const pLoc = (p.locality_name || '').toLowerCase();
+        const match = pCity.includes(cityLower) || pAddr.includes(cityLower) || pLoc.includes(cityLower) || !p.city_name;
+        if (!match) return false;
+      }
+
+      // 4. Property Type filter
+      if (rich.type) {
+        const typeLower = rich.type.toLowerCase().trim();
+        const pTypeName = (p.property_type_name || (p as any).property_types?.name || (p as any).property_type || '').toLowerCase();
+        const pTypeId = (p.property_type_id || '').toLowerCase();
+        const pTitle = (p.title || '').toLowerCase();
+        const pCat = ((p as any).category || '').toLowerCase();
+        const match =
+          pTypeId === typeLower ||
+          pTypeName.includes(typeLower) ||
+          typeLower.includes(pTypeName) ||
+          pTitle.includes(typeLower) ||
+          pCat.includes(typeLower);
+        if (!match) return false;
+      }
+
+      // 5. Purpose filter
+      if (rich.purpose) {
+        const purpLower = rich.purpose.toLowerCase().trim();
+        const pPurp = (p.purpose || 'For Sale').toLowerCase().trim();
+        if (!pPurp.includes(purpLower) && !purpLower.includes(pPurp)) return false;
+      }
+
+      // 6. Price filters
+      const effectivePrice = getPropertyPrice(p) || p.price || 0;
+      if (rich.minPrice && Number(rich.minPrice) > 0 && effectivePrice < Number(rich.minPrice)) return false;
+      if (rich.maxPrice && Number(rich.maxPrice) > 0 && effectivePrice > Number(rich.maxPrice)) return false;
+
       return true;
     });
   }, [data, tab, rich]);
 
-  const filterOptions = useMemo(() => {
-    const cities = new Map<string, string>();
-    const types = new Map<string, string>();
-    (data ?? []).forEach((p) => {
-      if (p.city_id && p.city_name) cities.set(p.city_id, p.city_name);
-      if (p.property_type_id && p.property_type_name) types.set(p.property_type_id, p.property_type_name);
+  const hasActiveFilters = Boolean(
+    rich.area || rich.city || rich.type || rich.purpose || rich.minPrice || rich.maxPrice,
+  );
+
+  const resetFilters = () => {
+    setRich({
+      city: '',
+      area: '',
+      type: '',
+      purpose: '',
+      minPrice: '',
+      maxPrice: '',
     });
-    return { cities: [...cities.entries()], types: [...types.entries()] };
-  }, [data]);
+  };
 
   const submitMutation = useMutation({
     mutationFn: (id: string) => submitPropertyForReview(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-properties'] });
+      toast.addToast('success', 'Property submitted for admin review!');
+    },
+    onError: (err: any) => {
+      toast.addToast('error', err?.message || 'Failed to submit property.');
+    },
   });
 
   const resubmitMutation = useMutation({
@@ -155,7 +285,14 @@ export function PortalMyProperties() {
       const { resubmitProperty } = await import('../../lib/properties');
       return resubmitProperty(id);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-properties'] });
+      toast.addToast('success', 'Property resubmitted for admin review!');
+    },
+    onError: (err: any) => {
+      toast.addToast('error', err?.message || 'Failed to resubmit property.');
+    },
   });
 
   const deleteMutation = useMutation({
@@ -182,61 +319,77 @@ export function PortalMyProperties() {
     });
   };
 
-  const columns = useMemo<Column<Property>[]>(() => [
+  const columns: Column<Property>[] = [
     {
       key: 'title',
-      header: t('compare.propertyCol', 'Property'),
+      header: t('common.property', 'Property'),
       sortable: true,
-      className: 'min-w-[280px] max-w-[380px]',
+      className: 'min-w-[280px]',
       render: (p) => (
-        <div className="flex items-center gap-3.5 py-1">
+        <div className="flex items-center gap-3">
           <img
             src={getPropertyCoverImage(p)}
             alt=""
             onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
-            className="h-12 w-16 rounded-xl object-cover shrink-0 shadow-2xs border border-slate-100"
+            className="h-12 w-16 rounded-xl object-cover ring-1 ring-navy-100 shrink-0"
           />
-          <div className="min-w-0 flex-1">
-            <p className="font-bold text-slate-900 line-clamp-1 text-sm">{p.title}</p>
-            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 whitespace-nowrap">
-              <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-              <span>{[p.locality_name, p.city_name].filter(Boolean).join(', ') || 'India'}</span>
-            </p>
+          <div className="min-w-0">
+            <Link to={generatePropertyUrl(p)} className="font-bold text-navy-900 hover:text-red-600 truncate block text-sm transition-colors">
+              {p.title}
+            </Link>
+            <div className="flex items-center gap-1.5 mt-0.5 text-xs text-navy-500">
+              <span className="font-semibold text-navy-700">{p.property_type_name || 'Property'}</span>
+              <span>•</span>
+              <span className="truncate flex items-center gap-0.5" title={formatPropertyLocation(p)}>
+                <MapPin className="h-3 w-3 text-red-500 shrink-0" />
+                {formatPropertyLocation(p)}
+              </span>
+            </div>
+            {(p as any).rera_number && (
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 mt-1 inline-block">
+                RERA: {(p as any).rera_number}
+              </span>
+            )}
           </div>
         </div>
       ),
     },
     {
       key: 'purpose',
-      header: t('search.purposeLabel', 'Purpose'),
-      className: 'whitespace-nowrap min-w-[110px]',
-      render: (p) => (
-        <Badge variant={p.purpose === 'Rent' ? 'info' : 'gold'}>
-          {p.purpose === 'Rent' ? t('property.forRent', 'For Rent') : t('property.forSale', 'For Sale')}
-        </Badge>
-      ),
+      header: t('property.purpose', 'Purpose'),
+      render: (p) => {
+        const isSale = p.purpose === 'Sale' || p.purpose === 'Resale';
+        return (
+          <Badge variant={isSale ? 'default' : 'info'}>
+            {isSale ? t('common.forSale', 'For Sale') : t('common.forRent', 'For Rent')}
+          </Badge>
+        );
+      },
     },
     {
       key: 'price',
-      header: 'Price / Rent',
+      header: `${t('property.price', 'Price')} / ${t('property.rent', 'Rent')}`,
       sortable: true,
-      className: 'whitespace-nowrap min-w-[150px]',
-      render: (p) => (
-        <div className="whitespace-nowrap font-extrabold text-slate-900">
-          <PropertyPriceCell property={p} showInvalidWarning={false} />
-        </div>
-      ),
+      className: 'whitespace-nowrap min-w-[170px]',
+      render: (p) => <PropertyPriceCell property={p} />,
     },
     {
       key: 'status',
       header: t('portal.workflowProgress', 'Workflow Progress'),
-      className: 'min-w-[300px] whitespace-nowrap',
+      className: 'min-w-[220px]',
       render: (p) => (
-        <div className="space-y-1.5 whitespace-nowrap">
-          <StatusBadge status={p.status} />
-          <div className="mt-1">
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <StatusBadge status={p.status} />
+            {p.is_live && p.status !== 'rejected' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                ✓ {t('portal.liveOnPortal', 'Live on Portal')}
+              </span>
+            )}
+          </div>
+          <div>
             {p.status === 'draft' ? (
-              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+              <span className="text-[11px] text-navy-500 font-medium italic">
                 Draft (Not Submitted)
               </span>
             ) : p.status === 'rejected' ? (
@@ -299,8 +452,17 @@ export function PortalMyProperties() {
               size="sm"
               variant="ghost"
               icon={<Send className="h-4 w-4" />}
-              onClick={() => submitMutation.mutate(p.id)}
-              loading={submitMutation.isPending}
+              onClick={() => {
+                const price = p.purpose === 'Rent' ? (p.rent_amount ?? p.price) : p.price;
+                const hasMinDetails = (Number(price) > 0 || (p as any).price_per_unit) && p.title && p.address;
+                if (!hasMinDetails) {
+                  toast.addToast('error', 'Please enter price, title, and location before submitting.');
+                  setEditPropertyId(p.id);
+                  return;
+                }
+                setPropertyToSubmit(p);
+              }}
+              loading={submitMutation.isPending && propertyToSubmit?.id === p.id}
             >
               {t('portal.submit', 'Submit')}
             </Button>
@@ -348,34 +510,29 @@ export function PortalMyProperties() {
         </div>
       ),
     },
-  ], [t, submitMutation.isPending, resubmitMutation.isPending]);
+  ];
 
   return (
     <DashboardLayout sections={sections} title={t('portal.myProperties', 'My Properties')}>
       <PageHeader
         title={t('portal.myProperties', 'My Properties')}
-        subtitle={t('portal.manageListingsSub', 'Manage all your listings across every status.')}
+        subtitle={t('portal.managePropertiesSub', 'Track submissions, edit verified listings, view live engagement, and publish properties in Hyderabad.')}
         action={
-          <div className="relative z-30 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <SavedFiltersMenu
               presets={savedFilters.presets}
-              onSave={(name) => savedFilters.save(name, rich)}
-              onRemove={savedFilters.remove}
-              onApply={setRich}
+              onApply={(f: MyPropertiesFilterState) => setRich(f)}
+              onSave={(name: string) => savedFilters.save(name, rich)}
+              onRemove={(id: string) => savedFilters.remove(id)}
             />
             <ExportMenu
-              filename="my-properties"
               rows={visibleRows as unknown as Record<string, unknown>[]}
+              filename="my-properties"
               columns={MY_PROPERTIES_EXPORT_COLUMNS}
             />
-            <Link
-              to="/portal/bulk-upload"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-navy-200 text-navy-700 font-bold text-xs sm:text-sm shadow-sm hover:bg-navy-50 hover:text-navy-900 transition-all duration-200 cursor-pointer"
-            >
-              Bulk Upload
-            </Link>
-            <PostPropertyLink to="/portal/list-property"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/25 hover:shadow-red-600/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+            <PostPropertyLink
+              to={profile?.role === 'agent' ? '/agent/list-property' : '/portal/list-property'}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md shadow-red-600/20 transition-all hover:scale-[1.02] active:scale-95"
             >
               <span>{t('forms.postProperty', 'Post Property')}</span>
               <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
@@ -417,6 +574,7 @@ export function PortalMyProperties() {
 
       <EnableNotificationsCard context="your listings" className="mb-4" />
 
+      {/* Status Tabs & Hyderabad Filter Bar */}
       <div className="sticky top-16 z-20 -mx-1 mb-4 space-y-3 bg-navy-50/95 px-1 pb-3 pt-1 backdrop-blur-sm">
         <div className="flex gap-2 overflow-x-auto">
           {tabs.map((tItem) => {
@@ -425,7 +583,7 @@ export function PortalMyProperties() {
               <button
                 key={tItem.key}
                 onClick={() => setTab(tItem.key)}
-                className={`rounded-lg px-3.5 py-2 text-sm font-medium whitespace-nowrap transition flex items-center gap-2 cursor-pointer ${tab === tItem.key ? 'bg-navy-900 text-white shadow-sm' : 'text-navy-600 hover:bg-navy-100'}`}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition flex items-center gap-2 cursor-pointer ${tab === tItem.key ? 'bg-navy-900 text-white shadow-md' : 'text-navy-600 hover:bg-navy-100 bg-white border border-slate-200'}`}
               >
                 {tItem.label}
                 <span
@@ -438,53 +596,132 @@ export function PortalMyProperties() {
           })}
         </div>
 
-        <Card className="p-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Select value={rich.city} onChange={(e) => setRich((f) => ({ ...f, city: e.target.value }))} className="text-sm">
-              <option value="">All cities</option>
-              {filterOptions.cities.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-            <Select value={rich.type} onChange={(e) => setRich((f) => ({ ...f, type: e.target.value }))} className="text-sm">
-              <option value="">All types</option>
-              {filterOptions.types.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-            <Input
-              type="number"
-              placeholder="Min price"
-              value={rich.minPrice}
-              onChange={(e) => setRich((f) => ({ ...f, minPrice: e.target.value }))}
-              className="text-sm"
-            />
-            <Input
-              type="number"
-              placeholder="Max price"
-              value={rich.maxPrice}
-              onChange={(e) => setRich((f) => ({ ...f, maxPrice: e.target.value }))}
-              className="text-sm"
-            />
+        {/* Dynamic Hyderabad Area, Property Type, Purpose & Price Filter Bar */}
+        <Card className="p-4 bg-white border border-slate-200 shadow-sm rounded-2xl">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+            {/* 1. Hyderabad Area / Locality Dropdown */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-navy-500 flex items-center gap-1">
+                <MapPin className="h-3 w-3 text-red-500" />
+                <span>Hyderabad Area</span>
+              </label>
+              <Select
+                value={rich.area}
+                onChange={(e) => setRich((f) => ({ ...f, area: e.target.value }))}
+                className="text-xs font-semibold rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
+              >
+                <option value="">All Hyderabad Areas</option>
+                {filterOptions.areas.map((areaName) => (
+                  <option key={areaName} value={areaName}>
+                    {areaName}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {/* 2. Property Type Dropdown */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-navy-500 flex items-center gap-1">
+                <Building2 className="h-3 w-3 text-navy-500" />
+                <span>Property Type</span>
+              </label>
+              <Select
+                value={rich.type}
+                onChange={(e) => setRich((f) => ({ ...f, type: e.target.value }))}
+                className="text-xs font-semibold rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
+              >
+                <option value="">All Property Types</option>
+                {filterOptions.types.map((typeName) => (
+                  <option key={typeName} value={typeName}>
+                    {typeName}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {/* 3. Purpose Filter */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-navy-500">Purpose</label>
+              <Select
+                value={rich.purpose}
+                onChange={(e) => setRich((f) => ({ ...f, purpose: e.target.value }))}
+                className="text-xs font-semibold rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
+              >
+                {filterOptions.purposes.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {/* 4. Min Price */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-navy-500">Min Price (₹)</label>
+              <Input
+                type="number"
+                placeholder="₹ Min price"
+                value={rich.minPrice}
+                onChange={(e) => setRich((f) => ({ ...f, minPrice: e.target.value }))}
+                className="text-xs font-semibold rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
+              />
+            </div>
+
+            {/* 5. Max Price */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-navy-500">Max Price (₹)</label>
+              <Input
+                type="number"
+                placeholder="₹ Max price"
+                value={rich.maxPrice}
+                onChange={(e) => setRich((f) => ({ ...f, maxPrice: e.target.value }))}
+                className="text-xs font-semibold rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
+              />
+            </div>
+
+            {/* 6. Filter Controls / Reset */}
+            <div className="space-y-1 flex flex-col justify-end">
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition-all border border-red-200 cursor-pointer"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Reset ({filtered.length})</span>
+                </button>
+              ) : (
+                <div className="h-9 flex items-center justify-center text-xs font-bold text-slate-400 bg-slate-50 rounded-xl border border-slate-100">
+                  <span>{filtered.length} Properties</span>
+                </div>
+              )}
+            </div>
           </div>
         </Card>
       </div>
 
       {selected.size > 0 && <BulkActionsBar count={selected.size} onDelete={bulkDelete} />}
+      
       {filtered.length === 0 && !isLoading ? (
-        <Card>
+        <Card className="p-8 text-center rounded-2xl border border-slate-200">
           <EmptyState
-            icon={<Building2 className="h-6 w-6" />}
-            title={t('portal.noPropertiesTitle', 'No properties here')}
-            description={t('portal.noPropertiesDesc', 'List your first property to see it here.')}
+            icon={<Building2 className="h-8 w-8 text-red-500" />}
+            title={hasActiveFilters ? "No matching properties found" : t('portal.noPropertiesTitle', 'No properties here')}
+            description={
+              hasActiveFilters
+                ? "Try adjusting your area, property type, or price filters."
+                : t('portal.noPropertiesDesc', 'List your first property to see it here.')
+            }
             action={
-              <PostPropertyLink to="/portal/list-property">
-                <Button variant="primary">{t('forms.postProperty', 'List Property')}</Button>
-              </PostPropertyLink>
+              hasActiveFilters ? (
+                <Button variant="secondary" onClick={resetFilters}>
+                  Clear Filters
+                </Button>
+              ) : (
+                <PostPropertyLink to="/portal/list-property">
+                  <Button variant="primary">{t('forms.postProperty', 'List Property')}</Button>
+                </PostPropertyLink>
+              )
             }
           />
         </Card>
@@ -495,6 +732,9 @@ export function PortalMyProperties() {
           loading={isLoading}
           error={error instanceof Error ? error.message : null}
           getRowId={(p) => p.id}
+          searchPlaceholder="Search your properties by title, locality, address, ID..."
+          searchKeys={['title', 'locality_name', 'city_name', 'address', 'property_type_name', 'id']}
+          dateKey="created_at"
           selectedIds={selected}
           onToggleSelect={toggleSelect}
           onSelectAll={(ids) =>
@@ -637,6 +877,43 @@ export function PortalMyProperties() {
         <p className="text-sm text-navy-700">
           {t('portal.deleteConfirm', 'Are you sure you want to delete this property? This action cannot be undone.')}
         </p>
+      </Modal>
+
+      {/* ─── EXPLICIT SUBMIT CONFIRMATION MODAL ─── */}
+      <Modal
+        open={!!propertyToSubmit}
+        onClose={() => setPropertyToSubmit(null)}
+        title="Submit Property for Approval"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPropertyToSubmit(null)} disabled={submitMutation.isPending}>
+              Cancel / Keep Draft
+            </Button>
+            <Button
+              variant="primary"
+              className="bg-red-600 hover:bg-red-700 text-white font-bold"
+              loading={submitMutation.isPending}
+              onClick={() => {
+                if (propertyToSubmit) {
+                  submitMutation.mutate(propertyToSubmit.id);
+                  setPropertyToSubmit(null);
+                }
+              }}
+            >
+              Confirm & Submit
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-navy-700">
+            Are you sure you want to submit <strong>"{propertyToSubmit?.title || 'this property'}"</strong> to the admin team for review?
+          </p>
+          <div className="bg-navy-50 p-3.5 rounded-xl border border-navy-100 text-xs text-navy-600 space-y-1">
+            <p>• Once submitted, your property will move to the <strong>Pending</strong> tab.</p>
+            <p>• Our quality assurance team will verify details before publishing it live.</p>
+          </div>
+        </div>
       </Modal>
 
       {shareProperty && (

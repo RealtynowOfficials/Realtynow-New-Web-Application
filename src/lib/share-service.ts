@@ -135,11 +135,9 @@ export function getFormattedPriceText(p: PropertyShareInput): string {
  * key specs, and the clickable HTTPS public property link.
  */
 export function buildWhatsAppPropertyShareMessage(property: PropertyShareInput): string {
-  // The link embedded in the message text is what WhatsApp actually unfurls
-  // into a rich preview — must be the crawler URL (logo image), not the
-  // plain public URL (which WhatsApp's non-JS crawler can't read a real
-  // per-property image/title from anyway, since this is a client-rendered SPA).
-  const shareUrl = getPropertyShareCrawlerUrl(property);
+  // Use the canonical public URL so clicking the link in WhatsApp / mobile browser
+  // immediately opens the real property details page on realtynow.in
+  const shareUrl = getPropertyPublicUrl(property);
   const locationText = getPropertyLocationText(property);
   const priceText = getFormattedPriceText(property);
 
@@ -222,7 +220,7 @@ export async function sharePropertyNativeOrCopy(
       await navigator.share({
         title: property.title,
         text: message,
-        url: getPropertyShareCrawlerUrl(property),
+        url: getPropertyPublicUrl(property),
       });
       return { success: true, method: 'native' };
     } catch {

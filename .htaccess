@@ -16,14 +16,29 @@
 </IfModule>
 
 <IfModule mod_headers.c>
-  # index.html must always revalidate so clients pick up new asset hashes
-  # immediately after a deploy; stale index.html referencing deleted hashed
-  # chunks is what causes "Failed to fetch dynamically imported module".
-  <FilesMatch "^index\.html$">
+  # 1. HTML entry points must NEVER be cached so browsers discover new builds immediately
+  <FilesMatch "\.(html|htm)$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
   </FilesMatch>
-  # Hashed build assets are immutable — safe to cache forever.
-  <FilesMatch "\.(js|css|woff2?|ttf|png|jpe?g|gif|svg|webp|avif|ico)$">
+
+  # 2. Service workers & manifests MUST NEVER be cached permanently.
+  # Crucial: Service worker script must be checked on every visit without requiring Ctrl+Shift+R.
+  <FilesMatch "(sw\.js|firebase-messaging-sw\.js|registerServiceWorker\.js|manifest\.json)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+    Header set Service-Worker-Allowed "/"
+  </FilesMatch>
+
+  # 3. Static root assets (unhashed icons, etc.) have short cache with revalidation
+  <FilesMatch "^(favicon\.(png|svg|ico)|apple-touch-icon\.png|pwa-192x192\.png|pwa-512x512\.png|maskable-icon-512x512\.png)$">
+    Header set Cache-Control "public, max-age=3600, must-revalidate"
+  </FilesMatch>
+
+  # 4. Vite content-hashed build assets (/assets/*) are immutable and safe to cache for 1 year
+  <If "%{REQUEST_URI} =~ m#^/assets/#">
     Header set Cache-Control "public, max-age=31536000, immutable"
-  </FilesMatch>
+  </If>
 </IfModule>

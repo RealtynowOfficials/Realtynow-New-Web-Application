@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { generatePropertyUrl } from './utils';
 import type { Property, Builder } from './types';
 
 export type CampaignType =
@@ -319,7 +320,7 @@ export async function fetchAdminCampaigns(type?: CampaignType): Promise<PaidCamp
               description: null,
               badge_label: 'Featured',
               cta_label: 'View Details',
-              cta_url: `/property/${flatProp.slug || flatProp.id}`,
+              cta_url: generatePropertyUrl(flatProp),
               image_url: null,
               status: row.is_active ? 'ACTIVE' : 'INACTIVE',
               is_active: row.is_active ?? true,
@@ -476,7 +477,7 @@ export async function fetchPublicCampaigns(type: CampaignType): Promise<any[]> {
             description: c.description,
             badge: firstItem.badge_override || c.badge_label || 'Featured',
             cta: firstItem.cta_label || c.cta_label || 'View Details',
-            link: firstItem.cta_url || c.cta_url || (prop ? `/property/${prop.slug || prop.id}` : builder ? `/builders/${builder.id}` : '/search'),
+            link: firstItem.cta_url || c.cta_url || (prop ? generatePropertyUrl(prop) : builder ? `/builders/${builder.id}` : '/search'),
             image: firstItem.image_override || c.image_url || prop?.images?.[0] || builder?.cover_image || null,
             tag: firstItem.badge_override || c.badge_label || 'Featured',
             display_order: c.display_order,

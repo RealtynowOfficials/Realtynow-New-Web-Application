@@ -1,9 +1,8 @@
-import { supabase } from './supabase';
+import { supabase, AI_FUNCTION_URL } from './supabase';
 import i18n from './i18n/i18n';
 import { formatPrice, formatCompactPrice, generatePropertyUrl } from './utils';
 import { normalizeCityAliases } from './properties';
 import { parsePropertySearchQuery, fetchLocationCategoryDiscovery } from './search-engine';
-import type { Property } from './types';
 
 export type AITask =
   | 'chat'
@@ -387,7 +386,7 @@ export async function callAI(task: AITask, payload: Record<string, unknown>): Pr
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const response = await fetch(`${supabaseUrl}/functions/v1/ai-agent`, {
+  const response = await fetch(AI_FUNCTION_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

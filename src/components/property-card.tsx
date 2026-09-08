@@ -1,24 +1,42 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bed, MapPin, Heart, Star, GitCompare, Share2, ShieldCheck, Sparkles, Phone, MessageCircle, Calendar, ArrowRight, Eye } from 'lucide-react';
+import { Bed, Bath, Car, Maximize2, MapPin, Heart, Star, GitCompare, Share2, ShieldCheck, Sparkles, ArrowRight, Eye, Waves, Dumbbell, Trees, Camera, Flame, Wifi, Layers, Building2, Droplets, CheckCircle2 } from 'lucide-react';
 import type { Property } from '../lib/types';
-import { formatCompactPrice, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../lib/utils';
+import { formatNumber, cn, generatePropertyUrl, buildWhatsAppUrl } from '../lib/utils';
 import { Badge } from './ui';
 import { isCompared, toggleCompareProperty } from '../lib/compare';
 import { useAuth } from '../lib/auth';
 import { useToast } from './toast';
 import { useLanguageContext } from '../lib/i18n/language-context';
 import { SharePropertyModal } from './share-property-modal';
-import { ContactAgentModal } from './contact-agent-modal';
-import { BookVisitModal } from './book-visit-modal';
 import { supabase } from '../lib/supabase';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../lib/favorites';
 import { getPropertyCoverImage } from '../lib/property-images';
 import { PropertyImage } from './property-image';
-import { getPropertyPricingDisplay, getPriceUnitLabel } from '../lib/plot-pricing';
+import { getPropertyPricingDisplay } from '../lib/plot-pricing';
+import { formatPropertyLocation } from '../lib/location-formatter';
+import { getAmenityDisplayItem } from '../lib/amenities';
+
+function getAmenityLucideIcon(token: string) {
+  const l = (token || '').toLowerCase();
+  if (l.includes('pool') || l.includes('swim')) return <Waves className="h-3 w-3 text-cyan-600 shrink-0" />;
+  if (l.includes('gym') || l.includes('fitness')) return <Dumbbell className="h-3 w-3 text-amber-600 shrink-0" />;
+  if (l.includes('security') || l.includes('guard')) return <ShieldCheck className="h-3 w-3 text-emerald-600 shrink-0" />;
+  if (l.includes('parking') || l.includes('car')) return <Car className="h-3 w-3 text-blue-600 shrink-0" />;
+  if (l.includes('garden') || l.includes('park') || l.includes('tree') || l.includes('plantation')) return <Trees className="h-3 w-3 text-emerald-600 shrink-0" />;
+  if (l.includes('power') || l.includes('backup') || l.includes('generator') || l.includes('electricity') || l.includes('solar')) return <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />;
+  if (l.includes('lift') || l.includes('elevator')) return <Layers className="h-3 w-3 text-indigo-600 shrink-0" />;
+  if (l.includes('club')) return <Building2 className="h-3 w-3 text-purple-600 shrink-0" />;
+  if (l.includes('camera') || l.includes('cctv')) return <Camera className="h-3 w-3 text-slate-600 shrink-0" />;
+  if (l.includes('play') || l.includes('kid') || l.includes('child')) return <Sparkles className="h-3 w-3 text-rose-500 shrink-0" />;
+  if (l.includes('water') || l.includes('drainage') || l.includes('borewell') || l.includes('rain')) return <Droplets className="h-3 w-3 text-sky-600 shrink-0" />;
+  if (l.includes('wifi') || l.includes('internet')) return <Wifi className="h-3 w-3 text-teal-600 shrink-0" />;
+  if (l.includes('gas')) return <Flame className="h-3 w-3 text-orange-500 shrink-0" />;
+  return <CheckCircle2 className="h-3 w-3 text-slate-500 shrink-0" />;
+}
 
 export function PropertyCard({ property, compact, isAiRecommended = false }: { property: Property; compact?: boolean, isAiRecommended?: boolean }) {
   const { user } = useAuth();
@@ -127,7 +145,7 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
       whileHover={{ y: -5 }}
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-card transition-shadow duration-300 hover:shadow-cardHover"
+      className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-card transition-shadow duration-300 hover:shadow-cardHover"
     >
       <div className="flex h-full flex-col">
         <Link to={generatePropertyUrl(property)} className="block">
@@ -148,7 +166,7 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
                   className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-sm"
                   title={t('common:aiVerifiedTitle', 'Verified by RealtyNow AI')}
                 >
-                  <ShieldCheck className="h-3 w-3" /> {t('common:aiVerified', 'AI Verified')}
+                  <ShieldCheck className="h-3 w-3" /> {t('common.aiVerified', 'AI Verified')}
                 </span>
               )}
             </div>
@@ -158,8 +176,8 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
                 onClick={handleCompareClick}
                 title={
                   compared
-                    ? t('common:removeFromCompare', 'Remove from compare')
-                    : t('common:addToCompare', 'Add to compare')
+                    ? t('common.removeFromCompare', 'Remove from compare')
+                    : t('common.addToCompare', 'Add to compare')
                 }
                 className={cn(
                   'grid h-7 w-7 place-items-center rounded-full backdrop-blur shadow-sm transition hover:scale-110 cursor-pointer',
@@ -197,64 +215,126 @@ export function PropertyCard({ property, compact, isAiRecommended = false }: { p
           </div>
           <div className={cn('flex flex-1 flex-col', compact ? 'p-3' : 'p-3.5')}>
             {isAiRecommended && (
-              <div className="mb-2 flex items-center gap-1.5 w-fit rounded-full bg-gradient-to-r from-purple-50 to-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-purple-700 border border-purple-100 shadow-sm" title="Recommended by our AI based on your search patterns and property quality">
-                <Sparkles className="h-3 w-3 text-purple-500" /> AI Recommended
+              <div className="mb-2 flex items-center gap-1.5 w-fit rounded-full bg-gradient-to-r from-purple-50 to-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-purple-700 border border-purple-100 shadow-sm" title={t('property.aiRecommendedTooltip', 'Recommended by our AI based on your search patterns and property quality')}>
+                <Sparkles className="h-3 w-3 text-purple-500" /> {t('common.aiRecommended', 'AI Recommended')}
               </div>
             )}
             {(() => {
               const pricing = getPropertyPricingDisplay(property, { compactConstructed: true });
+              const locationText = formatPropertyLocation(property);
               return (
                 <>
                   <p className="font-display text-base font-extrabold text-navy-900 flex items-baseline gap-1.5 flex-wrap">
                     {pricing.primaryPrice}
-                    {pricing.isLand && pricing.totalEstimatedPrice && (
-                      <span className="text-[11px] font-medium text-slate-500">
-                        (Est: {pricing.totalEstimatedPrice})
-                      </span>
-                    )}
                   </p>
                   <h3 className="mt-0.5 line-clamp-1 text-sm font-semibold text-navy-800 group-hover:text-navy-900">
                     {property.title}
                   </h3>
                   <p className="mt-1 flex items-center gap-1 text-xs text-navy-500">
                     <MapPin className="h-3.5 w-3.5 shrink-0 text-navy-400" />
-                    <span className="line-clamp-1">
-                      {property.locality_name ? `${property.locality_name}, ` : ''}
-                      {property.city_name ?? 'India'}
+                    <span className="line-clamp-1" title={locationText}>
+                      {locationText}
                     </span>
                   </p>
+                  {/* Specs & View Count Row */}
                   <div className="mt-2 flex items-center justify-between gap-1.5 flex-wrap">
-                    {property.bedrooms != null ? (
-                      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-navy-50 px-2 py-0.5 text-[11px] font-semibold text-navy-600">
-                        <Bed className="h-3 w-3 text-navy-400" /> {property.bedrooms} {t('common:bhk', 'BHK')}
-                      </span>
-                    ) : pricing.areaDisplay ? (
-                      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 text-[11px] font-semibold">
-                        {pricing.areaDisplay}
-                      </span>
-                    ) : <span />}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {property.bedrooms != null && property.bedrooms > 0 ? (
+                        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-navy-50 px-2 py-0.5 text-[11px] font-semibold text-navy-600">
+                          <Bed className="h-3 w-3 text-navy-400" /> {property.bedrooms} {t('common.bhk', 'BHK')}
+                        </span>
+                      ) : pricing.areaDisplay ? (
+                        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 text-[11px] font-semibold">
+                          {pricing.areaDisplay}
+                        </span>
+                      ) : null}
+
+                      {property.bathrooms != null && property.bathrooms > 0 && (
+                        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          <Bath className="h-3 w-3 text-slate-400" /> {property.bathrooms} Bath
+                        </span>
+                      )}
+
+                      {property.built_up_area && property.bedrooms != null ? (
+                        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          <Maximize2 className="h-3 w-3 text-slate-400" /> {formatNumber(property.built_up_area)} sq.ft
+                        </span>
+                      ) : null}
+                    </div>
 
                     {property.view_count != null && property.view_count > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/90 text-slate-700 px-2 py-0.5 text-[10px] font-bold tracking-tight" title={`${property.view_count} views received`}>
-                        <Eye className="h-3 w-3 text-slate-500" /> {property.view_count} {property.view_count === 1 ? 'view' : 'views'}
+                        <Eye className="h-3 w-3 text-slate-500" /> {property.view_count} {t('property.views', 'views')}
                       </span>
                     )}
                   </div>
+
+                  {/* Top Amenities Chips */}
+                  {(() => {
+                    const rawAmenities: string[] = (property.amenities || []).filter(Boolean);
+                    const seen = new Set<string>();
+                    const amenitiesList: { id: string; label: string; icon: string }[] = [];
+
+                    for (const item of rawAmenities) {
+                      const meta = getAmenityDisplayItem(item);
+                      const labelStr = typeof meta?.label === 'string' ? meta.label : String(meta?.label || '');
+                      if (labelStr.trim()) {
+                        const key = labelStr.toLowerCase();
+                        if (!seen.has(key)) {
+                          seen.add(key);
+                          amenitiesList.push({ ...meta, label: labelStr });
+                        }
+                      }
+                    }
+
+                    if (amenitiesList.length === 0) {
+                      const isPlot = !!property.plot_area && !property.built_up_area;
+                      const defaults = isPlot
+                        ? ['Gated Layout', 'Clear Title', 'Water Connection']
+                        : ['24/7 Security', 'Power Backup', 'Water Supply'];
+                      defaults.forEach((d) => amenitiesList.push(getAmenityDisplayItem(d)));
+                    }
+
+                    const visibleAmenities = amenitiesList.slice(0, 3);
+                    const remainingCount = Math.max(0, amenitiesList.length - 3);
+
+                    return (
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5 flex-wrap">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {visibleAmenities.map((amenity, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-md bg-slate-50 border border-slate-200/70 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+                              title={amenity.label}
+                            >
+                              {getAmenityLucideIcon(amenity.id || amenity.label)}
+                              <span className="truncate max-w-[85px]">{amenity.label}</span>
+                            </span>
+                          ))}
+                        </div>
+                        {remainingCount > 0 && (
+                          <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-full px-1.5 py-0.2 shrink-0">
+                            +{remainingCount}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               );
             })()}
           </div>
         </Link>
 
-        {/* Single Full-Width View Details Button */}
-        <div className="mt-auto pt-2.5 px-3 pb-3 border-t border-slate-100">
+        {/* Floating Smooth Slide-Up View Details Button on Hover */}
+        <div className="absolute inset-x-0 bottom-0 p-3 pt-8 bg-gradient-to-t from-white via-white/95 to-transparent rounded-b-2xl transform translate-y-5 opacity-0 pointer-events-none group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 ease-out z-20">
           <Link
             to={generatePropertyUrl(property)}
             onClick={(e) => e.stopPropagation()}
-            className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-[#E31E24] border border-slate-200 hover:border-red-200 transition-all text-center flex items-center justify-center gap-1.5 group/btn"
+            className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/25 hover:shadow-lg hover:shadow-red-600/35 transition-all text-center flex items-center justify-center gap-1.5 group/btn active:scale-98"
           >
             <span>{t('common.viewDetails', 'View Details')}</span>
-            <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover/btn:text-[#E31E24] group-hover/btn:translate-x-0.5 transition-transform" />
+            <ArrowRight className="w-3.5 h-3.5 text-white/90 group-hover/btn:translate-x-1 transition-transform" />
           </Link>
         </div>
       </div>

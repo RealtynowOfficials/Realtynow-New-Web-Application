@@ -5,5 +5,11 @@
   "selectLocality": "Select Locality",
   "selectType": "Select Property Type",
   "uploadImages": "Upload Property Images",
-  "generateAI": "Generate AI Description"
+  "generateAI": "Generate AI Description",
+  "firstName": "First Name",
+  "lastName": "Last Name",
+  "mobileNumber": "Mobile Number (10 digits)",
+  "email": "Email Address",
+  "password": "Password",
+  "submit": "Submit"
 }

@@ -88,21 +88,43 @@ export function useGooglePlaces() {
     }
   }, [isReady]);
 
-  const getPredictions = useCallback(async (input: string): Promise<GooglePlacePrediction[]> => {
+  const getPredictions = useCallback(async (input: string, options?: { city?: string }): Promise<GooglePlacePrediction[]> => {
     if (!isReady || !autocompleteServiceRef.current || !input.trim()) return [];
 
     return new Promise((resolve) => {
+      const queryWithCity = options?.city && !input.toLowerCase().includes(options.city.toLowerCase())
+        ? `${input}, ${options.city}`
+        : input;
+
       autocompleteServiceRef.current!.getPlacePredictions(
         {
-          input,
+          input: queryWithCity,
           componentRestrictions: { country: 'in' },
         },
         (predictions, status) => {
-          if (status !== window.google.maps.places.PlacesServiceStatus.OK || !predictions) {
-            resolve([]);
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions && predictions.length > 0) {
+            resolve(predictions);
             return;
           }
-          resolve(predictions);
+
+          if (queryWithCity !== input) {
+            autocompleteServiceRef.current!.getPlacePredictions(
+              {
+                input,
+                componentRestrictions: { country: 'in' },
+              },
+              (fallbackPreds, fallbackStatus) => {
+                if (fallbackStatus === window.google.maps.places.PlacesServiceStatus.OK && fallbackPreds) {
+                  resolve(fallbackPreds);
+                } else {
+                  resolve([]);
+                }
+              }
+            );
+            return;
+          }
+
+          resolve([]);
         }
       );
     });

@@ -77,6 +77,40 @@ export function RazorpayCheckout({
         throw new Error('Please log in to choose or activate a subscription plan.');
       }
 
+      // Fetch user profile from DB to get the phone number if not in session metadata
+      let userPhone =
+        session.user.user_metadata?.phone ||
+        session.user.phone ||
+        '';
+      let userName =
+        session.user.user_metadata?.full_name ||
+        session.user.user_metadata?.first_name ||
+        '';
+      const userEmail = session.user.email || '';
+
+      if (!userPhone || !userName) {
+        try {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('phone, first_name, last_name, email')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (prof) {
+            if (!userPhone && prof.phone) userPhone = prof.phone;
+            if (!userName) {
+              userName = `${prof.first_name || ''} ${prof.last_name || ''}`.trim();
+            }
+          }
+        } catch {
+          // ignore error and proceed with available session details
+        }
+      }
+
+      if (!userName) userName = 'Valued Member';
+
+      const receiptNo = `RN-REC-${Date.now().toString().slice(-6)}`;
+
       // 2. Free Plan (RealtyNow Starter): Direct instant activation without payment gateway
       if (amount === 0) {
         const subId = await activateSubscription(
@@ -93,9 +127,9 @@ export function RazorpayCheckout({
         return;
       }
 
-      // 3. Paid Plans (RealtyNow Growth / RealtyNow Premium): Launch Razorpay Checkout Modal
+      // 3. Paid Plans: Launch Razorpay Checkout Modal with live key
       const razorpayKey =
-        import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_1DP5mmOlF5G5ag';
+        import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_TZ8MvRLv665guj';
 
       if (window.Razorpay) {
         const options = {
@@ -106,12 +140,19 @@ export function RazorpayCheckout({
           description: `${planName} · ${validityDays} Days Listing Plan`,
           image: 'https://realtynow.in/pwa-512x512.png',
           prefill: {
-            name:
-              session.user.user_metadata?.full_name ||
-              session.user.user_metadata?.first_name ||
-              'Valued Member',
-            email: session.user.email || '',
-            contact: session.user.user_metadata?.phone || '',
+            name: userName,
+            email: userEmail,
+            contact: userPhone,
+          },
+          notes: {
+            user_phone: userPhone,
+            user_id: session.user.id,
+            user_name: userName,
+            user_email: userEmail,
+            plan_name: planName,
+            plan_id: effectivePlanId,
+            receipt_no: receiptNo,
+            validity_days: String(validityDays),
           },
           theme: {
             color: '#dc2626', // RealtyNow Red-600

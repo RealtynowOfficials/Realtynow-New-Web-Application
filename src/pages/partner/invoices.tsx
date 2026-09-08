@@ -4,11 +4,6 @@ import {
   FileText,
   Download,
   Search,
-  CheckCircle2,
-  Clock,
-  Printer,
-  ExternalLink,
-  ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -16,8 +11,9 @@ import { useAuth } from '../../lib/auth';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { getPartnerSections } from '../portal/sections';
-import { Card, Button, Input, Badge, Skeleton } from '../../components/ui';
-import { formatDate, formatPrice, exportToCsv, cn } from '../../lib/utils';
+import { Card, Button, Badge } from '../../components/ui';
+import { InvoiceModal } from '../../components/invoices/InvoiceModal';
+import { formatDate, formatPrice, exportToCsv } from '../../lib/utils';
 import { useToast } from '../../components/toast';
 
 export function PartnerInvoicesPage() {
@@ -26,6 +22,7 @@ export function PartnerInvoicesPage() {
   const { user } = useAuth();
   const { addToast } = useToast();
   const [search, setSearch] = useState('');
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
 
   // 1. Fetch Partner record
   const { data: partner } = useQuery({
@@ -170,13 +167,42 @@ export function PartnerInvoicesPage() {
                       <td className="py-3 px-4 text-right">
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="secondary"
                           onClick={() => {
-                            window.print();
+                            const gross = Number(c.commission_amount) || 0;
+                            const tds = Math.round(gross * 0.05 * 100) / 100;
+                            setSelectedInvoice({
+                              invoice_number: c.commission_code || `RN-COM-${c.id.substring(0, 8).toUpperCase()}`,
+                              customer: {
+                                name: partner?.name || user?.user_metadata?.full_name || 'Channel Partner',
+                                email: user?.email || '',
+                                phone: user?.user_metadata?.phone || '',
+                                address: partner?.company_name ? `${partner.company_name}, India` : 'Registered Partner, India',
+                              },
+                              subtotal: gross,
+                              tds_amount: tds,
+                              tax_amount: tds,
+                              total_amount: gross - tds,
+                              invoice_date: c.created_at,
+                              due_date: c.paid_at || c.created_at,
+                              payment_status: c.status === 'paid' ? 'paid' : 'pending',
+                              status: c.status === 'paid' ? 'paid' : 'pending',
+                              items: [
+                                {
+                                  title: c.rule_name || 'Partner Referral Incentive & Commission',
+                                  description: `Referral Code: ${c.referral?.referral_code || 'Direct'} · Deal Value: ${formatPrice(c.eligible_amount || 0)} · TDS (5% Sec 194H) Deducted`,
+                                  quantity: 1,
+                                  unit_price: gross,
+                                  total: gross,
+                                }
+                              ]
+                            });
                           }}
-                          title="Print or Save PDF"
+                          icon={<FileText className="h-3.5 w-3.5 text-red-600" />}
+                          className="text-xs py-1 px-2.5"
+                          title="Tax Invoice & Receipt"
                         >
-                          <Printer className="h-3.5 w-3.5" />
+                          Tax Invoice
                         </Button>
                       </td>
                     </tr>
@@ -187,6 +213,13 @@ export function PartnerInvoicesPage() {
           </div>
         </div>
       )}
+
+      <InvoiceModal
+        isOpen={!!selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        invoice={selectedInvoice}
+        title="Channel Partner Commission Tax Invoice & Receipt"
+      />
     </DashboardLayout>
   );
 }

@@ -164,6 +164,12 @@ function cleanAmenityToken(raw: string): string {
  */
 export function formatAmenityLabel(raw: string): string {
   if (!raw) return '';
+  if (typeof raw !== 'string') {
+    if (typeof raw === 'object' && raw !== null) {
+      return (raw as any).name || (raw as any).label || (raw as any).title || '';
+    }
+    return String(raw);
+  }
   const token = cleanAmenityToken(raw);
   
   const found = AMENITY_REGISTRY.find(
@@ -179,6 +185,57 @@ export function formatAmenityLabel(raw: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+/**
+ * Resolves an amenity token or raw string to a display-ready object with normalized label and emoji/icon.
+ */
+export function getAmenityDisplayItem(raw: any): { id: string; label: string; icon: string } {
+  if (!raw) return { id: '', label: '', icon: '✨' };
+  const rawStr = typeof raw === 'string' ? raw : (raw?.name || raw?.label || raw?.title || String(raw));
+  if (!rawStr) return { id: '', label: '', icon: '✨' };
+
+  const token = cleanAmenityToken(rawStr);
+  
+  const found = AMENITY_REGISTRY.find(
+    (def) => def.id === rawStr || def.id === token || def.aliases.some((al) => cleanAmenityToken(al) === token)
+  );
+
+  if (found) {
+    return {
+      id: found.id,
+      label: String(found.label),
+      icon: found.icon || '✨',
+    };
+  }
+
+  // Common keyword-based icon resolution for custom/extended amenities
+  let icon = '✨';
+  const l = token.toLowerCase();
+  if (l.includes('road') || l.includes('street') || l.includes('light')) icon = '💡';
+  else if (l.includes('water') || l.includes('drainage') || l.includes('borewell')) icon = '🚰';
+  else if (l.includes('tree') || l.includes('plantation') || l.includes('green') || l.includes('park') || l.includes('garden')) icon = '🌿';
+  else if (l.includes('wall') || l.includes('compound') || l.includes('arch') || l.includes('gate') || l.includes('entrance')) icon = '🚪';
+  else if (l.includes('solar')) icon = '☀️';
+  else if (l.includes('security') || l.includes('guard')) icon = '🛡️';
+  else if (l.includes('camera') || l.includes('cctv')) icon = '📷';
+  else if (l.includes('play') || l.includes('kid') || l.includes('child')) icon = '🛝';
+  else if (l.includes('gym') || l.includes('fitness')) icon = '💪';
+  else if (l.includes('pool') || l.includes('swim')) icon = '🏊';
+  else if (l.includes('club')) icon = '🏛️';
+  else if (l.includes('wifi') || l.includes('internet')) icon = '📶';
+  else if (l.includes('car') || l.includes('parking')) icon = '🚗';
+  else if (l.includes('power') || l.includes('backup') || l.includes('generator')) icon = '⚡';
+  else if (l.includes('lift') || l.includes('elevator')) icon = '🛗';
+
+  const labelResult = formatAmenityLabel(rawStr);
+  const label = Array.isArray(labelResult) ? (labelResult as string[]).join(' ') : String(labelResult || '');
+
+  return {
+    id: rawStr,
+    label,
+    icon,
+  };
 }
 
 /**

@@ -152,6 +152,22 @@ Deno.serve(async (req) => {
     .replace(/-$/, '');
   const canonicalUrl = `${SITE_URL}/property/${slug}-${prop.id}`;
 
+  // If visitor is a human in a browser (Chrome, Safari, Firefox, Edge, etc.),
+  // immediately redirect them via HTTP 302 directly to the real property page on realtynow.in!
+  const userAgent = req.headers.get('user-agent') || '';
+  const isCrawler = /bot|crawler|spider|crawling|facebookexternalhit|whatsapp|twitterbot|linkedinbot|telegrambot|slackbot|applebot/i.test(userAgent);
+
+  if (!isCrawler) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        ...corsHeaders,
+        'Location': canonicalUrl,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      },
+    });
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -2,19 +2,18 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  Users, Building2, Building, Handshake, Briefcase, UserPlus, Kanban,
-  ClipboardList, CalendarClock, TrendingUp, FileText, CheckCircle2, XCircle,
-  AlertTriangle, Search, SlidersHorizontal, Phone, Mail, MapPin, Eye,
-  ArrowUpRight, ShieldCheck, ShieldAlert, Award, Calendar, DollarSign,
-  UserCheck, Tag, Target, Wallet, Clock, RefreshCw, RotateCcw, ChevronRight, Plus,
-  FileCheck, Sparkles, MessageSquare, Check, X, ExternalLink, Copy
+  Users, Building2, Building, Handshake, Briefcase, UserPlus, FileText, CheckCircle2, XCircle,
+  AlertTriangle, Search, Phone, Mail, MapPin, Eye, ShieldCheck, ShieldAlert, Calendar, DollarSign,
+  UserCheck, Target, Clock, RefreshCw, RotateCcw, Plus,
+  FileCheck, MessageSquare, Check, ExternalLink, Copy,
+  LayoutGrid, List, Ban, CheckCircle, Trash2
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader, StatCard } from '../../components/dashboard-layout';
 import { getAdminSections } from '../portal/sections';
 import { useLanguageContext } from '../../lib/i18n/language-context';
-import { Card, Button, Badge, Modal, Input, Select, Textarea, Skeleton, EmptyState } from '../../components/ui';
-import { DataTable, type Column } from '../../components/data-table';
+import { Card, Button, Badge, Modal, Input, Textarea, Skeleton, EmptyState } from '../../components/ui';
+import { DataTable, BulkActionsBar, type Column } from '../../components/data-table';
 import { formatDate, formatPrice, cn } from '../../lib/utils';
 import { getPropertyPricingDisplay } from '../../lib/plot-pricing';
 import { useToast } from '../../components/toast';
@@ -107,9 +106,6 @@ export function AdminRoleModule({ role, submodule }: RoleModulePageProps) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. LEADS VIEW
-// ─────────────────────────────────────────────────────────────────────────────
 function RoleLeadsView({ role }: { role: RoleType }) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
@@ -120,6 +116,10 @@ function RoleLeadsView({ role }: { role: RoleType }) {
   const [assignModalLead, setAssignModalLead] = useState<any | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Selection & Bulk Delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
 
   // New Lead form state
   const [newLeadName, setNewLeadName] = useState('');
@@ -168,6 +168,26 @@ function RoleLeadsView({ role }: { role: RoleType }) {
     };
   }, [role, refetch]);
 
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('crm_leads').delete().in('id', ids);
+      if (error) {
+        await supabase.from('enquiries').delete().in('id', ids);
+        await supabase.from('appointments').delete().in('id', ids);
+      }
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} lead${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['role-leads', role] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete lead(s)');
+    },
+  });
+
   const assignMutation = useMutation({
     mutationFn: async ({ leadId, agentId }: { leadId: string; agentId: string }) => {
       return api.assignLeadToAgent(leadId, agentId);
@@ -193,6 +213,7 @@ function RoleLeadsView({ role }: { role: RoleType }) {
         property_id: newLeadPropertyId || undefined,
         agent_id: newLeadAgentId || undefined,
         source: 'Admin / Direct Lead Entry',
+        priority: newLeadPriority,
       });
     },
     onSuccess: () => {
@@ -317,7 +338,7 @@ function RoleLeadsView({ role }: { role: RoleType }) {
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
       render: (l) => (
         <div className="flex items-center gap-1.5">
           {l.phone && (
@@ -334,6 +355,14 @@ function RoleLeadsView({ role }: { role: RoleType }) {
           <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setSelectedLead(l)}>
             View
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-red-600 hover:bg-red-50"
+            title="Delete Lead Permanently"
+            onClick={() => setToDelete([l.id])}
+            icon={<Trash2 className="h-3.5 w-3.5" />}
+          />
         </div>
       ),
     },
@@ -398,12 +427,37 @@ function RoleLeadsView({ role }: { role: RoleType }) {
           </div>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="mb-4">
+            <BulkActionsBar
+              count={selectedIds.size}
+              onDelete={() => setToDelete(Array.from(selectedIds))}
+              onClear={() => setSelectedIds(new Set())}
+            />
+          </div>
+        )}
+
         <DataTable
           columns={columns}
           rows={filtered}
           loading={isLoading}
           getRowId={(l) => l.id}
           pageSize={10}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.has(id) ? next.delete(id) : next.add(id);
+              return next;
+            })
+          }
+          onSelectAll={(ids) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+              return next;
+            })
+          }
           emptyState={
             <div className="text-center py-10 space-y-3">
               <UserPlus className="h-10 w-10 text-navy-300 mx-auto" />
@@ -455,42 +509,58 @@ function RoleLeadsView({ role }: { role: RoleType }) {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-navy-700 mb-1">Priority</label>
+                <select
+                  value={newLeadPriority}
+                  onChange={(e) => setNewLeadPriority(e.target.value)}
+                  className="w-full text-sm px-3 py-2 rounded-xl border border-navy-200 bg-white font-medium"
+                >
+                  <option value="urgent">Urgent</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-navy-700 mb-1">Assign Agent</label>
+                <select
+                  value={newLeadAgentId}
+                  onChange={(e) => setNewLeadAgentId(e.target.value)}
+                  className="w-full text-sm px-3 py-2 rounded-xl border border-navy-200 bg-white font-medium"
+                >
+                  <option value="">Auto-Assign / Platform Unassigned</option>
+                  {agents.map((ag: any) => (
+                    <option key={ag.id} value={ag.id}>
+                      {ag.first_name} {ag.last_name || ''} ({ag.phone || 'Agent'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div>
-              <label className="block text-xs font-semibold text-navy-700 mb-1">Property of Interest (Optional)</label>
+              <label className="block text-xs font-semibold text-navy-700 mb-1">Target Property (Optional)</label>
               <select
                 value={newLeadPropertyId}
                 onChange={(e) => setNewLeadPropertyId(e.target.value)}
                 className="w-full text-sm px-3 py-2 rounded-xl border border-navy-200 bg-white font-medium"
               >
-                <option value="">-- General Property Inquiry --</option>
-                {properties.map((p: any) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
+                <option value="">No Specific Property / General Inquiry</option>
+                {properties.map((pr: any) => (
+                  <option key={pr.id} value={pr.id}>
+                    {pr.title} — {pr.price ? formatPrice(pr.price) : ''}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-navy-700 mb-1">Assign to Agent (Optional)</label>
-              <select
-                value={newLeadAgentId}
-                onChange={(e) => setNewLeadAgentId(e.target.value)}
-                className="w-full text-sm px-3 py-2 rounded-xl border border-navy-200 bg-white font-medium"
-              >
-                <option value="">-- Unassigned (Assign Later) --</option>
-                {agents.map((a: any) => (
-                  <option key={a.id} value={a.id}>
-                    {a.first_name} {a.last_name || ''} ({a.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-navy-700 mb-1">Inquiry Message / Requirements</label>
+              <label className="block text-xs font-semibold text-navy-700 mb-1">Inquiry / Note Message</label>
               <Textarea
-                placeholder="Looking for 3BHK flat in Gachibowli within 1.2 Cr budget..."
+                placeholder="Interested in 3 BHK flat in Gachibowli under 1.5 Cr..."
                 value={newLeadMessage}
                 onChange={(e) => setNewLeadMessage(e.target.value)}
               />
@@ -503,7 +573,7 @@ function RoleLeadsView({ role }: { role: RoleType }) {
                 disabled={!newLeadName || createLeadMutation.isPending}
                 onClick={() => createLeadMutation.mutate()}
               >
-                Save & Register Lead
+                Create Lead Record
               </Button>
             </div>
           </div>
@@ -515,13 +585,14 @@ function RoleLeadsView({ role }: { role: RoleType }) {
         <Modal
           isOpen={!!assignModalLead}
           onClose={() => setAssignModalLead(null)}
-          title="Assign Lead to Agent"
+          title="Assign Lead to Specialist Agent"
         >
           <div className="space-y-4 pt-2">
             <div>
-              <p className="text-sm font-semibold text-navy-900">{assignModalLead.name || 'Lead'}</p>
-              <p className="text-xs text-navy-500">{assignModalLead.phone} • {assignModalLead.email || 'No email'}</p>
+              <p className="text-sm font-semibold text-navy-900">{assignModalLead.name || 'Anonymous Customer'}</p>
+              <p className="text-xs text-navy-500">{assignModalLead.phone || 'No phone'} • {assignModalLead.email || 'No email'}</p>
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-navy-700 mb-1.5">Select Agent</label>
               <select
@@ -529,14 +600,15 @@ function RoleLeadsView({ role }: { role: RoleType }) {
                 onChange={(e) => setSelectedAgentId(e.target.value)}
                 className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-navy-200 bg-white"
               >
-                <option value="">Select an Agent...</option>
-                {agents.map((a: any) => (
-                  <option key={a.id} value={a.id}>
-                    {a.first_name} {a.last_name} ({a.email || a.phone})
+                <option value="">-- Choose Agent from Directory --</option>
+                {agents.map((ag: any) => (
+                  <option key={ag.id} value={ag.id}>
+                    {ag.first_name} {ag.last_name || ''} ({ag.phone || 'No phone'})
                   </option>
                 ))}
               </select>
             </div>
+
             <div className="flex justify-end gap-2 pt-3">
               <Button variant="ghost" onClick={() => setAssignModalLead(null)}>Cancel</Button>
               <Button
@@ -545,6 +617,43 @@ function RoleLeadsView({ role }: { role: RoleType }) {
                 onClick={() => assignMutation.mutate({ leadId: assignModalLead.id, agentId: selectedAgentId })}
               >
                 Confirm Assignment
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Lead Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Lead' : `${toDelete.length} Leads`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold mb-1">This action cannot be undone.</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The lead record will be permanently removed from the CRM and database.'
+                    : `All ${toDelete.length} selected lead records will be permanently removed from the CRM and database.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
               </Button>
             </div>
           </div>
@@ -685,7 +794,7 @@ function RoleKanbanView({ role }: { role: RoleType }) {
         })}
       </div>
 
-      {selectedLead && (
+{selectedLead && (
         <UnifiedLeadDetailModal
           lead={selectedLead}
           isOpen={!!selectedLead}
@@ -699,109 +808,741 @@ function RoleKanbanView({ role }: { role: RoleType }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. DIRECTORY VIEW
+// 3. DIRECTORY VIEW (Tabular & Cards View Switcher with Real-time Data)
 // ─────────────────────────────────────────────────────────────────────────────
 function RoleDirectoryView({ role }: { role: RoleType }) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'suspended'>('all');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
+  const [selectedMember, setSelectedMember] = useState<any | null>(null);
+  // Delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
 
-  const { data: items = [], isLoading } = useQuery({
+  // 1. Fetch directory items
+  const { data: items = [], isLoading, refetch } = useQuery({
     queryKey: ['role-directory', role, search],
     queryFn: async () => {
       if (role === 'agent') return api.fetchAgentsDirectory(search);
       if (role === 'builder') {
-        const { data } = await supabase.from('builders').select('*').order('name');
+        let q = supabase.from('builders').select('*').order('name');
+        if (search.trim()) {
+          q = q.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+        }
+        const { data, error } = await q;
+        if (error) {
+          console.warn('Builders query warning:', error);
+          const { data: fallback } = await supabase.from('builders').select('*');
+          return fallback ?? [];
+        }
         return data ?? [];
       }
-      const { data } = await supabase.from('partners').select('*').order('created_at', { ascending: false });
+      let q = supabase.from('partners').select('*').order('created_at', { ascending: false });
+      if (search.trim()) {
+        q = q.or(`company_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      }
+      const { data } = await q;
       return data ?? [];
     },
   });
 
+  // 2. Fetch Projects count map for builders (to show active projects badge)
+  const { data: builderProjectsMap = {} } = useQuery({
+    queryKey: ['builder-projects-counts-map'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('builder_projects').select('id, name, builder_id, total_units, status');
+      if (error || !data) return {};
+      const map: Record<string, { count: number; totalUnits: number; projects: any[] }> = {};
+      for (const p of data) {
+        if (!p.builder_id) continue;
+        if (!map[p.builder_id]) {
+          map[p.builder_id] = { count: 0, totalUnits: 0, projects: [] };
+        }
+        map[p.builder_id].count += 1;
+        map[p.builder_id].totalUnits += Number(p.total_units) || 0;
+        map[p.builder_id].projects.push(p);
+      }
+      return map;
+    },
+    enabled: role === 'builder',
+  });
+
+  // 3. Realtime updates subscription
+  useEffect(() => {
+    const tableToListen = role === 'builder' ? 'builders' : role === 'agent' ? 'agents' : 'partners';
+    const channel = supabase
+      .channel(`realtime-directory-${role}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: tableToListen }, () => {
+        refetch();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [role, refetch]);
+
+  // 4. Status Toggle Mutation
   const toggleMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      return api.toggleAgentStatus(id, status);
+    mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
+      const nextStatus = currentStatus === 'active' || currentStatus === 'approved' ? 'suspended' : 'active';
+      if (role === 'builder') {
+        const { error } = await supabase.from('builders').update({ status: nextStatus, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) throw error;
+        return;
+      }
+      return api.toggleAgentStatus(id, currentStatus);
     },
     onSuccess: () => {
-      addToast('success', 'Status updated successfully.');
+      addToast('success', 'Member status updated successfully.');
       queryClient.invalidateQueries({ queryKey: ['role-directory', role] });
+      if (selectedMember) {
+        setSelectedMember(null);
+      }
     },
     onError: (err: any) => {
-      addToast('error', err.message || 'Failed to update status');
+      addToast('error', err?.message || 'Failed to update member status');
     },
   });
 
+  // 4b. Permanent Delete Mutation — routes through Direct DB delete
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => api.deleteDirectoryMembers(ids, role),
+    onSuccess: (_, deletedIds) => {
+      addToast('success', `${deletedIds.length} account${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['role-directory', role] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+      if (selectedMember && deletedIds.includes(selectedMember.id)) {
+        setSelectedMember(null);
+      }
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete account(s). Please try again.');
+    },
+  });
+
+  // 5. Client-side Search & Status Filter
+  const filteredItems = useMemo(() => {
+    return items.filter((item: any) => {
+      const s = (item.status || 'active').toLowerCase();
+      if (statusFilter === 'active' && s !== 'active' && s !== 'approved') return false;
+      if (statusFilter === 'pending' && s !== 'pending' && s !== 'submitted') return false;
+      if (statusFilter === 'suspended' && s !== 'suspended' && s !== 'inactive' && s !== 'blocked') return false;
+      return true;
+    });
+  }, [items, statusFilter]);
+
+  // 6. Summary Stats Computation
+  const stats = useMemo(() => {
+    const total = items.length;
+    const active = items.filter((i: any) => {
+      const s = (i.status || 'active').toLowerCase();
+      return s === 'active' || s === 'approved';
+    }).length;
+    const pending = items.filter((i: any) => {
+      const s = (i.status || '').toLowerCase();
+      return s === 'pending' || s === 'submitted';
+    }).length;
+    const suspended = total - active - pending;
+    const totalProjects = Object.values(builderProjectsMap).reduce((acc: number, curr: any) => acc + (curr.count || 0), 0);
+
+    return { total, active, pending, suspended, totalProjects };
+  }, [items, builderProjectsMap]);
+
+  // 7. Table Columns Definition
+  const columns: Column<any>[] = useMemo(() => [
+    {
+      key: 'name',
+      header: 'Member / Entity',
+      sortable: true,
+      render: (item) => {
+        const title = item.first_name ? `${item.first_name} ${item.last_name || ''}` : item.name || item.company_name || item.full_name || 'Member';
+        const specialization = item.specialization || item.partner_type || (role === 'builder' ? 'Builder' : 'Channel Partner');
+        const rera = item.license_number || item.rera_number || item.rera_registration_number;
+
+        return (
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+              {title.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p
+                className="font-bold text-navy-900 text-sm truncate hover:text-red-600 cursor-pointer transition-colors"
+                onClick={() => setSelectedMember(item)}
+                title={title}
+              >
+                {title}
+              </p>
+              <div className="flex items-center gap-2 mt-0.5 text-xs text-navy-500">
+                <span className="capitalize">{specialization}</span>
+                {rera && (
+                  <>
+                    <span>•</span>
+                    <span className="font-mono text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-100">
+                      RERA: {rera}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'contact',
+      header: 'Contact Information',
+      render: (item) => {
+        const email = item.email || item.contact_email;
+        const phone = item.phone || item.mobile_number || item.contact_phone;
+        return (
+          <div className="text-xs space-y-0.5">
+            {phone && (
+              <p className="font-medium text-navy-800 font-mono flex items-center gap-1.5">
+                <Phone className="h-3 w-3 text-slate-400" />
+                <span>{phone}</span>
+              </p>
+            )}
+            {email && (
+              <p className="text-navy-500 truncate flex items-center gap-1.5 max-w-[180px]" title={email}>
+                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                <span className="truncate">{email}</span>
+              </p>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'location',
+      header: 'City / Region',
+      render: (item) => (
+        <span className="text-xs text-navy-700 flex items-center gap-1">
+          <MapPin className="h-3 w-3 text-red-500 shrink-0" />
+          {item.city || item.state || 'Hyderabad'}
+        </span>
+      ),
+    },
+    ...(role === 'builder'
+      ? [
+          {
+            key: 'projects',
+            header: 'Projects Listed',
+            render: (item: any) => {
+              const info = builderProjectsMap[item.id];
+              const count = info?.count || 0;
+              return (
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                  <Building2 className="h-3.5 w-3.5 text-red-500" />
+                  {count} {count === 1 ? 'Project' : 'Projects'}
+                </span>
+              );
+            },
+          },
+        ]
+      : []),
+    {
+      key: 'status',
+      header: 'Status',
+      render: (item) => {
+        const s = (item.status || 'active').toLowerCase();
+        const isActive = s === 'active' || s === 'approved';
+        const isPending = s === 'pending' || s === 'submitted';
+        const variant = isActive ? 'success' : isPending ? 'warning' : 'error';
+        return (
+          <Badge variant={variant as any}>
+            {isActive ? 'Verified / Active' : isPending ? 'Pending Verification' : 'Suspended'}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'created_at',
+      header: 'Joined Date',
+      sortable: true,
+      render: (item) => <span className="text-xs text-navy-500 font-medium">{formatDate(item.created_at)}</span>,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (item) => {
+        const isActive = item.status === 'active' || item.status === 'approved' || !item.status;
+        return (
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              title="View Details"
+              onClick={() => setSelectedMember(item)}
+              icon={<Eye className="h-3.5 w-3.5" />}
+            />
+            {role === 'builder' && (
+              <Link to={`/admin/builder/projects?builderId=${item.id}`}>
+                <Button size="sm" variant="ghost" title="View Builder Projects" icon={<Building2 className="h-3.5 w-3.5" />} />
+              </Link>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className={isActive ? 'text-orange-600 hover:bg-orange-50' : 'text-emerald-600 hover:bg-emerald-50'}
+              title={isActive ? 'Suspend Member' : 'Activate Member'}
+              onClick={() => toggleMutation.mutate({ id: item.id, currentStatus: item.status || 'active' })}
+              icon={isActive ? <Ban className="h-3.5 w-3.5" /> : <CheckCircle className="h-3.5 w-3.5" />}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50"
+              title="Delete Permanently"
+              onClick={() => setToDelete([item.id])}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+            />
+          </div>
+        );
+      },
+    },
+  ], [role, builderProjectsMap, toggleMutation]);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-navy-400" />
-          <input
-            type="text"
-            placeholder={`Search ${ROLE_META[role].label} directory...`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-navy-200 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+      {/* Real-time Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          icon={role === 'builder' ? <Building2 className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+          label={`Total ${ROLE_META[role].label}s`}
+          value={stats.total}
+          trend={`${stats.active} active`}
+          accent="navy"
+        />
+        <StatCard
+          icon={<ShieldCheck className="h-5 w-5" />}
+          label="Verified & Active"
+          value={stats.active}
+          trend={`${Math.round((stats.active / Math.max(stats.total, 1)) * 100)}% verified`}
+          accent="success"
+        />
+        {role === 'builder' ? (
+          <StatCard
+            icon={<Building className="h-5 w-5" />}
+            label="Live Projects"
+            value={stats.totalProjects}
+            trend="Across Hyderabad & Corridors"
+            accent="navy"
           />
-        </div>
-        <p className="text-xs font-semibold text-navy-500">{items.length} Registered Members</p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {isLoading ? (
-          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-2xl" />)
-        ) : items.length === 0 ? (
-          <div className="col-span-full">
-            <EmptyState title="No directory records" description="No verified directory entries found for this category." />
-          </div>
         ) : (
-          items.map((item: any) => {
-            const title = item.first_name ? `${item.first_name} ${item.last_name || ''}` : item.name || item.company_name || item.full_name || 'Member';
-            const email = item.email || item.contact_email;
-            const phone = item.phone || item.mobile_number || item.contact_phone;
-            const rera = item.license_number || item.rera_number || item.rera_registration_number;
-            const isActive = item.status === 'active' || item.status === 'approved';
-
-            return (
-              <Card key={item.id} className="p-5 flex flex-col justify-between hover:shadow-md transition-all">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="h-11 w-11 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-700 text-sm">
-                        {title.charAt(0)}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-navy-900 text-sm truncate">{title}</h4>
-                        <p className="text-xs text-navy-400 capitalize">{item.specialization || item.partner_type || 'Verified Partner'}</p>
-                      </div>
-                    </div>
-                    <Badge variant={isActive ? 'success' : 'default'}>
-                      {item.status || 'Active'}
-                    </Badge>
-                  </div>
-
-                  <div className="text-xs text-navy-600 space-y-1 pt-1">
-                    {phone && <p className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-navy-400" /> {phone}</p>}
-                    {email && <p className="flex items-center gap-2 truncate"><Mail className="h-3.5 w-3.5 text-navy-400" /> {email}</p>}
-                    {rera && <p className="flex items-center gap-2 font-mono text-[11px]"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> RERA: {rera}</p>}
-                  </div>
-                </div>
-
-                <div className="pt-4 mt-3 border-t border-navy-100 flex items-center justify-between text-xs text-navy-400">
-                  <span>Joined {formatDate(item.created_at)}</span>
-                  <button
-                    onClick={() => toggleMutation.mutate({ id: item.id, status: item.status || 'active' })}
-                    className="text-red-600 font-semibold cursor-pointer hover:underline"
-                  >
-                    {isActive ? 'Suspend' : 'Activate'}
-                  </button>
-                </div>
-              </Card>
-            );
-          })
+          <StatCard
+            icon={<Calendar className="h-5 w-5" />}
+            label="Recent Registrations"
+            value={items.filter((i: any) => new Date(i.created_at).getTime() > Date.now() - 30 * 86400000).length}
+            trend="Last 30 days"
+            accent="gold"
+          />
         )}
+        <StatCard
+          icon={<ShieldAlert className="h-5 w-5" />}
+          label="Pending / Suspended"
+          value={stats.pending + stats.suspended}
+          trend={stats.suspended > 0 ? `${stats.suspended} suspended` : 'Zero issues'}
+          accent={stats.suspended > 0 ? 'error' : 'navy'}
+        />
       </div>
+
+      {/* Control Bar: Search + Status Tabs + [Table View / Cards View] Switcher */}
+      <Card className="p-4 bg-white border border-slate-200/90 shadow-xs rounded-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Search Box */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder={`Search ${ROLE_META[role].label} by name, phone, email, or RERA...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Right Tools: Status Filter Tabs & View Switcher */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Status Pills */}
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-semibold">
+              {(['all', 'active', 'pending', 'suspended'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg capitalize transition-all',
+                    statusFilter === s
+                      ? 'bg-white text-navy-900 shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-navy-900'
+                  )}
+                >
+                  {s === 'all' ? 'All' : s}
+                </button>
+              ))}
+            </div>
+
+            {/* View Mode Toggle Button */}
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs">
+              <button
+                onClick={() => setViewMode('cards')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all',
+                  viewMode === 'cards'
+                    ? 'bg-white text-red-600 shadow-xs'
+                    : 'text-slate-600 hover:text-navy-900'
+                )}
+                title="Grid Cards View"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span>Cards</span>
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all',
+                  viewMode === 'table'
+                    ? 'bg-white text-red-600 shadow-xs'
+                    : 'text-slate-600 hover:text-navy-900'
+                )}
+                title="Tabular List View"
+              >
+                <List className="h-3.5 w-3.5" />
+                <span>Table</span>
+              </button>
+            </div>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<RefreshCw className="h-3.5 w-3.5" />}
+              onClick={() => refetch()}
+              title="Refresh Real-time Directory"
+            >
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Directory Content: Table View OR Cards View */}
+      {viewMode === 'table' ? (
+        <Card className="overflow-hidden border border-slate-200 shadow-xs rounded-2xl">
+          {selectedIds.size > 0 && (
+            <div className="px-4 pt-4">
+              <BulkActionsBar
+                count={selectedIds.size}
+                onDelete={() => setToDelete(Array.from(selectedIds))}
+                onClear={() => setSelectedIds(new Set())}
+              />
+            </div>
+          )}
+          <DataTable
+            columns={columns}
+            rows={filteredItems}
+            loading={isLoading}
+            getRowId={(r) => r.id}
+            selectedIds={selectedIds}
+            onToggleSelect={(id) =>
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })
+            }
+            onSelectAll={(ids) =>
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+                return next;
+              })
+            }
+          />
+        </Card>
+      ) : (
+        /* Cards View */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-56 rounded-2xl" />)
+          ) : filteredItems.length === 0 ? (
+            <div className="col-span-full">
+              <Card className="p-8">
+                <EmptyState
+                  title={`No ${ROLE_META[role].label} Records Found`}
+                  description="No directory entries match your search criteria. Try modifying your search or filters."
+                  action={
+                    search || statusFilter !== 'all' ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setSearch('');
+                          setStatusFilter('all');
+                        }}
+                      >
+                        Reset Filters
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              </Card>
+            </div>
+          ) : (
+            filteredItems.map((item: any) => {
+              const title = item.first_name ? `${item.first_name} ${item.last_name || ''}` : item.name || item.company_name || item.full_name || 'Member';
+              const email = item.email || item.contact_email;
+              const phone = item.phone || item.mobile_number || item.contact_phone;
+              const rera = item.license_number || item.rera_number || item.rera_registration_number;
+              const isActive = item.status === 'active' || item.status === 'approved' || !item.status;
+              const isPending = item.status === 'pending' || item.status === 'submitted';
+              const projectsInfo = role === 'builder' ? builderProjectsMap[item.id] : null;
+              const specialization = item.specialization || item.partner_type || (role === 'builder' ? 'Real Estate Developer' : 'Verified Partner');
+
+              return (
+                <Card
+                  key={item.id}
+                  className="p-5 flex flex-col justify-between hover:shadow-md transition-all border border-slate-200/90 rounded-2xl bg-white group hover:border-red-200"
+                >
+                  <div className="space-y-3.5">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center font-extrabold text-base shrink-0 shadow-md">
+                          {title.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <h4
+                            className="font-bold text-navy-900 text-sm sm:text-[15px] truncate hover:text-red-600 cursor-pointer transition-colors"
+                            onClick={() => setSelectedMember(item)}
+                            title={title}
+                          >
+                            {title}
+                          </h4>
+                          <p className="text-xs text-navy-500 capitalize truncate mt-0.5">{specialization}</p>
+                        </div>
+                      </div>
+                      <Badge variant={isActive ? 'success' : isPending ? 'warning' : 'error'}>
+                        {isActive ? 'Approved' : isPending ? 'Pending' : 'Suspended'}
+                      </Badge>
+                    </div>
+
+                    {/* RERA Badge & Projects Count */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {rera && (
+                        <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                          <ShieldCheck className="h-3 w-3 text-emerald-600 shrink-0" />
+                          RERA: {rera}
+                        </span>
+                      )}
+                      {projectsInfo && projectsInfo.count > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
+                          <Building2 className="h-3 w-3 text-red-500 shrink-0" />
+                          {projectsInfo.count} {projectsInfo.count === 1 ? 'Project' : 'Projects'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Contact & Location Info */}
+                    <div className="text-xs text-navy-600 space-y-1.5 pt-1 border-t border-slate-100">
+                      {phone && (
+                        <a href={`tel:${phone}`} className="flex items-center gap-2 hover:text-red-600 transition-colors">
+                          <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span className="font-mono font-medium">{phone}</span>
+                        </a>
+                      )}
+                      {email && (
+                        <a href={`mailto:${email}`} className="flex items-center gap-2 truncate hover:text-red-600 transition-colors" title={email}>
+                          <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">{email}</span>
+                        </a>
+                      )}
+                      <p className="flex items-center gap-2 text-slate-500 truncate">
+                        <MapPin className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                        <span className="truncate">{item.city || item.state || 'Hyderabad, Telangana'}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Footer Card Actions */}
+                  <div className="pt-3.5 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-navy-400">
+                    <span className="text-[11px] text-slate-400">Joined {formatDate(item.created_at)}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedMember(item)}
+                        className="text-navy-700 font-bold hover:text-red-600 text-xs cursor-pointer"
+                      >
+                        Details
+                      </button>
+                      <span className="text-slate-300">•</span>
+                      <button
+                        onClick={() => toggleMutation.mutate({ id: item.id, currentStatus: item.status || 'active' })}
+                        className={cn(
+                          'font-bold cursor-pointer hover:underline',
+                          isActive ? 'text-orange-600' : 'text-emerald-600'
+                        )}
+                      >
+                        {isActive ? 'Suspend' : 'Activate'}
+                      </button>
+                      <span className="text-slate-300">•</span>
+                      <button
+                        onClick={() => setToDelete([item.id])}
+                        className="font-bold text-red-600 cursor-pointer hover:underline"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Member Details Modal */}
+      {selectedMember && (
+        <Modal
+          isOpen={!!selectedMember}
+          onClose={() => setSelectedMember(null)}
+          title={`${ROLE_META[role].label} Profile & Credentials`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                {(selectedMember.name || selectedMember.first_name || 'M').charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 className="font-bold text-navy-900 text-base truncate">
+                  {selectedMember.first_name ? `${selectedMember.first_name} ${selectedMember.last_name || ''}` : selectedMember.name || selectedMember.company_name}
+                </h4>
+                <p className="text-xs text-slate-500 capitalize">{selectedMember.specialization || selectedMember.partner_type || 'Verified Member'}</p>
+              </div>
+              <Badge variant={selectedMember.status === 'active' || selectedMember.status === 'approved' ? 'success' : 'warning'}>
+                {selectedMember.status || 'Active'}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-slate-400 font-semibold uppercase text-[10px]">Phone Contact</span>
+                <p className="font-bold text-navy-900 font-mono">{selectedMember.phone || selectedMember.mobile_number || '—'}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-slate-400 font-semibold uppercase text-[10px]">Email Address</span>
+                <p className="font-bold text-navy-900 truncate" title={selectedMember.email || selectedMember.contact_email}>
+                  {selectedMember.email || selectedMember.contact_email || '—'}
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-slate-400 font-semibold uppercase text-[10px]">RERA / License</span>
+                <p className="font-bold text-emerald-700 font-mono">
+                  {selectedMember.license_number || selectedMember.rera_number || selectedMember.rera_registration_number || 'Under Verification'}
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-slate-400 font-semibold uppercase text-[10px]">Registration Date</span>
+                <p className="font-bold text-navy-900">{formatDate(selectedMember.created_at)}</p>
+              </div>
+            </div>
+
+            {/* Builder Listed Projects Showcase inside details */}
+            {role === 'builder' && (
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                  <span className="flex items-center gap-1.5">
+                    <Building2 className="h-4 w-4 text-red-500" /> Development Portfolio
+                  </span>
+                  <span className="text-[11px] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    {builderProjectsMap[selectedMember.id]?.count || 0} Listed
+                  </span>
+                </div>
+                {builderProjectsMap[selectedMember.id]?.projects?.length ? (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {builderProjectsMap[selectedMember.id].projects.map((p: any) => (
+                      <div key={p.id} className="p-2.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs">
+                        <span className="font-bold text-navy-900">{p.name}</span>
+                        <span className="text-slate-500 font-medium">{p.total_units || 0} Units • <span className="capitalize">{p.status}</span></span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No development projects mapped yet.</p>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={selectedMember.status === 'active' || selectedMember.status === 'approved' ? 'secondary' : 'primary'}
+                  size="sm"
+                  onClick={() => toggleMutation.mutate({ id: selectedMember.id, currentStatus: selectedMember.status || 'active' })}
+                >
+                  {selectedMember.status === 'active' || selectedMember.status === 'approved' ? 'Suspend Account' : 'Approve & Activate Account'}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
+                  onClick={() => { const mid = selectedMember.id; setSelectedMember(null); setToDelete([mid]); }}
+                >
+                  Delete
+                </Button>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedMember(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Permanent Delete Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Account' : `${toDelete.length} Accounts`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold mb-1">This action cannot be undone.</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The account and all associated data will be permanently removed from the system.'
+                    : `All ${toDelete.length} selected accounts and their associated data will be permanently removed from the system.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -816,6 +1557,10 @@ function RoleProjectsView({ role, isApprovalView }: { role: RoleType; isApproval
   const [reviewModalApproval, setReviewModalApproval] = useState<any | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
 
+  // Selection & Delete State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   // Form states
   const [pName, setPName] = useState('');
   const [pLocation, setPLocation] = useState('');
@@ -826,6 +1571,25 @@ function RoleProjectsView({ role, isApprovalView }: { role: RoleType; isApproval
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['role-projects', isApprovalView],
     queryFn: () => isApprovalView ? api.fetchProjectApprovals() : api.fetchBuilderProjects(),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('builder_projects').delete().in('id', ids);
+      if (error) {
+        await supabase.from('projects').delete().in('id', ids);
+      }
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} project${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['role-projects'] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete project(s)');
+    },
   });
 
   const createMutation = useMutation({
@@ -897,24 +1661,33 @@ function RoleProjectsView({ role, isApprovalView }: { role: RoleType; isApproval
     { key: 'created_at', header: 'Date', render: (p) => formatDate(p.created_at) },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
       render: (p) => {
-        if (isApprovalView) {
-          return (
+        return (
+          <div className="flex items-center gap-1.5 justify-end">
+            {isApprovalView && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                onClick={() => {
+                  setReviewModalApproval(p);
+                  setReviewNotes(p.review_notes || '');
+                }}
+              >
+                Review
+              </Button>
+            )}
             <Button
               size="sm"
-              variant="outline"
-              className="text-xs"
-              onClick={() => {
-                setReviewModalApproval(p);
-                setReviewNotes(p.review_notes || '');
-              }}
-            >
-              Review
-            </Button>
-          );
-        }
-        return null;
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50"
+              title="Delete Project Permanently"
+              onClick={() => setToDelete([p.id])}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+            />
+          </div>
+        );
       },
     },
   ];
@@ -933,12 +1706,36 @@ function RoleProjectsView({ role, isApprovalView }: { role: RoleType; isApproval
       </div>
 
       <Card className="p-5">
+        {selectedIds.size > 0 && (
+          <div className="mb-4">
+            <BulkActionsBar
+              count={selectedIds.size}
+              onDelete={() => setToDelete(Array.from(selectedIds))}
+              onClear={() => setSelectedIds(new Set())}
+            />
+          </div>
+        )}
         <DataTable
           columns={columns}
           rows={projects}
           loading={isLoading}
           getRowId={(p) => p.id}
           pageSize={10}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.has(id) ? next.delete(id) : next.add(id);
+              return next;
+            })
+          }
+          onSelectAll={(ids) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+              return next;
+            })
+          }
           emptyState={<EmptyState title="No projects found" description="No builder project records available." />}
         />
       </Card>
@@ -1024,6 +1821,43 @@ function RoleProjectsView({ role, isApprovalView }: { role: RoleType; isApproval
           </div>
         </Modal>
       )}
+
+      {/* Delete Project Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Project' : `${toDelete.length} Projects`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold mb-1">This action cannot be undone.</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The project and its listing records will be permanently removed from the system.'
+                    : `All ${toDelete.length} selected projects and their listing records will be permanently removed from the system.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1042,6 +1876,10 @@ function RoleAssignmentsView({ role, type }: { role: RoleType; type: 'property' 
   const [assignmentType, setAssignmentType] = useState('exclusive');
   const [commissionSplit, setCommissionSplit] = useState(50);
   const [notes, setNotes] = useState('');
+
+  // Selection & Bulk Delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
 
   const { data: assignments = [], isLoading, refetch } = useQuery({
     queryKey: ['role-assignments'],
@@ -1069,6 +1907,24 @@ function RoleAssignmentsView({ role, type }: { role: RoleType; type: 'property' 
       supabase.removeChannel(channel);
     };
   }, [refetch]);
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) {
+        await api.unassignProperty(id);
+      }
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} property assignment${deletedIds.length !== 1 ? 's' : ''} removed.`);
+      queryClient.invalidateQueries({ queryKey: ['role-assignments'] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to remove assignment(s)');
+    },
+  });
 
   const assignMutation = useMutation({
     mutationFn: async () => {
@@ -1219,7 +2075,7 @@ function RoleAssignmentsView({ role, type }: { role: RoleType; type: 'property' 
     },
     {
       key: 'actions',
-      header: 'Action',
+      header: 'Actions',
       render: (p) => (
         <div className="flex items-center justify-end gap-1.5">
           {p.agent_id ? (
@@ -1235,10 +2091,10 @@ function RoleAssignmentsView({ role, type }: { role: RoleType; type: 'property' 
               <button
                 type="button"
                 disabled={unassignMutation.isPending}
-                onClick={() => unassignMutation.mutate(p.property_id)}
+                onClick={() => setToDelete([p.property_id])}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition cursor-pointer"
               >
-                <X className="h-3 w-3" />
+                <Trash2 className="h-3 w-3" />
                 Unassign
               </button>
             </>
@@ -1302,12 +2158,37 @@ function RoleAssignmentsView({ role, type }: { role: RoleType; type: 'property' 
           </div>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="mb-4">
+            <BulkActionsBar
+              count={selectedIds.size}
+              onDelete={() => setToDelete(Array.from(selectedIds))}
+              onClear={() => setSelectedIds(new Set())}
+            />
+          </div>
+        )}
+
         <DataTable
           columns={columns}
           rows={filtered}
           loading={isLoading}
           getRowId={(p) => p.property_id}
           pageSize={10}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.has(id) ? next.delete(id) : next.add(id);
+              return next;
+            })
+          }
+          onSelectAll={(ids) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+              return next;
+            })
+          }
           emptyState={
             <div className="text-center py-10 space-y-3">
               <Building2 className="h-10 w-10 text-navy-300 mx-auto" />
@@ -1407,6 +2288,43 @@ function RoleAssignmentsView({ role, type }: { role: RoleType; type: 'property' 
                 onClick={() => assignMutation.mutate()}
               >
                 Confirm Assignment
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete / Unassign Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Unassign ${toDelete.length === 1 ? 'Property' : `${toDelete.length} Properties`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800">
+                <p className="font-bold mb-1">Remove Agent Coverage?</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The assigned agent will be unassigned from this property listing.'
+                    : `All ${toDelete.length} selected properties will have their agent assignments cleared.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Confirm Unassign
               </Button>
             </div>
           </div>
@@ -1644,9 +2562,29 @@ function RoleFollowUpsView({ role }: { role: RoleType }) {
   const [timeSlot, setTimeSlot] = useState('11:00 AM - 12:00 PM');
   const [notes, setNotes] = useState('');
 
+  // Selection & Bulk Delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   const { data: followUps = [], isLoading } = useQuery({
     queryKey: ['role-follow-ups', role],
     queryFn: () => api.fetchFollowUps(role),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await supabase.from('role_follow_ups').delete().in('id', ids);
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} follow-up${deletedIds.length !== 1 ? 's' : ''} deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['role-follow-ups', role] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete follow-up(s)');
+    },
   });
 
   const createMutation = useMutation({
@@ -1696,16 +2634,25 @@ function RoleFollowUpsView({ role }: { role: RoleType }) {
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
       render: (a) => {
-        if (a.status !== 'completed') {
-          return (
-            <Button size="sm" variant="ghost" icon={<Check className="h-3.5 w-3.5 text-emerald-600" />} onClick={() => completeMutation.mutate(a.id)}>
-              Done
-            </Button>
-          );
-        }
-        return null;
+        return (
+          <div className="flex items-center gap-1.5 justify-end">
+            {a.status !== 'completed' && (
+              <Button size="sm" variant="ghost" icon={<Check className="h-3.5 w-3.5 text-emerald-600" />} onClick={() => completeMutation.mutate(a.id)}>
+                Done
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50"
+              title="Delete Follow-up Permanently"
+              onClick={() => setToDelete([a.id])}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+            />
+          </div>
+        );
       },
     },
   ];
@@ -1720,12 +2667,36 @@ function RoleFollowUpsView({ role }: { role: RoleType }) {
       </div>
 
       <Card className="p-5">
+        {selectedIds.size > 0 && (
+          <div className="mb-4">
+            <BulkActionsBar
+              count={selectedIds.size}
+              onDelete={() => setToDelete(Array.from(selectedIds))}
+              onClear={() => setSelectedIds(new Set())}
+            />
+          </div>
+        )}
         <DataTable
           columns={columns}
           rows={followUps}
           loading={isLoading}
           getRowId={(a) => a.id}
           pageSize={10}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.has(id) ? next.delete(id) : next.add(id);
+              return next;
+            })
+          }
+          onSelectAll={(ids) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+              return next;
+            })
+          }
           emptyState={<EmptyState title="No pending follow-ups" description="All scheduled follow-up tasks are completed." />}
         />
       </Card>
@@ -1760,6 +2731,43 @@ function RoleFollowUpsView({ role }: { role: RoleType }) {
               <Button variant="ghost" onClick={() => setScheduleModalOpen(false)}>Cancel</Button>
               <Button variant="primary" disabled={!contactName || createMutation.isPending} onClick={() => createMutation.mutate()}>
                 Save Schedule
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Follow-up' : `${toDelete.length} Follow-ups`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold mb-1">This action cannot be undone.</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The scheduled follow-up will be permanently removed from the system.'
+                    : `All ${toDelete.length} selected follow-up records will be permanently removed from the system.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
               </Button>
             </div>
           </div>
@@ -1993,9 +3001,29 @@ function RolePayoutsView({ role }: { role: RoleType }) {
   const [payoutModalItem, setPayoutModalItem] = useState<any | null>(null);
   const [txRef, setTxRef] = useState('');
 
+  // Selection & Bulk Delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   const { data: payouts = [], isLoading } = useQuery({
     queryKey: ['role-payouts', role],
     queryFn: () => api.fetchRolePayouts(role),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await supabase.from('payout_withdrawals').delete().in('id', ids);
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} payout record${deletedIds.length !== 1 ? 's' : ''} deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['role-payouts', role] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete payout record(s)');
+    },
   });
 
   const processMutation = useMutation({
@@ -2025,16 +3053,25 @@ function RolePayoutsView({ role }: { role: RoleType }) {
     { key: 'created_at', header: 'Date', render: (p) => formatDate(p.created_at) },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
       render: (p) => {
-        if (p.status !== 'completed') {
-          return (
-            <Button size="sm" variant="outline" className="text-xs" onClick={() => setPayoutModalItem(p)}>
-              Approve Payout
-            </Button>
-          );
-        }
-        return null;
+        return (
+          <div className="flex items-center gap-1.5 justify-end">
+            {p.status !== 'completed' && (
+              <Button size="sm" variant="outline" className="text-xs" onClick={() => setPayoutModalItem(p)}>
+                Approve Payout
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50"
+              title="Delete Record"
+              onClick={() => setToDelete([p.id])}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+            />
+          </div>
+        );
       },
     },
   ];
@@ -2042,12 +3079,36 @@ function RolePayoutsView({ role }: { role: RoleType }) {
   return (
     <div className="space-y-4">
       <Card className="p-5">
+        {selectedIds.size > 0 && (
+          <div className="mb-4">
+            <BulkActionsBar
+              count={selectedIds.size}
+              onDelete={() => setToDelete(Array.from(selectedIds))}
+              onClear={() => setSelectedIds(new Set())}
+            />
+          </div>
+        )}
         <DataTable
           columns={columns}
           rows={payouts}
           loading={isLoading}
           getRowId={(i) => i.id}
           pageSize={10}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.has(id) ? next.delete(id) : next.add(id);
+              return next;
+            })
+          }
+          onSelectAll={(ids) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              ids.forEach((id) => (next.has(id) ? next.delete(id) : next.add(id)));
+              return next;
+            })
+          }
           emptyState={<EmptyState title="No payout records" description="No commission payouts logged." />}
         />
       </Card>
@@ -2076,6 +3137,43 @@ function RolePayoutsView({ role }: { role: RoleType }) {
           </div>
         </Modal>
       )}
+
+      {/* Delete Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Record' : `${toDelete.length} Records`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold mb-1">This action cannot be undone.</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The payout disbursement record will be permanently deleted.'
+                    : `All ${toDelete.length} selected payout disbursement records will be permanently deleted.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -2095,6 +3193,10 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
+  // Selection & Bulk Delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
+
   // Verification Checklist State
   const [checklist, setChecklist] = useState({
     identityMatch: true,
@@ -2113,6 +3215,22 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
   const { data: docs = [], isLoading, refetch } = useQuery({
     queryKey: ['role-documents', role],
     queryFn: () => api.fetchRoleDocuments(role),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await supabase.from('role_compliance_documents').delete().in('id', ids);
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
+      addToast('success', `${deletedIds.length} document${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
+      queryClient.invalidateQueries({ queryKey: ['role-documents', role] });
+      setSelectedIds(new Set());
+      setToDelete(null);
+    },
+    onError: (err: any) => {
+      addToast('error', err?.message || 'Failed to delete document(s)');
+    },
   });
 
   // Real-time synchronization for compliance documents & applications
@@ -2183,7 +3301,7 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
       setNewDocMemberName('');
     },
     onError: (err: any) => {
-      addToast('error', err.message || 'Failed to add document');
+      addToast('error', err.message || 'Failed to create document record');
     },
   });
 
@@ -2192,7 +3310,8 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
     const verified = docs.filter((d: any) => d.verification_status === 'verified').length;
     const pending = docs.filter((d: any) => d.verification_status === 'pending' || !d.verification_status).length;
     const rejected = docs.filter((d: any) => d.verification_status === 'rejected').length;
-    return { total, verified, pending, rejected };
+    const complianceRate = total > 0 ? Math.round((verified / total) * 100) : 100;
+    return { total, verified, pending, rejected, complianceRate };
   }, [docs]);
 
   const filtered = useMemo(() => {
@@ -2234,50 +3353,15 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
 
   return (
     <div className="space-y-6">
-      {/* 1. Real-time KPI Ribbon with Click-to-Filter */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div
-          onClick={() => setStatusFilter('all')}
-          className={cn(
-            'cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5',
-            statusFilter === 'all' ? 'ring-2 ring-navy-600 rounded-2xl shadow-sm' : ''
-          )}
-        >
-          <StatCard label="Total Dossiers" value={stats.total} icon={<FileText className="h-5 w-5 text-navy-600" />} accent="navy" />
-        </div>
-        <div
-          onClick={() => setStatusFilter('verified')}
-          className={cn(
-            'cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5',
-            statusFilter === 'verified' ? 'ring-2 ring-emerald-600 rounded-2xl shadow-sm' : ''
-          )}
-        >
-          <StatCard label="Verified & Valid" value={stats.verified} icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />} accent="success" />
-        </div>
-        <div
-          onClick={() => setStatusFilter('pending')}
-          className={cn(
-            'cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5',
-            statusFilter === 'pending' ? 'ring-2 ring-amber-500 rounded-2xl shadow-sm' : ''
-          )}
-        >
-          <StatCard label="Pending Review" value={stats.pending} icon={<Clock className="h-5 w-5 text-amber-600" />} accent="gold" />
-        </div>
-        <div
-          onClick={() => setStatusFilter('rejected')}
-          className={cn(
-            'cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5',
-            statusFilter === 'rejected' ? 'ring-2 ring-rose-600 rounded-2xl shadow-sm' : ''
-          )}
-        >
-          <StatCard label="Rejected / Incomplete" value={stats.rejected} icon={<XCircle className="h-5 w-5 text-rose-600" />} accent="navy" />
-        </div>
+        <StatCard label="Total Dossiers" value={stats.total} icon={<FileText className="h-5 w-5 text-navy-600" />} accent="navy" />
+        <StatCard label="Verified & Valid" value={stats.verified} icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />} accent="success" />
+        <StatCard label="Pending Review" value={stats.pending} icon={<Clock className="h-5 w-5 text-amber-600" />} accent="gold" />
+        <StatCard label="Rejected / Incomplete" value={stats.rejected} icon={<XCircle className="h-5 w-5 text-rose-600" />} accent="navy" />
       </div>
 
       <Card className="p-5">
-        {/* 2. Unified Advanced Filter & Action Toolbar */}
         <div className="space-y-3.5 mb-5">
-          {/* Top Row: Search & Actions */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-navy-400" />
@@ -2291,7 +3375,6 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Category Filter */}
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
@@ -2305,29 +3388,21 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
                 <option value="mou_agreement">Brokerage MoU Agreements</option>
               </select>
 
-              {/* View Toggle */}
               <div className="flex items-center border border-navy-200 rounded-xl p-0.5 bg-slate-50">
                 <button
                   onClick={() => setViewMode('table')}
-                  className={cn(
-                    'px-3 py-1.5 text-xs font-bold rounded-lg transition-all',
-                    viewMode === 'table' ? 'bg-white shadow-xs text-navy-900' : 'text-navy-500 hover:text-navy-800'
-                  )}
+                  className={cn('px-3 py-1.5 text-xs font-bold rounded-lg transition-all', viewMode === 'table' ? 'bg-white shadow-xs text-navy-900' : 'text-navy-500 hover:text-navy-800')}
                 >
                   Table
                 </button>
                 <button
                   onClick={() => setViewMode('cards')}
-                  className={cn(
-                    'px-3 py-1.5 text-xs font-bold rounded-lg transition-all',
-                    viewMode === 'cards' ? 'bg-white shadow-xs text-navy-900' : 'text-navy-500 hover:text-navy-800'
-                  )}
+                  className={cn('px-3 py-1.5 text-xs font-bold rounded-lg transition-all', viewMode === 'cards' ? 'bg-white shadow-xs text-navy-900' : 'text-navy-500 hover:text-navy-800')}
                 >
                   Cards
                 </button>
               </div>
 
-              {/* Upload Button */}
               <Button
                 size="sm"
                 variant="primary"
@@ -2340,95 +3415,65 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
             </div>
           </div>
 
-          {/* Bottom Row: Status Filter Tabs */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
             <div className="flex items-center gap-1.5 overflow-x-auto">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={cn(
-                  'px-3 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5',
-                  statusFilter === 'all'
-                    ? 'bg-navy-900 text-white'
-                    : 'bg-slate-100 text-navy-600 hover:bg-slate-200'
-                )}
-              >
-                All Documents <span className="opacity-75">({stats.total})</span>
+              <button onClick={() => setStatusFilter('all')} className={cn('px-3 py-1 text-xs font-bold rounded-lg transition-colors', statusFilter === 'all' ? 'bg-navy-900 text-white' : 'bg-slate-100 text-navy-600 hover:bg-slate-200')}>
+                All Documents ({stats.total})
               </button>
-              <button
-                onClick={() => setStatusFilter('verified')}
-                className={cn(
-                  'px-3 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5',
-                  statusFilter === 'verified'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                )}
-              >
-                Verified & Valid <span className="opacity-75">({stats.verified})</span>
+              <button onClick={() => setStatusFilter('verified')} className={cn('px-3 py-1 text-xs font-bold rounded-lg transition-colors', statusFilter === 'verified' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100')}>
+                Verified & Valid ({stats.verified})
               </button>
-              <button
-                onClick={() => setStatusFilter('pending')}
-                className={cn(
-                  'px-3 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5',
-                  statusFilter === 'pending'
-                    ? 'bg-amber-500 text-white'
-                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                )}
-              >
-                Pending Review <span className="opacity-75">({stats.pending})</span>
+              <button onClick={() => setStatusFilter('pending')} className={cn('px-3 py-1 text-xs font-bold rounded-lg transition-colors', statusFilter === 'pending' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100')}>
+                Pending Review ({stats.pending})
               </button>
-              <button
-                onClick={() => setStatusFilter('rejected')}
-                className={cn(
-                  'px-3 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5',
-                  statusFilter === 'rejected'
-                    ? 'bg-rose-600 text-white'
-                    : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                )}
-              >
-                Rejected <span className="opacity-75">({stats.rejected})</span>
+              <button onClick={() => setStatusFilter('rejected')} className={cn('px-3 py-1 text-xs font-bold rounded-lg transition-colors', statusFilter === 'rejected' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100')}>
+                Rejected ({stats.rejected})
               </button>
-            </div>
-
-            <div className="text-xs text-navy-500 font-medium">
-              Showing <span className="font-bold text-navy-900">{filtered.length}</span> of {docs.length} records
             </div>
           </div>
         </div>
 
-        {/* 3. Tabular & Grid Data Views */}
+        {selectedIds.size > 0 && (
+          <div className="mb-4">
+            <BulkActionsBar
+              count={selectedIds.size}
+              onDelete={() => setToDelete(Array.from(selectedIds))}
+              onClear={() => setSelectedIds(new Set())}
+            />
+          </div>
+        )}
+
         {isLoading ? (
           <div className="space-y-3 py-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-xl" />
-            ))}
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 space-y-3 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
             <FileText className="h-12 w-12 text-navy-300 mx-auto" />
             <h4 className="font-bold text-navy-800 text-base">No Compliance Documents Found</h4>
-            <p className="text-xs text-navy-500 max-w-sm mx-auto">
-              No verification or compliance files match your selected filters. You can record a verified dossier directly.
-            </p>
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => setUploadModalOpen(true)}
-              className="mt-2 font-bold"
-            >
-              + Upload Compliance Document
-            </Button>
+            <Button size="sm" variant="primary" onClick={() => setUploadModalOpen(true)} className="mt-2 font-bold">+ Upload Compliance Document</Button>
           </div>
         ) : viewMode === 'table' ? (
           <div className="overflow-x-auto border border-slate-200/80 rounded-2xl shadow-2xs bg-white">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-navy-600 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <tr>
+                  <th className="py-3.5 px-4 w-10">
+                    <input
+                      type="checkbox"
+                      className="rounded border-navy-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                      checked={filtered.length > 0 && filtered.every((d: any) => selectedIds.has(d.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedIds(new Set(filtered.map((d: any) => d.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                    />
+                  </th>
                   <th className="py-3.5 px-4">Document & Type</th>
                   <th className="py-3.5 px-4">Applicant / Member</th>
                   <th className="py-3.5 px-4">License / Reg. ID</th>
                   <th className="py-3.5 px-4">Verification Status</th>
-                  <th className="py-3.5 px-4">Uploaded Date</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+                  <th className="py-3.5 px-4">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -2440,142 +3485,61 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
 
                   return (
                     <tr key={d.id} className="hover:bg-slate-50/80 transition-colors group">
-                      {/* Document Title & Type */}
+                      <td className="py-3.5 px-4">
+                        <input
+                          type="checkbox"
+                          className="rounded border-navy-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                          checked={selectedIds.has(d.id)}
+                          onChange={() => {
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              next.has(d.id) ? next.delete(d.id) : next.add(d.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-start gap-3">
                           {getDocTypeIcon(d.document_type)}
                           <div className="min-w-0">
                             <button
-                              onClick={() => {
-                                setReviewDoc(d);
-                                setRejectionReason(d.rejection_reason || '');
-                              }}
-                              className="font-bold text-navy-900 hover:text-red-600 transition-colors text-left block text-xs leading-snug line-clamp-2"
+                              onClick={() => { setReviewDoc(d); setRejectionReason(d.rejection_reason || ''); }}
+                              className="font-bold text-navy-900 hover:text-red-600 transition-colors text-left block text-xs"
                             >
                               {d.title}
                             </button>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="capitalize text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                                {d.document_type?.replace(/_/g, ' ') || 'Compliance File'}
-                              </span>
-                              {d.file_url && d.file_url !== '#' && (
-                                <a
-                                  href={d.file_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[11px] text-red-600 hover:underline flex items-center gap-1 font-semibold"
-                                >
-                                  <ExternalLink className="h-3 w-3" /> View File
-                                </a>
-                              )}
-                            </div>
+                            <span className="capitalize text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">{d.document_type?.replace(/_/g, ' ')}</span>
                           </div>
                         </div>
                       </td>
-
-                      {/* Applicant Profile */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-full bg-slate-100 text-slate-700 font-extrabold flex items-center justify-center text-xs shrink-0 border border-slate-200">
-                            {initials}
-                          </div>
-                          <div className="space-y-0.5 min-w-0">
-                            <div className="flex items-center gap-1 font-bold text-navy-900 text-xs">
-                              <span className="truncate">{applicantName}</span>
-                              <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded border border-emerald-100">
-                                {d.user?.role || 'Agent'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-navy-500 truncate">{d.user?.email || 'Registered User'}</p>
-                            {d.user?.phone && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-navy-400">
-                                <span>{d.user.phone}</span>
-                                <a
-                                  href={`https://wa.me/${d.user.phone.replace(/[^0-9]/g, '')}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-emerald-600 hover:text-emerald-700 font-semibold"
-                                  title="Chat on WhatsApp"
-                                >
-                                  <MessageSquare className="h-3 w-3 inline" />
-                                </a>
-                              </div>
-                            )}
+                          <div className="h-8 w-8 rounded-full bg-slate-100 text-slate-700 font-extrabold flex items-center justify-center text-xs shrink-0 border border-slate-200">{initials}</div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-navy-900 text-xs truncate">{applicantName}</div>
+                            <p className="text-[11px] text-navy-500 truncate">{d.user?.email}</p>
                           </div>
                         </div>
                       </td>
-
-                      {/* License ID */}
                       <td className="py-3.5 px-4">
                         <div className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-slate-800 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
                           <span>{d.license_number || 'TG-RERA / KYC'}</span>
-                          <button
-                            onClick={() => copyToClipboard(d.license_number || 'TG-RERA', d.id)}
-                            className="text-slate-400 hover:text-navy-800 transition-colors p-0.5"
-                            title="Copy License ID"
-                          >
+                          <button onClick={() => copyToClipboard(d.license_number || 'TG-RERA', d.id)} className="text-slate-400 hover:text-navy-800 p-0.5">
                             {copiedId === d.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
                           </button>
                         </div>
                       </td>
-
-                      {/* Verification Status */}
                       <td className="py-3.5 px-4">
-                        <div className="space-y-1">
-                          <span
-                            className={cn(
-                              'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border',
-                              isVer
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : isRej
-                                ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                : 'bg-amber-50 text-amber-700 border-amber-200'
-                            )}
-                          >
-                            {isVer ? <CheckCircle2 className="h-3.5 w-3.5" /> : isRej ? <XCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                            {isVer ? 'Verified & Valid' : isRej ? 'Rejected' : 'Pending Review'}
-                          </span>
-                          {isRej && d.rejection_reason && (
-                            <p className="text-[10px] text-rose-600 font-medium max-w-xs truncate" title={d.rejection_reason}>
-                              {d.rejection_reason}
-                            </p>
-                          )}
-                        </div>
+                        <span className={cn('inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border', isVer ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : isRej ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>
+                          {isVer ? <CheckCircle2 className="h-3.5 w-3.5" /> : isRej ? <XCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                          {isVer ? 'Verified' : isRej ? 'Rejected' : 'Pending'}
+                        </span>
                       </td>
-
-                      {/* Upload Date */}
-                      <td className="py-3.5 px-4 text-slate-500 text-xs font-medium">
-                        {formatDate(d.created_at)}
-                      </td>
-
-                      {/* Action Triggers */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 px-2.5 font-bold text-navy-800 hover:bg-slate-100 border-slate-200 shadow-2xs"
-                            onClick={() => {
-                              setReviewDoc(d);
-                              setRejectionReason(d.rejection_reason || '');
-                            }}
-                          >
-                            Inspect & Review
-                          </Button>
-                          {d.verification_status !== 'verified' && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-xs h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 font-extrabold"
-                              disabled={reviewMutation.isPending}
-                              onClick={() => {
-                                setReviewDoc(d);
-                                reviewMutation.mutate({ status: 'verified' });
-                              }}
-                            >
-                              Verify
-                            </Button>
-                          )}
+                          <Button size="sm" variant="outline" className="text-xs h-7 px-2.5 font-bold text-navy-800" onClick={() => { setReviewDoc(d); setRejectionReason(d.rejection_reason || ''); }}>Review</Button>
+                          <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-red-600 hover:bg-red-50" title="Delete" onClick={() => setToDelete([d.id])} icon={<Trash2 className="h-3.5 w-3.5" />} />
                         </div>
                       </td>
                     </tr>
@@ -2585,21 +3549,30 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
             </table>
           </div>
         ) : (
-          /* Cards Grid View */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((doc: any) => {
               const isVer = doc.verification_status === 'verified';
               const isRej = doc.verification_status === 'rejected';
-
               return (
                 <Card key={doc.id} className="p-5 flex flex-col justify-between hover:shadow-md transition-all border border-slate-200/80">
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          className="rounded border-navy-300 text-red-600 focus:ring-red-500 cursor-pointer mt-0.5"
+                          checked={selectedIds.has(doc.id)}
+                          onChange={() => {
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              next.has(doc.id) ? next.delete(doc.id) : next.add(doc.id);
+                              return next;
+                            });
+                          }}
+                        />
                         {getDocTypeIcon(doc.document_type)}
                         <div className="min-w-0">
                           <h4 className="font-bold text-navy-900 text-sm leading-tight line-clamp-2">{doc.title}</h4>
-                          <p className="text-[11px] text-navy-500 capitalize mt-0.5">{doc.document_type?.replace(/_/g, ' ') || 'Compliance Dossier'}</p>
                         </div>
                       </div>
                       <Badge variant={isVer ? 'success' : isRej ? 'danger' : 'warning'}>
@@ -2640,6 +3613,14 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
                       >
                         Inspect
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs text-red-600 hover:bg-red-50"
+                        title="Delete Document"
+                        onClick={() => setToDelete([doc.id])}
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                      />
                     </div>
                   </div>
                 </Card>
@@ -2873,6 +3854,43 @@ function RoleDocumentsView({ role }: { role: RoleType }) {
                 onClick={() => createDocMutation.mutate()}
               >
                 Save Compliance Document
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Document Confirmation Modal */}
+      {toDelete && (
+        <Modal
+          isOpen={!!toDelete}
+          onClose={() => setToDelete(null)}
+          title={`Permanently Delete ${toDelete.length === 1 ? 'Document' : `${toDelete.length} Documents`}`}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-red-800">
+                <p className="font-bold mb-1">This action cannot be undone.</p>
+                <p>
+                  {toDelete.length === 1
+                    ? 'The compliance document and its verification record will be permanently deleted.'
+                    : `All ${toDelete.length} selected compliance documents and their verification records will be permanently deleted.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(toDelete)}
+              >
+                Delete Permanently
               </Button>
             </div>
           </div>

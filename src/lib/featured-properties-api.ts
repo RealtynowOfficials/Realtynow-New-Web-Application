@@ -304,7 +304,8 @@ export async function fetchEligibleProperties(params?: {
     q = q.eq('city_id', params.cityId);
   }
 
-  let { data, error } = await q;
+  const { data: initialData, error } = await q;
+  let data = initialData;
 
   // Fallback to properties table directly if view is empty or errors
   if (error || !data || data.length === 0) {

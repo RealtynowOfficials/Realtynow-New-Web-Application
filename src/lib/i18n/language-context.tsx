@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import i18n, { SUPPORTED_LANGUAGES, LanguageMeta } from './i18n';
+import i18n, { SUPPORTED_LANGUAGES, ALL_NAMESPACES, LanguageMeta } from './i18n';
 import { supabase } from '../supabase';
 import { useAuth } from '../auth';
 
@@ -13,97 +13,116 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-const ALL_NAMESPACES = [
-  'common',
-  'home',
-  'auth',
-  'property',
-  'dashboard',
-  'profile',
-  'agent',
-  'admin',
-  'validation',
-  'notifications',
-  'ai',
-];
-
-const SUPPORTED_CODES = new Set(['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'bn', 'gu', 'pa']);
+const SUPPORTED_CODES = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const [activeLanguages, setActiveLanguages] = useState<LanguageMeta[]>(SUPPORTED_LANGUAGES);
   const [langCode, setLangCode] = useState<string>(() => {
-    let saved = localStorage.getItem('realtynow_language');
-    // Force reset if Telugu was accidentally saved as default
-    if (saved === 'te') {
-      localStorage.setItem('realtynow_language', 'en');
-      saved = 'en';
+    if (typeof window === 'undefined') return 'en';
+    const saved = localStorage.getItem('realtynow_language');
+    if (saved && SUPPORTED_CODES.has(saved)) {
+      return saved;
     }
-    // If no saved preference or saved value is unsupported, default to English
-    if (!saved || !SUPPORTED_CODES.has(saved)) {
-      localStorage.setItem('realtynow_language', 'en');
-      return 'en';
+    // Check browser language
+    try {
+      const browserLang = navigator.language?.split('-')[0]?.toLowerCase();
+      if (browserLang && SUPPORTED_CODES.has(browserLang)) {
+        localStorage.setItem('realtynow_language', browserLang);
+        return browserLang;
+      }
+    } catch {
+      // ignore
     }
-    return saved;
+    localStorage.setItem('realtynow_language', 'en');
+    return 'en';
   });
+
   const [loading, setLoading] = useState<boolean>(false);
+
+  // Sync active languages from database
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('languages')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled || error || !data || data.length === 0) return;
+        const mapped: LanguageMeta[] = data.map((d: any) => ({
+          code: d.language_code,
+          name: d.language_name,
+          nativeName: d.native_name,
+          bcp47: `${d.language_code}-IN`,
+          displayOrder: d.display_order ?? 0,
+        }));
+        setActiveLanguages(mapped);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Subscribe to i18n languageChanged event for instant reactive UI updates
   useEffect(() => {
     const handleLangChange = (lng: string) => {
       setLangCode(lng);
-      document.documentElement.lang = lng;
+      if (typeof document !== 'undefined') {
+        document.documentElement.lang = lng;
+        document.documentElement.dir = 'ltr';
+      }
     };
     i18n.on('languageChanged', handleLangChange);
 
-    // Initial sync — enforce English as fallback if localStorage value is missing/unsupported
+    // Initial sync
     const rawLang = localStorage.getItem('realtynow_language') || 'en';
     const initialLang = SUPPORTED_CODES.has(rawLang) ? rawLang : 'en';
-    if (initialLang !== rawLang) {
-      localStorage.setItem('realtynow_language', 'en');
-    }
     if (i18n.language !== initialLang) {
       i18n.changeLanguage(initialLang);
     }
-    document.documentElement.lang = initialLang;
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = initialLang;
+      document.documentElement.dir = 'ltr';
+    }
 
     return () => {
       i18n.off('languageChanged', handleLangChange);
     };
   }, []);
 
-  // Sync the user's saved language preference from Supabase on login, so a preference set on
-  // one device carries over to another. This was previously disabled entirely because a bad
-  // system default ('te') had been written into user_preferences for accounts that never chose
-  // it — migration 0028 (20260725000000_0028_reset_default_language_to_english.sql) fixed that
-  // at the source (reset corrupted rows to 'en' and corrected `languages.is_default`), so it's
-  // now safe to read the preference back; only apply it if it's a currently supported code and
-  // differs from what's already active, so it can't fight an in-session language change.
+  // Sync user saved preference from database when authenticated
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
+
     supabase
       .from('user_preferences')
       .select('language_code')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
         const saved = data?.language_code;
         if (saved && SUPPORTED_CODES.has(saved) && saved !== i18n.language) {
           i18n.changeLanguage(saved);
           setLangCode(saved);
           localStorage.setItem('realtynow_language', saved);
-          document.documentElement.lang = saved;
+          if (typeof document !== 'undefined') {
+            document.documentElement.lang = saved;
+            document.documentElement.dir = 'ltr';
+          }
         }
       });
+
     return () => {
       cancelled = true;
     };
   }, [user]);
 
   const currentLanguage = useMemo(() => {
-    return SUPPORTED_LANGUAGES.find((l) => l.code === langCode) || SUPPORTED_LANGUAGES[0];
-  }, [langCode]);
+    return activeLanguages.find((l) => l.code === langCode) || SUPPORTED_LANGUAGES.find((l) => l.code === langCode) || SUPPORTED_LANGUAGES[0];
+  }, [activeLanguages, langCode]);
 
   const changeLanguage = async (code: string) => {
     const target = SUPPORTED_LANGUAGES.find((l) => l.code === code);
@@ -114,7 +133,10 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await i18n.changeLanguage(code);
       setLangCode(code);
       localStorage.setItem('realtynow_language', code);
-      document.documentElement.lang = code;
+      if (typeof document !== 'undefined') {
+        document.documentElement.lang = code;
+        document.documentElement.dir = 'ltr';
+      }
 
       // Persist to Supabase database if authenticated
       if (user) {
@@ -135,27 +157,42 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     (key: string, fallback?: string): string => {
       if (!key) return fallback || '';
 
-      // 1. Dot notation namespace resolution (e.g., "common.sale", "home.heroTitle", "property.bedrooms")
-      if (key.includes('.')) {
+      // 1. Colon or Dot notation namespace resolution (e.g., "dashboard:dashboard", "dashboard.dashboard", "common:saved")
+      let ns = '';
+      let subKey = key;
+      if (key.includes(':')) {
+        const parts = key.split(':');
+        ns = parts[0];
+        subKey = parts.slice(1).join(':');
+      } else if (key.includes('.')) {
         const parts = key.split('.');
-        const ns = parts[0];
-        const subKey = parts.slice(1).join('.');
+        ns = parts[0];
+        subKey = parts.slice(1).join('.');
+      }
 
+      if (ns && subKey) {
         const nsVal = i18n.t(subKey, { ns, lng: langCode, defaultValue: '' });
-        if (nsVal && nsVal !== subKey && nsVal !== key) {
+        if (nsVal && nsVal !== subKey && nsVal !== key && nsVal !== `${ns}:${subKey}` && nsVal !== `${ns}.${subKey}`) {
           return nsVal;
+        }
+
+        // Try direct key query
+        const directVal = i18n.t(key, { ns, lng: langCode, defaultValue: '' });
+        if (directVal && directVal !== key && directVal !== `${ns}:${key}` && directVal !== `${ns}.${key}`) {
+          return directVal;
         }
       }
 
-      // 2. Multi-namespace fallback search in active language
-      for (const ns of ALL_NAMESPACES) {
-        const val = i18n.t(key, { ns, lng: langCode, defaultValue: '' });
-        if (val && val !== key && val !== `${ns}:${key}`) {
+      // 2. Search active language across all namespaces
+      for (const curNs of ALL_NAMESPACES) {
+        const val = i18n.t(subKey || key, { ns: curNs, lng: langCode, defaultValue: '' });
+        if (val && val !== (subKey || key) && val !== `${curNs}:${subKey || key}` && val !== `${curNs}.${subKey || key}`) {
           return val;
         }
       }
 
-      return fallback || key;
+      // 3. Fallback string or key
+      return fallback || subKey || key;
     },
     [langCode],
   );
@@ -164,11 +201,11 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     () => ({
       currentLanguage,
       changeLanguage,
-      supportedLanguages: SUPPORTED_LANGUAGES,
+      supportedLanguages: activeLanguages,
       loading,
       t,
     }),
-    [currentLanguage, loading, t],
+    [activeLanguages, currentLanguage, loading, t],
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

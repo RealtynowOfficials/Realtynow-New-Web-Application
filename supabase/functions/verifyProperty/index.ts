@@ -415,14 +415,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // Notify the owner of the new verification status (best-effort).
-    if (property.owner_id) {
+    // Note: Do not send "AI verification: Rejected" notifications to the owner
+    // while the property is still pending manual review by the admin team.
+    if (property.owner_id && status !== 'Rejected') {
       const title = `AI verification: ${status}`;
       const bodyText =
         status === 'AI Verified'
           ? `Your property "${property.title}" passed AI verification with a score of ${score}/100 and is moving forward for publishing.`
-          : status === 'Manual Review'
-            ? `Your property "${property.title}" needs a manual review by our team before it can be published (AI score ${score}/100).`
-            : `Your property "${property.title}" was flagged by AI verification (score ${score}/100). Please review and resubmit.`;
+          : `Your property "${property.title}" needs a manual review by our team before it can be published (AI score ${score}/100).`;
       await supabase
         .rpc('notify_user', {
           p_user_id: property.owner_id,

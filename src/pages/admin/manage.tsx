@@ -62,7 +62,7 @@ export function AdminCustomers() {
   const toast = useToast();
   const token = session?.access_token ?? '';
 
-  const [toDelete, setToDelete] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Profile | null>(null);
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', status: 'active' });
@@ -88,12 +88,20 @@ export function AdminCustomers() {
   const stats = data?.stats;
 
   const deleteMutation = useMutation({
-    mutationFn: async (ids: string[]) => callAdminCustomers('delete', token, { customerIds: ids }),
-    onSuccess: () => {
+    mutationFn: async (ids: string[]) => {
+      try {
+        await callAdminCustomers('delete', token, { customerIds: ids });
+      } catch {
+        const { deleteDirectoryMembers } = await import('../../lib/role-crm-api');
+        await deleteDirectoryMembers(ids, 'customer' as any);
+      }
+      return ids;
+    },
+    onSuccess: (deletedIds) => {
       queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
       setToDelete(null);
       setSelected(new Set());
-      toast.addToast('success', 'Customer deleted.');
+      toast.addToast('success', `${deletedIds.length} customer${deletedIds.length !== 1 ? 's' : ''} permanently deleted.`);
     },
     onError: (e: any) => toast.addToast('error', e.message || 'Failed to delete customer.'),
   });
@@ -121,8 +129,9 @@ export function AdminCustomers() {
     try {
       await callAdminCustomers('update-status', token, { customerId: p.id, status: nextStatus });
       queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+      toast.addToast('success', `Customer status updated to ${nextStatus}.`);
     } catch (e: any) {
-      toast.addToast('error', e.message || 'Failed to update status.');
+      toast.addToast('error', e.message || 'Status update failed.');
     }
   };
 
@@ -133,9 +142,9 @@ export function AdminCustomers() {
       sortable: true,
       render: (p) => (
         <div className="flex items-center gap-3">
-          <Avatar name={`${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email} src={p.avatar_url} size={36} />
+          <Avatar name={`${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email} src={p.avatar_url} size={40} />
           <div>
-            <p className="font-medium text-navy-900">
+            <p className="font-bold text-navy-900">
               {p.first_name} {p.last_name}
             </p>
             <p className="text-xs text-navy-500">{p.email}</p>
@@ -148,7 +157,7 @@ export function AdminCustomers() {
       key: 'status',
       header: 'Status',
       render: (p) => (
-        <Badge variant={p.status === 'active' ? 'success' : p.status === 'suspended' || p.status === 'blocked' ? 'error' : 'warning'}>
+        <Badge variant={p.status === 'active' ? 'success' : p.status === 'suspended' ? 'warning' : 'default'}>
           {p.status}
         </Badge>
       ),
@@ -187,7 +196,7 @@ export function AdminCustomers() {
             variant="ghost"
             className="text-error-600"
             icon={<Trash2 className="h-4 w-4" />}
-            onClick={() => setToDelete(p.id)}
+            onClick={() => setToDelete([p.id])}
           />
         </div>
       ),
@@ -200,9 +209,9 @@ export function AdminCustomers() {
   const statCards = stats
     ? [
         { label: 'Total Customers', value: stats.total, icon: Users },
-        { label: 'Active Customers', value: stats.active, icon: UserCheck },
-        { label: 'Inactive Customers', value: stats.inactive, icon: UserX },
-        { label: 'New This Month', value: stats.newThisMonth, icon: TrendingUp },
+        { label: 'Active', value: stats.active, icon: UserCheck },
+        { label: 'Inactive / Suspended', value: stats.inactive, icon: UserX },
+        { label: 'Joined This Month', value: stats.newThisMonth, icon: TrendingUp },
       ]
     : [];
 
@@ -275,7 +284,9 @@ export function AdminCustomers() {
         </Card>
       ) : (
         <>
-          <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
+          {selected.size > 0 && (
+            <BulkActionsBar count={selected.size} onDelete={() => setToDelete(Array.from(selected))} />
+          )}
           <DataTable
             columns={columns}
             rows={customers}
@@ -303,19 +314,23 @@ export function AdminCustomers() {
       <Modal
         open={!!toDelete}
         onClose={() => setToDelete(null)}
-        title="Delete customer"
+        title={`Permanently Delete ${toDelete?.length === 1 ? 'Customer' : `${toDelete?.length} Customers`}`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setToDelete(null)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={() => toDelete && deleteMutation.mutate([toDelete])}>
-              Delete
+            <Button variant="danger" loading={deleteMutation.isPending} onClick={() => toDelete && deleteMutation.mutate(toDelete)}>
+              Delete Permanently
             </Button>
           </>
         }
       >
-        <p className="text-sm text-navy-700">This will permanently delete the customer and all their properties.</p>
+        <p className="text-sm text-navy-700">
+          {toDelete?.length === 1
+            ? 'This will permanently delete the customer and all their properties.'
+            : `This will permanently delete all ${toDelete?.length} selected customers and all their properties.`}
+        </p>
       </Modal>
       <Modal
         open={!!editing}
@@ -503,7 +518,7 @@ export function AdminAgents() {
     avatar_url: '',
   });
   const [creating, setCreating] = useState(false);
-  const [toDelete, setToDelete] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Profile | null>(null);
   const [editForm, setEditForm] = useState({
@@ -675,12 +690,17 @@ export function AdminAgents() {
 
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      await supabase.from('profiles').delete().in('id', ids);
+      const { deleteDirectoryMembers } = await import('../../lib/role-crm-api');
+      await deleteDirectoryMembers(ids, 'agent');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+      toast.addToast('success', 'Agent account(s) permanently deleted.');
       setToDelete(null);
       setSelected(new Set());
+    },
+    onError: (err: any) => {
+      toast.addToast('error', err?.message || 'Failed to delete agent(s). Please try again.');
     },
   });
 
@@ -785,7 +805,7 @@ export function AdminAgents() {
             variant="ghost"
             className="text-error-600"
             icon={<Trash2 className="h-4 w-4" />}
-            onClick={() => setToDelete(p.id)}
+            onClick={() => setToDelete([p.id])}
           />
         </div>
       ),
@@ -847,7 +867,9 @@ export function AdminAgents() {
         </Card>
       )}
 
-      <BulkActionsBar count={selected.size} onDelete={() => deleteMutation.mutate([...selected])} />
+      {selected.size > 0 && (
+        <BulkActionsBar count={selected.size} onDelete={() => setToDelete(Array.from(selected))} />
+      )}
       <DataTable
         columns={columns}
         rows={data ?? []}
@@ -1104,19 +1126,23 @@ export function AdminAgents() {
       <Modal
         open={!!toDelete}
         onClose={() => setToDelete(null)}
-        title="Delete agent"
+        title={`Permanently Delete ${toDelete?.length === 1 ? 'Account' : `${toDelete?.length} Accounts`}`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setToDelete(null)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={() => toDelete && deleteMutation.mutate([toDelete])}>
-              Delete
+            <Button variant="danger" loading={deleteMutation.isPending} onClick={() => toDelete && deleteMutation.mutate(toDelete)}>
+              Delete Permanently
             </Button>
           </>
         }
       >
-        <p className="text-sm text-navy-700">This will permanently delete the agent account.</p>
+        <p className="text-sm text-navy-700">
+          {toDelete?.length === 1
+            ? 'This will permanently delete the agent account.'
+            : `This will permanently delete all ${toDelete?.length} selected agent accounts.`}
+        </p>
       </Modal>
     </DashboardLayout>
   );
@@ -1522,9 +1548,10 @@ export function AdminBlogs() {
   );
 }
 
-type MasterTab = 'cities' | 'localities' | 'types' | 'amenities' | 'statuses' | 'furnishing' | 'lead_sources' | 'builders';
+type MasterTab = 'categories' | 'cities' | 'localities' | 'types' | 'amenities' | 'statuses' | 'furnishing' | 'lead_sources' | 'builders';
 
 const MASTER_TABS: { key: MasterTab; label: string; subtitle: string }[] = [
+  { key: 'categories', label: 'Property Categories (17)', subtitle: 'Manage unified Mega Menu categories (12 Residential, 5 Commercial)' },
   { key: 'cities', label: 'Cities & States', subtitle: 'Manage operating cities and state locations' },
   { key: 'localities', label: 'Localities & Areas', subtitle: 'Manage neighborhoods, localities, and pin codes' },
   { key: 'types', label: 'Property Types', subtitle: 'Manage property categories (Residential, Commercial, PG, Land)' },
@@ -1537,7 +1564,7 @@ const MASTER_TABS: { key: MasterTab; label: string; subtitle: string }[] = [
 
 export function AdminMasterData() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<MasterTab>('cities');
+  const [tab, setTab] = useState<MasterTab>('categories');
   const [newName, setNewName] = useState('');
   const [extra, setExtra] = useState('');
   const [extra2, setExtra2] = useState('');
@@ -1570,6 +1597,15 @@ export function AdminMasterData() {
   ]);
 
   // DB Queries for dynamic master tables
+  const { data: categories } = useQuery({
+    queryKey: ['admin-categories', search],
+    queryFn: async () => {
+      const { data } = await supabase.from('property_categories').select('*').ilike('name', `%${search}%`).order('sort_order', { ascending: true });
+      return data ?? [];
+    },
+    enabled: tab === 'categories',
+  });
+
   const { data: cities } = useQuery({
     queryKey: ['admin-cities', search],
     queryFn: async () => {
@@ -1618,7 +1654,8 @@ export function AdminMasterData() {
   // Calculate items based on current tab
   const getItems = () => {
     let raw: Array<Record<string, unknown>> = [];
-    if (tab === 'cities') raw = (cities || []) as Array<Record<string, unknown>>;
+    if (tab === 'categories') raw = (categories || []) as Array<Record<string, unknown>>;
+    else if (tab === 'cities') raw = (cities || []) as Array<Record<string, unknown>>;
     else if (tab === 'localities') raw = (localities || []) as Array<Record<string, unknown>>;
     else if (tab === 'types') raw = (types || []) as Array<Record<string, unknown>>;
     else if (tab === 'amenities') raw = (amenities || []) as Array<Record<string, unknown>>;
@@ -1629,7 +1666,7 @@ export function AdminMasterData() {
 
     if (search.trim()) {
       const s = search.toLowerCase();
-      raw = raw.filter((i) => String(i.name || '').toLowerCase().includes(s) || String(i.category || i.state || '').toLowerCase().includes(s));
+      raw = raw.filter((i) => String(i.name || '').toLowerCase().includes(s) || String(i.category || i.type || i.state || '').toLowerCase().includes(s));
     }
     return raw;
   };
@@ -1640,7 +1677,18 @@ export function AdminMasterData() {
 
   const add = async () => {
     if (!newName.trim()) return;
-    if (tab === 'cities') {
+    if (tab === 'categories') {
+      const slug = newName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      await supabase.from('property_categories').insert({
+        name: newName,
+        slug,
+        type: (extra || 'residential') as 'residential' | 'commercial',
+        description: extra2 || null,
+        is_active: true,
+        sort_order: (categories?.length || 0) + 1,
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
+    } else if (tab === 'cities') {
       await supabase.from('cities').insert({ name: newName, state: extra || null, country: 'India' });
       queryClient.invalidateQueries({ queryKey: ['admin-cities'] });
     } else if (tab === 'localities') {
@@ -1680,7 +1728,10 @@ export function AdminMasterData() {
   };
 
   const remove = async (id: string) => {
-    if (tab === 'cities') {
+    if (tab === 'categories') {
+      await supabase.from('property_categories').delete().eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
+    } else if (tab === 'cities') {
       await supabase.from('cities').delete().eq('id', id);
       queryClient.invalidateQueries({ queryKey: ['admin-cities'] });
     } else if (tab === 'localities') {
@@ -1758,26 +1809,47 @@ export function AdminMasterData() {
         <div className="mb-5 p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row gap-3">
           <Input
             placeholder={
-              tab === 'cities'
-                ? 'City name (e.g. Hyderabad)'
-                : tab === 'localities'
-                  ? 'Locality name (e.g. Gachibowli)'
-                  : tab === 'types'
-                    ? 'Property type name (e.g. PG / Co-Living)'
-                    : tab === 'amenities'
-                      ? 'Amenity name (e.g. EV Charging Station)'
-                      : tab === 'statuses'
-                        ? 'Status name (e.g. Under Renovation)'
-                        : tab === 'furnishing'
-                          ? 'Furnishing name (e.g. Semi-Furnished)'
-                          : tab === 'lead_sources'
-                            ? 'Channel name (e.g. Instagram Ads)'
-                            : 'Developer name (e.g. Prestige Group)'
+              tab === 'categories'
+                ? 'Category name (e.g. Independent Houses)'
+                : tab === 'cities'
+                  ? 'City name (e.g. Hyderabad)'
+                  : tab === 'localities'
+                    ? 'Locality name (e.g. Gachibowli)'
+                    : tab === 'types'
+                      ? 'Property type name (e.g. PG / Co-Living)'
+                      : tab === 'amenities'
+                        ? 'Amenity name (e.g. EV Charging Station)'
+                        : tab === 'statuses'
+                          ? 'Status name (e.g. Under Renovation)'
+                          : tab === 'furnishing'
+                            ? 'Furnishing name (e.g. Semi-Furnished)'
+                            : tab === 'lead_sources'
+                              ? 'Channel name (e.g. Instagram Ads)'
+                              : 'Developer name (e.g. Prestige Group)'
             }
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             className="flex-1 rounded-xl text-xs bg-white"
           />
+
+          {tab === 'categories' && (
+            <>
+              <Select
+                value={extra || 'residential'}
+                onChange={(e) => setExtra(e.target.value)}
+                className="sm:max-w-[160px] rounded-xl text-xs bg-white"
+              >
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+              </Select>
+              <Input
+                placeholder="Description (e.g. Standalone homes)"
+                value={extra2}
+                onChange={(e) => setExtra2(e.target.value)}
+                className="sm:max-w-[240px] rounded-xl text-xs bg-white"
+              />
+            </>
+          )}
 
           {tab === 'cities' && (
             <Input

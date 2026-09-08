@@ -10,7 +10,6 @@ import {
   SlidersHorizontal,
   X,
   MapPin,
-  Home,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -44,14 +43,14 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import { type PropertyFilters, fetchPublishedProperties, sanitizeSearchQuery, normalizeSearchQuery } from '../../lib/properties';
+import { type PropertyFilters, normalizeSearchQuery } from '../../lib/properties';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { supabase } from '../../lib/supabase';
 import { useLanguageContext } from '../../lib/i18n/language-context';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../components/toast';
-import { formatCompactPrice, formatPrice, formatNumber, cn, generatePropertyUrl, getPropertyPrice, buildWhatsAppUrl } from '../../lib/utils';
-import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
+import { formatCompactPrice, formatNumber, cn, generatePropertyUrl, buildWhatsAppUrl } from '../../lib/utils';
+import { getPropertyPricingDisplay } from '../../lib/plot-pricing';
 import { sharePropertyNativeOrCopy } from '../../lib/share-service';
 import type { Property } from '../../lib/types';
 import { getCategoryMeta, normalizeCategorySlug } from '../../lib/categories';
@@ -60,7 +59,7 @@ import { ContactAgentModal } from '../../components/contact-agent-modal';
 import { BookVisitModal } from '../../components/book-visit-modal';
 
 import { LocationCategoryDiscovery } from '../../components/location-category-discovery';
-import { parsePropertySearchQuery, fetchLocationCategoryDiscovery, fetchSearchCategoryCounts, type LocationDiscoveryResult } from '../../lib/search-engine';
+import { parsePropertySearchQuery, fetchLocationCategoryDiscovery, fetchSearchCategoryCounts } from '../../lib/search-engine';
 import type { CategorySlug } from '../../lib/categories';
 import { useFavorites, toggleFavoriteProperty, getLocalFavoriteIds } from '../../lib/favorites';
 import { isCompared, toggleCompareProperty, getCompareIds } from '../../lib/compare';
@@ -69,7 +68,6 @@ import { PropertyImage } from '../../components/property-image';
 import { AdvancedFilters } from '../../components/advanced-filters';
 import { LocationCityAreaFilter } from '../../components/location-city-area-filter';
 import { useSEO } from '../../hooks/use-seo';
-import { PostPropertyLink } from '../../components/post-property-link';
 
 import { executeGlobalPropertySearch } from '../../lib/search-service';
 import { logSearchQuery } from '../../lib/search-analytics';
@@ -1044,6 +1042,9 @@ function describeFilterChip(
   if (key === 'category') {
     const meta = getCategoryMeta(value);
     resolved = meta?.name ?? value;
+  } else if (key === 'purpose') {
+    const vLower = value.toLowerCase();
+    resolved = vLower === 'buy' || vLower === 'sale' ? 'For Sale' : vLower === 'rent' ? 'For Rent' : value;
   } else if (key === 'city_id') {
     resolved = lookups.cities?.find((c) => c.id === value)?.name ?? value;
   } else if (key === 'locality_id') {
@@ -1071,7 +1072,7 @@ export function SearchPage() {
   const setView = (v: ViewMode) => {
     const next = new URLSearchParams(params);
     next.set('view', v);
-    setParams(next);
+    setParams(next, { preventScrollReset: true });
   };
   
   const rawQParam = params.get('q') || '';
@@ -1081,7 +1082,7 @@ export function SearchPage() {
     const next = new URLSearchParams(params);
     next.set('sort', s);
     next.delete('page');
-    setParams(next);
+    setParams(next, { preventScrollReset: true });
   };
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const queryClient = useQueryClient();
@@ -1250,11 +1251,20 @@ export function SearchPage() {
     const rawAmenities = params.get('amenities');
     const amenitiesList = rawAmenities ? rawAmenities.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
 
+    const rawPurpose = params.get('purpose') || parsedQueryIntent?.purpose || undefined;
+    const normalizedPurpose = rawPurpose
+      ? rawPurpose.toLowerCase() === 'buy'
+        ? 'Sale'
+        : rawPurpose.toLowerCase() === 'rent'
+        ? 'Rent'
+        : rawPurpose
+      : undefined;
+
     return {
       q: params.get('q') || undefined,
       city_id: resolvedCityId,
       ...(resolvedLocalityId ? { locality_id: resolvedLocalityId } : {}),
-      purpose: params.get('purpose') || parsedQueryIntent?.purpose || undefined,
+      purpose: normalizedPurpose,
       category: activeCategorySlug || undefined,
       type: typeNameParam,
       property_type_id: resolvedTypeId,
@@ -1400,8 +1410,7 @@ export function SearchPage() {
       next.delete('type_id');
     }
     next.delete('page');
-    setParams(next);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setParams(next, { preventScrollReset: true });
   };
 
   // Supabase Realtime synchronization for instant property discovery
@@ -1420,7 +1429,7 @@ export function SearchPage() {
       )
       .subscribe();
 
-    return () => {
+  return () => {
       supabase.removeChannel(channel);
     };
   }, [queryClient]);
@@ -1430,8 +1439,7 @@ export function SearchPage() {
     if (value) next.set(key, value);
     else next.delete(key);
     next.delete('page');
-    setParams(next);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setParams(next, { preventScrollReset: true });
   };
 
   useEffect(() => {
@@ -1453,8 +1461,7 @@ export function SearchPage() {
   };
 
   const clearAll = () => {
-    setParams(new URLSearchParams());
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setParams(new URLSearchParams(), { preventScrollReset: true });
   };
   const activeCount = Array.from(params.keys()).filter((k) => !['q', 'page'].includes(k)).length;
   const totalPages = data?.count ? Math.ceil(data.count / PAGE_SIZE) : 1;
@@ -1589,7 +1596,6 @@ export function SearchPage() {
                       setFilter('q', '');
                       setSuggestions([]);
                       setRichSuggestions([]);
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
                   >
@@ -1600,7 +1606,6 @@ export function SearchPage() {
                   onResult={(text) => {
                     setFilter('q', text);
                     setIsVoiceSearchInitiated(true);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="h-7 w-7 !p-0 rounded-lg"
                 />
@@ -1626,7 +1631,6 @@ export function SearchPage() {
                                 setFilter('q', loc.locationName || loc.title);
                                 setSuggestions([]);
                                 setRichSuggestions([]);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
                               }}
                               className="flex items-center gap-1.5 text-xs font-bold text-slate-800 hover:text-red-600 transition w-full text-left"
                             >
@@ -1643,10 +1647,9 @@ export function SearchPage() {
                                       next.set('q', loc.locationName || loc.title);
                                       next.set('category', cat.type);
                                       next.delete('page');
-                                      setParams(next);
+                                      setParams(next, { preventScrollReset: true });
                                       setSuggestions([]);
                                       setRichSuggestions([]);
-                                      window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }}
                                     className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 hover:bg-red-50 hover:text-red-700 transition"
                                   >
@@ -1829,7 +1832,7 @@ export function SearchPage() {
         
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Sidebar */}
-          <aside className={cn('shrink-0 w-72', showFilters ? 'block' : 'hidden lg:block')}>
+          <aside className={cn('shrink-0 w-80 lg:w-[310px]', showFilters ? 'block' : 'hidden lg:block')}>
             <div className="sticky top-[88px]">
               <AdvancedFilters
                 cities={cities ?? []}
@@ -1865,9 +1868,11 @@ export function SearchPage() {
                   syncParam('max_area', updated.max_area);
                   syncParam('possession_status', updated.possession_status);
                   syncParam('amenities', updated.amenities);
+                  syncParam('q', updated.q);
+                  syncParam('furnishing', updated.furnishing);
+                  syncParam('facing', updated.facing);
 
-                  setParams(newParams);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setParams(newParams, { preventScrollReset: true });
                 }}
                 onCloseMobile={() => setShowFilters(false)}
               />
@@ -2154,7 +2159,7 @@ export function SearchPage() {
                             next.delete('locality_id');
                             next.delete('locality');
                             next.delete('page');
-                            setParams(next);
+                            setParams(next, { preventScrollReset: true });
                           }}
                           className="rounded-xl bg-red-600 text-white px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-bold shadow-md shadow-red-600/20 hover:bg-red-700 transition cursor-pointer"
                         >
@@ -2202,7 +2207,7 @@ export function SearchPage() {
                                   const next = new URLSearchParams(params);
                                   next.set('locality_id', areaName);
                                   next.delete('page');
-                                  setParams(next);
+                                  setParams(next, { preventScrollReset: true });
                                 }}
                                 className="group flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200 bg-slate-50/80 hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition cursor-pointer shrink-0"
                               >
@@ -2551,8 +2556,7 @@ export function CategoryPage({ category }: { category: 'buy' | 'rent' | 'commerc
                   syncParam('possession_status', updated.possession_status);
                   syncParam('amenities', updated.amenities);
 
-                  setParams(newParams);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setParams(newParams, { preventScrollReset: true });
                 }}
                 onCloseMobile={() => setShowFilters(false)}
               />

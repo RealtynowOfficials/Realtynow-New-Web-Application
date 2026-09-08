@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Check, X, Eye, Send, FileText, Search, ShieldCheck, ShieldAlert, ShieldQuestion, Star, Sparkles, Layers } from 'lucide-react';
+import { Check, X, Eye, Send, FileText, Search, ShieldCheck, ShieldAlert, ShieldQuestion, Star, Sparkles, Layers, Camera, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardLayout, PageHeader } from '../../components/dashboard-layout';
 import { queryClient } from '../../lib/queryClient';
@@ -15,10 +15,11 @@ import { togglePropertyFeatured } from '../../lib/featured-properties-api';
 import { PublishToSectionControl, closeAllPublishPopovers } from '../../components/admin/publish-to-section-control';
 import { BulkPublishModal } from '../../components/admin/bulk-publish-modal';
 import { mapJoined } from '../../lib/join-helpers';
-import { formatPrice, formatDate, cn, generatePropertyUrl } from '../../lib/utils';
-import { getPropertyPricingDisplay, getPriceUnitLabel } from '../../lib/plot-pricing';
+import { formatPrice, formatDate, cn, generatePropertyUrl, formatNumber, buildWhatsAppUrl } from '../../lib/utils';
+import { getPriceUnitLabel } from '../../lib/plot-pricing';
 import { isPropertyPublishable } from '../../lib/price-validation';
 import { PropertyPriceCell } from '../../components/ui/property-price-cell';
+import { formatPropertyLocation } from '../../lib/location-formatter';
 import { useRealtimeCount } from '../../lib/realtime';
 import { useToast } from '../../components/toast';
 import type { Property, AiVerification } from '../../lib/types';
@@ -26,7 +27,7 @@ import { getPropertyCoverImage, handleImageError, DEFAULT_PROPERTY_IMAGE } from 
 import { ExportMenuAsync } from '../../components/export-menu';
 import { SavedFiltersMenu } from '../../components/saved-filters-menu';
 import { useSavedFilters } from '../../lib/saved-filters';
-import { fetchAllIndianCities, fetchAllPropertyTypes, ensureCityInDatabase, type CityOption, type PropertyTypeOption } from '../../lib/indian-cities';
+import { fetchAllIndianCities, fetchAllPropertyTypes, ensureCityInDatabase, ALL_INDIAN_STATES, type CityOption, type PropertyTypeOption } from '../../lib/indian-cities';
 
 const ADMIN_PROPERTIES_PAGE_SIZE = 12;
 const ADMIN_PROPERTIES_EXPORT_COLUMNS = [
@@ -112,6 +113,7 @@ const ADMIN_PROPERTIES_EXPORT_COLUMNS = [
 interface AdminPropertiesFilterState {
   tab: string;
   search: string;
+  state: string;
   city: string;
   minPrice: string;
   maxPrice: string;
@@ -965,6 +967,7 @@ export function AdminProperties() {
   const [tab, setTab] = useState('all');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
+    state: '',
     city: '',
     minPrice: '',
     maxPrice: '',
@@ -978,6 +981,36 @@ export function AdminProperties() {
   const [visibleRows, setVisibleRows] = useState<PendingProperty[]>([]);
   const handleVisibleRowsChange = useCallback((rows: PendingProperty[]) => setVisibleRows(rows), []);
   const [exportAllRows, setExportAllRows] = useState<PendingProperty[]>([]);
+  const [viewingProperty, setViewingProperty] = useState<PendingProperty | null>(null);
+
+  const openQuickEdit = (p: PendingProperty) => {
+    const matchedCity = cities.find(
+      (c) =>
+        c.id === p.city_id ||
+        (p.city_name && c.name.toLowerCase() === p.city_name.toLowerCase()) ||
+        (p.locality_name && c.name.toLowerCase().includes(p.locality_name.toLowerCase())),
+    );
+    const matchedType = propertyTypes.find(
+      (t) =>
+        t.id === p.property_type_id ||
+        (p.property_type_name && t.name.toLowerCase() === p.property_type_name.toLowerCase()),
+    );
+
+    setEditing(p);
+    setEditForm({
+      title: p.title || '',
+      price: String(p.price || ''),
+      purpose: p.purpose || 'Sale',
+      city_id: matchedCity?.id || p.city_id || '',
+      locality_id: p.locality_id ?? '',
+      property_type_id: matchedType?.id || p.property_type_id || '',
+      status: p.status || 'draft',
+      seo_title: p.seo_title ?? '',
+      seo_description: p.seo_description ?? '',
+      seo_slug: p.seo_slug ?? '',
+      seo_keywords: (p.seo_keywords ?? []).join(', '),
+    });
+  };
 
   // Bulk Publish to Homepage state
   const [bulkPublishOpen, setBulkPublishOpen] = useState(false);
@@ -1285,6 +1318,9 @@ export function AdminProperties() {
           q = q.ilike('search_text', `%${search}%`);
         }
       }
+      if (filters.state) {
+        q = q.or(`state.ilike.%${filters.state}%,search_text.ilike.%${filters.state}%`);
+      }
       if (filters.city) {
         const selectedCityObj = cities.find((c) => c.id === filters.city);
         if (selectedCityObj && (filters.city.startsWith('city-seed-') || filters.city.startsWith('city-'))) {
@@ -1374,21 +1410,34 @@ export function AdminProperties() {
             src={getPropertyCoverImage(p as any)}
             alt=""
             onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
-            className="h-10 w-14 rounded object-cover"
+            className="h-10 w-14 rounded object-cover cursor-pointer hover:opacity-80 transition"
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewingProperty(p);
+            }}
           />
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
-              <Link to={generatePropertyUrl(p)} className="font-medium text-navy-900 hover:underline line-clamp-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingProperty(p);
+                }}
+                className="font-medium text-navy-900 hover:text-red-600 hover:underline line-clamp-1 text-left cursor-pointer"
+              >
                 {p.title}
-              </Link>
+              </button>
               {p.is_featured && (
                 <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.2 rounded">
                   ⚡ Featured
                 </span>
               )}
             </div>
-            <p className="text-xs text-navy-500">
-              {p.locality_name}, {p.city_name}
+            <p className="text-xs text-navy-500 truncate max-w-xs" title={formatPropertyLocation(p)}>
+              <span className="inline-flex items-center gap-1">
+                📍 {formatPropertyLocation(p)}
+              </span>
             </p>
           </div>
         </div>
@@ -1432,12 +1481,12 @@ export function AdminProperties() {
       key: 'actions',
       header: 'Actions',
       render: (p) => (
-        <div className="flex gap-1 items-center">
+        <div className="flex gap-1 items-center" onClick={(e) => e.stopPropagation()}>
           <Button
             size="sm"
             variant="ghost"
-            title="View Public Listing"
-            onClick={() => window.open(generatePropertyUrl(p), '_blank')}
+            title="View Property Details"
+            onClick={() => setViewingProperty(p)}
             icon={<Eye className="h-4 w-4" />}
           />
           {(p.status === 'submitted' || p.status === 'pending_verification') && (
@@ -1524,34 +1573,7 @@ export function AdminProperties() {
             size="sm"
             variant="ghost"
             title="Quick Edit"
-            onClick={() => {
-              const matchedCity = cities.find(
-                (c) =>
-                  c.id === p.city_id ||
-                  (p.city_name && c.name.toLowerCase() === p.city_name.toLowerCase()) ||
-                  (p.locality_name && c.name.toLowerCase().includes(p.locality_name.toLowerCase())),
-              );
-              const matchedType = propertyTypes.find(
-                (t) =>
-                  t.id === p.property_type_id ||
-                  (p.property_type_name && t.name.toLowerCase() === p.property_type_name.toLowerCase()),
-              );
-
-              setEditing(p);
-              setEditForm({
-                title: p.title || '',
-                price: String(p.price || ''),
-                purpose: p.purpose || 'Sale',
-                city_id: matchedCity?.id || p.city_id || '',
-                locality_id: p.locality_id ?? '',
-                property_type_id: matchedType?.id || p.property_type_id || '',
-                status: p.status || 'draft',
-                seo_title: p.seo_title ?? '',
-                seo_description: p.seo_description ?? '',
-                seo_slug: p.seo_slug ?? '',
-                seo_keywords: (p.seo_keywords ?? []).join(', '),
-              });
-            }}
+            onClick={() => openQuickEdit(p)}
           >
             Edit
           </Button>
@@ -1709,6 +1731,7 @@ export function AdminProperties() {
                 setTab(f.tab);
                 setSearch(f.search);
                 setFilters({
+                  state: f.state || '',
                   city: f.city,
                   minPrice: f.minPrice,
                   maxPrice: f.maxPrice,
@@ -1760,18 +1783,39 @@ export function AdminProperties() {
 
         {/* Rich filters */}
         <Card className="p-4">
-          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+            <Select
+              value={filters.state}
+              onChange={(e) => {
+                const newState = e.target.value;
+                setFilters((f) => ({
+                  ...f,
+                  state: newState,
+                  city: '', // Clear previously selected city on state change
+                }));
+              }}
+              className="text-sm"
+            >
+              <option value="">All States (India)</option>
+              {ALL_INDIAN_STATES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
             <Select
               value={filters.city}
               onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))}
               className="text-sm"
             >
-              <option value="">All cities (India)</option>
-              {cities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.state ? `(${c.state})` : ''}
-                </option>
-              ))}
+              <option value="">{filters.state ? `All ${filters.state} Cities` : 'All Cities (India)'}</option>
+              {cities
+                .filter((c) => !filters.state || (c.state && c.state.toLowerCase() === filters.state.toLowerCase()))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.state && !filters.state ? `(${c.state})` : ''}
+                  </option>
+                ))}
             </Select>
             <Select
               value={filters.purpose}
@@ -1842,12 +1886,12 @@ export function AdminProperties() {
               </div>
             </div>
 
-            {(filters.city || filters.purpose || filters.type || filters.minPrice || filters.maxPrice || filters.dateFrom || filters.dateTo) && (
+            {(filters.state || filters.city || filters.purpose || filters.type || filters.minPrice || filters.maxPrice || filters.dateFrom || filters.dateTo) && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  setFilters({ city: '', minPrice: '', maxPrice: '', purpose: '', type: '', dateFrom: '', dateTo: '' })
+                  setFilters({ state: '', city: '', minPrice: '', maxPrice: '', purpose: '', type: '', dateFrom: '', dateTo: '' })
                 }
                 className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
               >
@@ -1922,6 +1966,7 @@ export function AdminProperties() {
                       setTab('all');
                       setSearch('');
                       setFilters({
+                        state: '',
                         city: '',
                         minPrice: '',
                         maxPrice: '',
@@ -1948,6 +1993,7 @@ export function AdminProperties() {
           searchable={false}
           dateFilterable={false}
           getRowId={(p) => p.id}
+          onRowClick={(p) => setViewingProperty(p)}
           selectedIds={selected}
           onToggleSelect={toggleSelect}
           onSelectAll={(ids) =>
@@ -2309,6 +2355,295 @@ export function AdminProperties() {
         mode={bulkPublishMode}
         onSuccess={() => setSelected(new Set())}
       />
+
+      {/* Property Details View Modal */}
+      <Modal
+        open={!!viewingProperty}
+        onClose={() => setViewingProperty(null)}
+        title={viewingProperty ? (viewingProperty.title || 'Property Details') : 'Property Details'}
+        size="lg"
+        footer={
+          viewingProperty && (
+            <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+              <div className="flex flex-wrap items-center gap-2">
+                {viewingProperty.status !== 'published' ? (
+                  <Button
+                    variant="primary"
+                    icon={<Check className="h-4 w-4" />}
+                    onClick={() => {
+                      if (!isPropertyPublishable(viewingProperty)) {
+                        toast.addToast('error', 'This property cannot be published because the price must be greater than ₹0.');
+                        return;
+                      }
+                      statusMutation.mutate({ id: viewingProperty.id, status: 'published' });
+                      setViewingProperty((prev) => prev ? { ...prev, status: 'published' } : null);
+                    }}
+                    loading={statusMutation.isPending}
+                  >
+                    Make Live (Publish)
+                  </Button>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <Check className="h-3.5 w-3.5" /> Currently Live
+                  </span>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const p = viewingProperty;
+                    setViewingProperty(null);
+                    openQuickEdit(p);
+                  }}
+                >
+                  Quick Edit
+                </Button>
+                <Link to={`/admin/properties/edit/${viewingProperty.id}`} target="_blank">
+                  <Button variant="ghost" size="sm" className="text-xs text-navy-700">
+                    Full Editor ↗
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Eye className="h-4 w-4" />}
+                  onClick={() => window.open(generatePropertyUrl(viewingProperty), '_blank')}
+                >
+                  Open Public Listing ↗
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setViewingProperty(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )
+        }
+      >
+        {viewingProperty && (
+          <div className="max-h-[75vh] overflow-y-auto pr-1 space-y-4">
+            {/* Gallery Images */}
+            {Array.isArray(viewingProperty.images) && viewingProperty.images.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="sm:col-span-2 aspect-video overflow-hidden rounded-xl bg-slate-100 relative">
+                  <img
+                    src={viewingProperty.images[0] || DEFAULT_PROPERTY_IMAGE}
+                    alt=""
+                    onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute top-2 left-2">
+                    <StatusBadge status={viewingProperty.status} />
+                  </div>
+                  <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Camera className="h-3.5 w-3.5" /> {viewingProperty.images.length} Photos
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-1 gap-2">
+                  {viewingProperty.images.slice(1, 3).map((img, idx) => (
+                    <div key={idx} className="aspect-video overflow-hidden rounded-xl bg-slate-100">
+                      <img
+                        src={img}
+                        alt=""
+                        onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ))}
+                  {viewingProperty.images.length <= 1 && (
+                    <div className="hidden sm:flex items-center justify-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-400 aspect-video">
+                      No additional photos
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="aspect-video w-full overflow-hidden rounded-xl bg-slate-100 relative">
+                <img
+                  src={getPropertyCoverImage(viewingProperty as any)}
+                  alt=""
+                  onError={(e) => handleImageError(e, DEFAULT_PROPERTY_IMAGE)}
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute top-2 left-2">
+                  <StatusBadge status={viewingProperty.status} />
+                </div>
+              </div>
+            )}
+
+            {/* Core Info Banner */}
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold uppercase tracking-wider text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-md">
+                      For {viewingProperty.purpose || 'Sale'}
+                    </span>
+                    {viewingProperty.property_type_name && (
+                      <span className="text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+                        {viewingProperty.property_type_name}
+                      </span>
+                    )}
+                    {viewingProperty.is_featured && (
+                      <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                        ⚡ Featured
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-display text-lg font-bold text-slate-900 mt-1.5">
+                    {viewingProperty.title}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                    {formatPropertyLocation(viewingProperty)}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-xl font-bold text-slate-900">
+                    {formatPrice(viewingProperty.price, viewingProperty.purpose)}
+                  </div>
+                  {viewingProperty.rent_amount && viewingProperty.purpose === 'Rent' && (
+                    <p className="text-xs text-slate-500">Rent: ₹{Number(viewingProperty.rent_amount).toLocaleString('en-IN')}/mo</p>
+                  )}
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Listed: {formatDate(viewingProperty.created_at)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Key Specs Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Bedrooms / BHK</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.bedrooms ? `${viewingProperty.bedrooms} BHK` : '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Bathrooms</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.bathrooms ? `${viewingProperty.bathrooms} Bath` : '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Super / Built-up Area</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.built_up_area || viewingProperty.carpet_area || viewingProperty.plot_area
+                    ? `${formatNumber(viewingProperty.built_up_area || viewingProperty.carpet_area || viewingProperty.plot_area)} Sq.Ft.`
+                    : '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Facing</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.facing || '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Floor</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.floor_number !== undefined && viewingProperty.floor_number !== null
+                    ? `${viewingProperty.floor_number} ${viewingProperty.total_floors ? `of ${viewingProperty.total_floors}` : ''}`
+                    : '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Furnishing</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.furnishing || '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Age of Property</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.age_of_property ? `${viewingProperty.age_of_property} Yrs` : '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3">
+                <span className="text-slate-400 font-medium block">Total Views</span>
+                <span className="font-bold text-slate-800 text-sm mt-0.5 block">
+                  {viewingProperty.view_count || 0}
+                </span>
+              </div>
+            </div>
+
+            {/* Lister / Contact Information */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5">
+                Lister & Contact Details
+              </h4>
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <p className="font-bold text-slate-900 text-sm">
+                    {viewingProperty.owner?.first_name || (viewingProperty as any).owner_name || 'Property Owner'} {viewingProperty.owner?.last_name || ''}
+                  </p>
+                  <p className="text-slate-500 mt-0.5">
+                    {viewingProperty.owner?.email || (viewingProperty as any).owner_email || 'No email provided'}
+                  </p>
+                </div>
+                {(() => {
+                  const mobile = viewingProperty.listed_by_mobile || viewingProperty.owner?.phone || (viewingProperty as any).owner_phone;
+                  if (!mobile) return <span className="text-slate-400">No phone provided</span>;
+                  const waUrl = buildWhatsAppUrl(mobile, `Hello, regarding your listing "${viewingProperty.title}" on RealtyNow:`);
+                  return (
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={`tel:${mobile}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 font-mono text-xs font-semibold text-slate-800 hover:bg-slate-100 transition"
+                      >
+                        📞 {formatPhoneNumber(mobile)}
+                      </a>
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-xs hover:bg-emerald-100 transition"
+                      >
+                        💬 WhatsApp
+                      </a>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Description */}
+            {viewingProperty.description && (
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Description
+                </h4>
+                <p className="text-xs leading-relaxed text-slate-700 whitespace-pre-line">
+                  {viewingProperty.description}
+                </p>
+              </div>
+            )}
+
+            {/* Amenities */}
+            {Array.isArray(viewingProperty.amenities) && viewingProperty.amenities.length > 0 && (
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Amenities & Highlights
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {viewingProperty.amenities.map((amenity: string, idx: number) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700"
+                    >
+                      <Check className="h-3 w-3 text-emerald-600" /> {amenity}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </DashboardLayout>
   );
 }

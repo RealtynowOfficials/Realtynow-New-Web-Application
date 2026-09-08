@@ -222,18 +222,25 @@ export function getFriendlyErrorMessage(err: unknown, fallback = 'Something went
 
 export function generatePropertyUrl(p?: { id?: string | null; title?: string | null; seo_slug?: string | null } | null): string {
   if (!p || !p.id) return '#';
-  if (p.seo_slug && typeof p.seo_slug === 'string' && p.seo_slug.trim()) {
-    const cleanSeo = p.seo_slug.trim().replace(/^\/+/, '');
-    return `/property/${cleanSeo}`;
-  }
-  if (!p.title) return `/property/${p.id}`;
-  const slug = p.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-    .substring(0, 60)
-    .replace(/-$/, '');
   
+  let slug = '';
+  if (p.seo_slug && typeof p.seo_slug === 'string' && p.seo_slug.trim()) {
+    slug = p.seo_slug.trim().replace(/^\/+/, '').replace(/-+$/, '');
+  } else if (p.title) {
+    slug = p.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+      .substring(0, 60)
+      .replace(/-$/, '');
+  }
+
+  // If slug already contains the UUID (e.g. "...-c5bb9781-..."), use it as is
+  if (slug && slug.toLowerCase().includes(p.id.toLowerCase())) {
+    return `/property/${slug}`;
+  }
+
+  // Always append unique property ID to guarantee reliable routing and zero 404s
   return `/property/${slug ? `${slug}-` : ''}${p.id}`;
 }
 

@@ -10,17 +10,13 @@ import {
   Heart,
   LogOut,
   Globe,
-  Phone,
-  Mail,
   Facebook,
   Instagram,
   Linkedin,
   Youtube,
   LayoutDashboard,
-  MapPin,
   User,
   ChevronRight,
-  ArrowRight,
   LogIn,
   Home,
   Building2,
@@ -29,7 +25,6 @@ import {
   Compass,
   Calculator,
   TrendingUp,
-  Users,
   Hammer,
   Star,
   FileText,
@@ -48,12 +43,24 @@ import { useAuth } from '../lib/auth';
 import { useLanguageContext } from '../lib/i18n/language-context';
 import { LanguageSelectorModal } from './language-selector-modal';
 import { Avatar } from './ui';
-import { Logo, LogoLight } from './logo';
+import { Logo } from './logo';
 import { LocationSelector } from './location-selector';
 import { cn } from '../lib/utils';
 import { PostPropertyLink } from './post-property-link';
+import { PublicFooter } from './public-footer';
 import { HeaderSearchModal } from './header-search-modal';
 import { isRakshaBandhanActive } from '../lib/campaigns/festive-campaigns';
+import { useQuery } from '@tanstack/react-query';
+import { useLocationContext } from '../contexts/location-context';
+import { fetchPropertyCategoriesWithCounts } from '../lib/categories';
+import {
+  BuyMegaMenu,
+  RentMegaMenu,
+  CommercialMegaMenu,
+  MobileBuyAccordion,
+  MobileRentAccordion,
+  MobileCommercialAccordion,
+} from './navigation/transaction-mega-menu';
 
 // Official X (formerly Twitter) SVG Icon
 const XTwitterIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string }) => (
@@ -230,52 +237,6 @@ const getMegaMenuConfig = (t: (key: string, fallback?: string) => string): Recor
       },
     ],
   },
-  Commercial: {
-    title: t('menu.commercialSpaces', 'Commercial Spaces'),
-    badge: t('menu.highRoi', 'High ROI'),
-    columns: [
-      {
-        title: t('menu.commercialBuying', 'Commercial Buying'),
-        items: [
-          {
-            label: t('menu.itParksOffices', 'IT Parks & Offices'),
-            desc: t('menu.corporateFloorsDesc', 'Grade-A corporate floors'),
-            to: '/commercial?purpose=Sale&type=Office+Space',
-            icon: Briefcase,
-          },
-          {
-            label: t('menu.showroomsShops', 'Showrooms & Shops'),
-            desc: t('menu.primeRetailDesc', 'Prime main road commercial retail'),
-            to: '/commercial?purpose=Sale&type=Shop',
-            icon: Store,
-          },
-          {
-            label: t('menu.commercialLand', 'Commercial Land'),
-            desc: t('menu.towersPlotDesc', 'Development plots for towers'),
-            to: '/commercial?purpose=Sale&type=Land',
-            icon: Compass,
-          },
-        ],
-      },
-      {
-        title: t('menu.commercialRenting', 'Commercial Renting'),
-        items: [
-          {
-            label: t('menu.coworkingDesks', 'Co-Working Desks'),
-            desc: t('menu.sharedPassesDesc', 'Flexible shared office passes'),
-            to: '/commercial?purpose=Rent&type=Office+Space',
-            icon: Users,
-          },
-          {
-            label: t('menu.warehouseStorage', 'Warehouse & Storage'),
-            desc: t('menu.hubsDesc', 'Cold storage & distribution hubs'),
-            to: '/commercial?purpose=Rent&type=Warehouse',
-            icon: Building2,
-          },
-        ],
-      },
-    ],
-  },
 });
 
 /* ─── Services dropdown (simple glassmorphism flyout, not a full mega menu) ── */
@@ -412,9 +373,28 @@ function Topbar({ onOpenLanguageModal }: { onOpenLanguageModal: () => void }) {
 /* ─── Main layout ───────────────────────────────────────────── */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, signOut } = useAuth();
-  const { t } = useLanguageContext();
+  const { currentLanguage, t } = useLanguageContext();
   const navigate = useNavigate();
   const location = useLocation();
+  const { city } = useLocationContext();
+
+  const { data: navBuyTaxonomy } = useQuery({
+    queryKey: ['taxonomy', 'buy', city],
+    queryFn: () => fetchPropertyCategoriesWithCounts(city, 'buy'),
+    staleTime: 60000,
+  });
+
+  const { data: navRentTaxonomy } = useQuery({
+    queryKey: ['taxonomy', 'rent', city],
+    queryFn: () => fetchPropertyCategoriesWithCounts(city, 'rent'),
+    staleTime: 60000,
+  });
+
+  const buyCount = navBuyTaxonomy?.totalCount ?? 17;
+  const rentCount = navRentTaxonomy?.totalCount ?? 0;
+  const commercialCount =
+    (navBuyTaxonomy?.commercial.reduce((sum, i) => sum + i.propertyCount, 0) || 0) +
+    (navRentTaxonomy?.commercial.reduce((sum, i) => sum + i.propertyCount, 0) || 0);
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileAccordion, setMobileAccordion] = useState<string | null>(null);
@@ -427,6 +407,25 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
   const desktopNavRef = useRef<HTMLElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const menuTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMenuEnter = (menuKey: string) => {
+    if (menuTimeoutRef.current) {
+      clearTimeout(menuTimeoutRef.current);
+      menuTimeoutRef.current = null;
+    }
+    setHoveredMenu(menuKey);
+  };
+
+  const handleMenuLeave = () => {
+    if (menuTimeoutRef.current) {
+      clearTimeout(menuTimeoutRef.current);
+    }
+    menuTimeoutRef.current = setTimeout(() => {
+      setHoveredMenu(null);
+    }, 180);
+  };
+
   useClickOutside(desktopNavRef, () => setHoveredMenu(null), hoveredMenu !== null);
   useClickOutside(userMenuRef, () => setUserMenu(false), userMenu);
 
@@ -434,12 +433,21 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const onScroll = () => {
-      setMobileOpen(false);
       setScrolled(window.scrollY > 20);
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -457,7 +465,6 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           ? '/builder'
           : '/portal';
 
-  const megaMenuConfig = getMegaMenuConfig(t);
   const servicesMenu = getServicesMenu(t);
 
   const dynamicNavLinks = [
@@ -534,13 +541,13 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
       {/* ── Main header (56px) with glassmorphic scroll transition ── */}
       <header
         className={cn(
-          'sticky top-0 z-50 transition-all duration-300',
+          'sticky top-0 z-50 transition-all duration-300 relative',
           scrolled
             ? 'bg-white/90 backdrop-blur-xl border-b border-slate-200/70 shadow-sm text-navy-900'
             : 'bg-white/95 backdrop-blur-md border-b border-navy-100 text-navy-900 shadow-2xs'
         )}
       >
-        <div className="container-wide">
+        <div className="container-wide relative">
           <div className="flex h-[62px] items-center justify-between gap-3">
             {/* Logo */}
             <Logo to="/" size={175} maxHeight={48} className="shrink-0 transition-transform duration-200 hover:scale-105" />
@@ -563,18 +570,17 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                 <Home className="h-[18px] w-[18px]" />
               </Link>
               {dynamicNavLinks.map((item) => {
-                const configKey = item.key || item.label;
-                const config = megaMenuConfig[configKey];
                 const isActive = isRouteActive(item.to, location.pathname);
 
-                if (config) {
-                  const isOpen = hoveredMenu === configKey;
+                if (item.hasMega) {
+                  const isOpen = hoveredMenu === item.key;
                   return (
                     <div
                       key={item.label}
-                      className="relative"
+                      onMouseEnter={() => handleMenuEnter(item.key)}
+                      onMouseLeave={handleMenuLeave}
                       onBlur={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoveredMenu(null);
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) handleMenuLeave();
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') setHoveredMenu(null);
@@ -584,96 +590,58 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
-                          // Always open (never toggle-close) on the trigger's own click — a
-                          // fast double-click previously closed the menu right after opening
-                          // it (click 1 opens, click 2 re-toggles closed). Closing already
-                          // works via outside-click, Escape, and switching to another item.
-                          setHoveredMenu(configKey);
+                          setHoveredMenu(isOpen ? null : item.key);
                         }}
                         aria-haspopup="true"
                         aria-expanded={isOpen}
                         className={cn(
-                          'nav-link flex items-center gap-1 rounded-xl py-2 text-[13px] font-medium transition-all duration-200 lg:px-2.5 xl:px-4',
+                          'nav-link group flex items-center gap-1.5 rounded-xl py-2 text-[13px] font-medium transition-all duration-200 lg:px-2.5 xl:px-3.5 cursor-pointer',
                           isOpen || isActive
                             ? 'bg-[#D8232A]/5 text-[#D8232A]'
                             : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
                         )}
                       >
-                        {item.label}
+                        <span>{item.label}</span>
+                        {item.key === 'Buy' && (
+                          <span
+                            className={cn(
+                              'rounded-full px-1.5 py-0.2 text-[10px] font-extrabold border transition-colors',
+                              buyCount > 0
+                                ? 'bg-red-50 border-red-200 text-[#D8232A]'
+                                : 'bg-slate-100 border-slate-200 text-slate-500',
+                            )}
+                          >
+                            {buyCount}
+                          </span>
+                        )}
+                        {item.key === 'Rent' && (
+                          <span
+                            className={cn(
+                              'rounded-full px-1.5 py-0.2 text-[10px] font-extrabold border transition-colors',
+                              rentCount > 0
+                                ? 'bg-red-50 border-red-200 text-[#D8232A]'
+                                : 'bg-slate-100 border-slate-200 text-slate-500',
+                            )}
+                          >
+                            {rentCount}
+                          </span>
+                        )}
+                        {item.key === 'Commercial' && (
+                          <span
+                            className={cn(
+                              'rounded-full px-1.5 py-0.2 text-[10px] font-extrabold border transition-colors',
+                              commercialCount > 0
+                                ? 'bg-red-50 border-red-200 text-[#D8232A]'
+                                : 'bg-slate-100 border-slate-200 text-slate-500',
+                            )}
+                          >
+                            {commercialCount}
+                          </span>
+                        )}
                         <ChevronDown
                           className={cn('h-4 w-4 text-navy-400 transition-transform duration-200', isOpen && 'rotate-180 text-[#D8232A]')}
                         />
                       </button>
-
-                      <AnimatePresence>
-                        {isOpen && (
-                          <motion.div
-                            role="menu"
-                            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                            transition={{ duration: 0.18, ease: 'easeOut' }}
-                            className="absolute left-0 top-full z-50 pt-2"
-                          >
-                            <div className="w-[min(680px,90vw)] rounded-2xl border border-navy-100 bg-white/95 p-6 shadow-2xl backdrop-blur-xl">
-                              {/* Header Title & Badge */}
-                              <div className="mb-4 flex items-center justify-between border-b border-navy-100 pb-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-display text-base font-bold text-navy-900">{config.title}</span>
-                                  <span className="rounded-full bg-[#D8232A]/10 px-2.5 py-0.5 text-xs font-semibold text-[#D8232A]">
-                                    {config.badge}
-                                  </span>
-                                </div>
-                                <span className="text-xs font-medium text-navy-400">
-                                  {t('menu.exploreCurated', 'Explore curated categories')}
-                                </span>
-                              </div>
-
-                              {/* Columns Grid */}
-                              <div className={cn('grid gap-6', config.columns.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
-                                {config.columns.map((col) => (
-                                  <div key={col.title} className="space-y-3">
-                                    <p className="border-b border-navy-50 pb-1 text-[11px] font-bold uppercase tracking-wider text-navy-400">
-                                      {col.title}
-                                    </p>
-                                    <ul className="space-y-2">
-                                      {col.items.map((subItem) => {
-                                        const ItemIcon = subItem.icon;
-                                        return (
-                                          <li key={subItem.label}>
-                                            <Link
-                                              to={subItem.to}
-                                              role="menuitem"
-                                              onClick={(e) => {
-                                                setHoveredMenu(null);
-                                                if (subItem.confirmMessage) {
-                                                  e.preventDefault();
-                                                  setPendingHandoff({ to: subItem.to, message: subItem.confirmMessage });
-                                                }
-                                              }}
-                                              className="group flex items-start gap-3 rounded-xl p-2 transition-all hover:bg-[#D8232A]/5"
-                                            >
-                                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-600 transition-colors group-hover:bg-[#D8232A] group-hover:text-white">
-                                                <ItemIcon className="h-4 w-4" />
-                                              </div>
-                                              <div>
-                                                <p className="text-xs font-semibold text-navy-900 group-hover:text-[#D8232A]">
-                                                  {subItem.label}
-                                                </p>
-                                                <p className="text-[11px] text-navy-500 line-clamp-1">{subItem.desc}</p>
-                                              </div>
-                                            </Link>
-                                          </li>
-                                        );
-                                      })}
-                                    </ul>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
                     </div>
                   );
                 }
@@ -682,6 +650,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.label}
                     to={item.to}
+                    onMouseEnter={handleMenuLeave}
                     className={cn(
                       'nav-link rounded-xl py-2 text-[13px] font-medium transition-colors lg:px-2.5 xl:px-4',
                       isActive ? 'bg-[#D8232A]/5 text-[#D8232A]' : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
@@ -695,8 +664,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               {/* Services — glassmorphism flyout, not a full mega menu */}
               <div
                 className="relative"
+                onMouseEnter={() => handleMenuEnter('Services')}
+                onMouseLeave={handleMenuLeave}
                 onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoveredMenu(null);
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) handleMenuLeave();
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setHoveredMenu(null);
@@ -704,11 +675,11 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               >
                 <button
                   type="button"
-                  onClick={() => setHoveredMenu('Services')}
+                  onClick={() => setHoveredMenu(hoveredMenu === 'Services' ? null : 'Services')}
                   aria-haspopup="true"
                   aria-expanded={hoveredMenu === 'Services'}
                   className={cn(
-                    'nav-link flex items-center gap-1 rounded-xl py-2 text-[13px] font-medium transition-all duration-200 lg:px-2.5 xl:px-4',
+                    'nav-link flex items-center gap-1 rounded-xl py-2 text-[13px] font-medium transition-all duration-200 lg:px-2.5 xl:px-4 cursor-pointer',
                     hoveredMenu === 'Services'
                       ? 'bg-[#D8232A]/5 text-[#D8232A]'
                       : 'text-navy-700 hover:bg-navy-50 hover:text-[#D8232A]',
@@ -955,41 +926,93 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           </div>
+
+          {/* Transaction Mega Menus (Buy, Rent, Commercial) — Centered directly below navbar */}
+          <AnimatePresence>
+            {hoveredMenu === 'Buy' && (
+              <BuyMegaMenu
+                onClose={() => setHoveredMenu(null)}
+                onMouseEnter={() => handleMenuEnter('Buy')}
+                onMouseLeave={handleMenuLeave}
+              />
+            )}
+            {hoveredMenu === 'Rent' && (
+              <RentMegaMenu
+                onClose={() => setHoveredMenu(null)}
+                onMouseEnter={() => handleMenuEnter('Rent')}
+                onMouseLeave={handleMenuLeave}
+              />
+            )}
+            {hoveredMenu === 'Commercial' && (
+              <CommercialMegaMenu
+                onClose={() => setHoveredMenu(null)}
+                onMouseEnter={() => handleMenuEnter('Commercial')}
+                onMouseLeave={handleMenuLeave}
+              />
+            )}
+          </AnimatePresence>
         </div>
 
-        {/* ── Mobile menu drawer (hamburger + accordion) ── */}
+        {/* ── Mobile menu drawer (full-height slide-in panel) ── */}
         <AnimatePresence>
           {mobileOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-t border-navy-100 bg-white lg:hidden"
-            >
-              <div className="container-wide max-h-[calc(100dvh-4rem)] space-y-1 overflow-y-auto py-4 pb-safe">
+            <>
+              {/* Backdrop overlay */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-navy-950/40 lg:hidden"
+                onClick={() => setMobileOpen(false)}
+              />
+              {/* Slide-in panel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'tween', duration: 0.25, ease: 'easeInOut' }}
+                className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-sm bg-white shadow-2xl lg:hidden flex flex-col"
+              >
+                {/* Drawer Header */}
+                <div className="flex h-16 items-center justify-between border-b border-navy-100 px-5 shrink-0">
+                  <Logo to="/" size={140} maxHeight={40} />
+                  <button
+                    onClick={() => setMobileOpen(false)}
+                    className="grid place-items-center rounded-full p-2 text-navy-600 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                    aria-label={t('common.closeMenu', 'Close menu')}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Scrollable nav content */}
+                <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">
                 <Link
                   to="/"
                   onClick={() => setMobileOpen(false)}
-                  className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800 border-b border-navy-50 hover:text-[#D8232A]"
+                  className="flex w-full items-center gap-3 py-3 text-sm font-semibold text-navy-800 border-b border-navy-50 hover:text-[#D8232A] transition-colors"
                   aria-label="Home"
                   title={t('common.home', 'Home')}
                 >
-                  <Home className="h-5 w-5" />
+                  <Home className="h-5 w-5 text-[#D8232A]" />
+                  <span>{t('common.home', 'Home')}</span>
                 </Link>
                 {dynamicNavLinks.map((item) => {
-                  const configKey = item.key || item.label;
-                  const config = megaMenuConfig[configKey];
-                  if (config) {
-                    const isOpen = mobileAccordion === configKey;
+                  if (item.key === 'Buy') {
+                    const isOpen = mobileAccordion === 'Buy';
                     return (
                       <div key={item.label} className="border-b border-navy-50">
                         <button
                           type="button"
-                          onClick={() => setMobileAccordion((v) => (v === configKey ? null : configKey))}
+                          onClick={() => setMobileAccordion((v) => (v === 'Buy' ? null : 'Buy'))}
                           aria-expanded={isOpen}
                           className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800"
                         >
-                          {item.label}
+                          <span className="flex items-center gap-2">
+                            <span>{item.label}</span>
+                            <span className="rounded-full bg-red-50 border border-red-200 text-[#D8232A] px-2 py-0.5 text-[10px] font-extrabold">{buyCount} For Sale</span>
+                          </span>
                           <ChevronDown className={cn('h-4 w-4 text-navy-400 transition-transform', isOpen && 'rotate-180 text-[#D8232A]')} />
                         </button>
                         <AnimatePresence>
@@ -1000,31 +1023,71 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                               exit={{ height: 0, opacity: 0 }}
                               className="overflow-hidden"
                             >
-                              <div className="space-y-3 pb-3 pl-1">
-                                {config.columns.map((col) => (
-                                  <div key={col.title}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-navy-400">{col.title}</p>
-                                    <div className="mt-1 space-y-0.5">
-                                      {col.items.map((subItem) => (
-                                        <Link
-                                          key={subItem.label}
-                                          to={subItem.to}
-                                          onClick={(e) => {
-                                            if (subItem.confirmMessage) {
-                                              e.preventDefault();
-                                              setPendingHandoff({ to: subItem.to, message: subItem.confirmMessage });
-                                            }
-                                            setMobileOpen(false);
-                                          }}
-                                          className="block py-1.5 text-sm text-navy-600 hover:text-[#D8232A]"
-                                        >
-                                          {subItem.label}
-                                        </Link>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                              <MobileBuyAccordion onNavigate={() => setMobileOpen(false)} />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  }
+
+                  if (item.key === 'Rent') {
+                    const isOpen = mobileAccordion === 'Rent';
+                    return (
+                      <div key={item.label} className="border-b border-navy-50">
+                        <button
+                          type="button"
+                          onClick={() => setMobileAccordion((v) => (v === 'Rent' ? null : 'Rent'))}
+                          aria-expanded={isOpen}
+                          className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{item.label}</span>
+                            <span className="rounded-full bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 text-[10px] font-extrabold">{rentCount} For Rent</span>
+                          </span>
+                          <ChevronDown className={cn('h-4 w-4 text-navy-400 transition-transform', isOpen && 'rotate-180 text-[#D8232A]')} />
+                        </button>
+                        <AnimatePresence>
+                          {isOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <MobileRentAccordion onNavigate={() => setMobileOpen(false)} />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  }
+
+                  if (item.key === 'Commercial') {
+                    const isOpen = mobileAccordion === 'Commercial';
+                    return (
+                      <div key={item.label} className="border-b border-navy-50">
+                        <button
+                          type="button"
+                          onClick={() => setMobileAccordion((v) => (v === 'Commercial' ? null : 'Commercial'))}
+                          aria-expanded={isOpen}
+                          className="flex w-full items-center justify-between py-3 text-sm font-semibold text-navy-800"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{item.label}</span>
+                            <span className="rounded-full bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 text-[10px] font-extrabold">{commercialCount} Commercial</span>
+                          </span>
+                          <ChevronDown className={cn('h-4 w-4 text-navy-400 transition-transform', isOpen && 'rotate-180 text-[#D8232A]')} />
+                        </button>
+                        <AnimatePresence>
+                          {isOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <MobileCommercialAccordion onNavigate={() => setMobileOpen(false)} />
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -1112,24 +1175,64 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                   <Bot className="h-4 w-4" /> {t('common.aiAssistant', 'AI Assistant')}
                 </Link>
 
-                <div className="flex flex-col gap-2 pt-3">
+                {/* Language Selector in Mobile Drawer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    setLanguageModalOpen(true);
+                  }}
+                  className="flex w-full items-center justify-between border-b border-navy-50 py-3 text-sm font-semibold text-navy-800 hover:text-[#D8232A] cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-[#D8232A]" />
+                    <span>{t('common.selectLanguage', 'Select Language')}</span>
+                  </span>
+                  <span className="text-xs font-bold text-navy-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                    {currentLanguage.nativeName} ({currentLanguage.code.toUpperCase()})
+                  </span>
+                </button>
+
+                </div>{/* end scrollable content */}
+
+                {/* Bottom CTA section — pinned */}
+                <div className="border-t border-navy-100 p-4 shrink-0 space-y-2.5 bg-white">
                   {!user && (
-                    <>
-                      <Link to="/login" className="btn-outline-red w-full text-center">
-                        {t('common.login', 'Sign In')}
-                      </Link>
-                    </>
+                    <Link to="/login" onClick={() => setMobileOpen(false)} className="btn-outline-red w-full text-center block">
+                      {t('common.login', 'Sign In')}
+                    </Link>
                   )}
                   <PostPropertyLink to="/portal/list-property"
-                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-md"
+                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-md w-full"
                     style={{ background: 'linear-gradient(90deg,#D8232A,#f43f5e)' }}
                   >
                     <span>{t('forms.postProperty', 'Post Property')}</span>
                     <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-950">FREE</span>
                   </PostPropertyLink>
+                  {user && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <Link
+                        to={dashboardLink}
+                        onClick={() => setMobileOpen(false)}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-navy-200 px-3 py-2 text-xs font-bold text-navy-800 hover:bg-navy-50 transition-colors"
+                      >
+                        <LayoutDashboard className="h-4 w-4 text-[#D8232A]" /> {t('common.dashboard', 'Dashboard')}
+                      </Link>
+                      <button
+                        onClick={() => {
+                          signOut();
+                          navigate('/');
+                          setMobileOpen(false);
+                        }}
+                        className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      >
+                        <LogOut className="h-3.5 w-3.5" /> {t('common.logout', 'Sign out')}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
       </header>
@@ -1138,205 +1241,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1">{children}</main>
 
             {/* ── Footer ── */}
-      <footer className="relative overflow-hidden bg-slate-950 text-white border-t border-white/5">
-        {/* Background Effects */}
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <div className="absolute -top-[30%] -right-[10%] w-[70%] h-[70%] rounded-full bg-red-900/10 blur-[120px]"></div>
-          <div className="absolute -bottom-[20%] -left-[10%] w-[60%] h-[60%] rounded-full bg-blue-900/10 blur-[100px]"></div>
-        </div>
-
-        {/* Huge Watermark */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full flex justify-center items-center opacity-[0.02] pointer-events-none z-0 overflow-hidden">
-          <h1 className="font-display text-[15vw] font-black tracking-tighter whitespace-nowrap leading-none select-none">
-            REALTYNOW
-          </h1>
-        </div>
-
-        <div className="container-wide py-16 sm:py-24 relative z-10">
-          {/* Top CTA Row */}
-          <div className="flex flex-col md:flex-row items-center justify-between p-8 md:p-12 mb-16 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-md shadow-2xl relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-r from-red-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-            <div className="relative z-10 text-center md:text-left mb-6 md:mb-0">
-              <h3 className="font-display text-2xl md:text-3xl font-bold text-white mb-2">Ready to list your property?</h3>
-              <p className="text-white/60 max-w-md text-sm md:text-base">Join thousands of property owners who trust India's leading AI-powered real estate platform.</p>
-            </div>
-            <PostPropertyLink to="/portal/list-property"
-              className="relative z-10 flex items-center justify-center gap-2 rounded-full bg-red-600 hover:bg-red-500 px-8 py-4 font-bold text-white shadow-[0_0_30px_rgba(220,38,38,0.4)] transition-all hover:scale-105"
-            >
-              Post Property FREE
-              <ArrowRight className="h-4 w-4" />
-            </PostPropertyLink>
-          </div>
-
-          <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-12">
-            {/* Column 1 - Brand */}
-            <div className="lg:col-span-4 pr-0 lg:pr-8">
-              <LogoLight to="/" size={165} src="/2.png" />
-              <p className="mt-6 text-sm leading-relaxed text-white/60 font-light">
-                {t(
-                  'footer.tagline',
-                  "India's AI-powered real estate marketplace. Find, compare, and buy properties with intelligent recommendations, price predictions, and verified listings.",
-                )}
-              </p>
-              
-              <div className="mt-8 space-y-3 text-sm text-white/70">
-                <div className="flex items-start gap-3 group">
-                  <div className="mt-1 h-6 w-6 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-                    <MapPin className="h-3 w-3 text-red-500" />
-                  </div>
-                  <span className="flex-1">#19, Road No. 2B, Chandrapuri Colony, LB Nagar, Hyderabad 500074, Telangana</span>
-                </div>
-                <div className="flex items-center gap-3 group">
-                  <div className="h-6 w-6 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-                    <Phone className="h-3 w-3 text-red-500" />
-                  </div>
-                  <a href="tel:+919494230774" className="hover:text-white transition-colors">
-                    +91 94942 30774
-                  </a>
-                </div>
-                <div className="flex items-center gap-3 group">
-                  <div className="h-6 w-6 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-                    <Mail className="h-3 w-3 text-red-500" />
-                  </div>
-                  <a href="mailto:info@realtynow.in" className="hover:text-white transition-colors">
-                    info@realtynow.in
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            {/* Column 2 */}
-            <div className="lg:col-span-2 lg:col-start-6">
-              <h4 className="font-display text-sm font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-                {t('footer.popularSearches', 'Popular Searches')}
-              </h4>
-              <ul className="mt-6 space-y-4 text-sm text-white/50">
-                {[
-                  { label: t('footer.flatsForSale', 'Flats for Sale'), path: '/search?purpose=Sale' },
-                  { label: t('footer.flatsForRent', 'Flats for Rent'), path: '/search?purpose=Rent' },
-                  { label: t('footer.luxuryVillas', 'Luxury Villas'), path: '/search?type=Villa' },
-                  { label: t('footer.commercialProps', 'Commercial Properties'), path: '/commercial' },
-                  { label: t('footer.plotsLand', 'Plots & Land'), path: '/search?type=Plots' },
-                ].map((link, idx) => (
-                  <li key={idx}>
-                    <Link
-                      to={link.path}
-                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                      className="group flex items-center gap-2 hover:text-white transition-colors"
-                    >
-                      <span className="h-px w-0 bg-red-500 transition-all duration-300 group-hover:w-3"></span>
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Column 3 */}
-            <div className="lg:col-span-3">
-              <h4 className="font-display text-sm font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-                {t('footer.topCities', 'Top Cities')}
-              </h4>
-              <ul className="mt-6 space-y-4 text-sm text-white/50">
-                {[
-                  { label: t('footer.propsJubileeHills', 'Properties in Jubilee Hills'), path: '/search?city=Hyderabad&locality=Jubilee+Hills' },
-                  { label: t('footer.propsBanjaraHills', 'Properties in Banjara Hills'), path: '/search?city=Hyderabad&locality=Banjara+Hills' },
-                  { label: t('footer.propsHitecCity', 'Properties in HITEC City'), path: '/search?city=Hyderabad&locality=HITEC+City' },
-                  { label: t('footer.propsGachibowli', 'Properties in Gachibowli'), path: '/search?city=Hyderabad&locality=Gachibowli' },
-                  { label: t('footer.propsKondapur', 'Properties in Kondapur'), path: '/search?city=Hyderabad&locality=Kondapur' },
-                ].map((link, idx) => (
-                  <li key={idx}>
-                    <Link
-                      to={link.path}
-                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                      className="group flex items-center gap-2 hover:text-white transition-colors"
-                    >
-                      <span className="h-px w-0 bg-red-500 transition-all duration-300 group-hover:w-3"></span>
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Column 4 - Company & Legal Policies */}
-            <div className="lg:col-span-2">
-              <h4 className="font-display text-sm font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-                {t('footer.legalPolicies', 'Company & Legal')}
-              </h4>
-              <ul className="mt-6 space-y-3 text-xs sm:text-sm text-white/50">
-                {[
-                  { label: t('common.aboutUs', 'About Us'), path: '/about-us' },
-                  { label: t('common.contactUs', 'Contact Us'), path: '/contact' },
-                  { label: t('footer.privacy', 'Privacy Policy'), path: '/privacy' },
-                  { label: t('footer.terms', 'Terms & Conditions'), path: '/terms' },
-                  { label: t('footer.refundPolicy', 'Refund & Cancellation Policy'), path: '/refund-policy' },
-                  { label: t('footer.listingPolicy', 'Property Listing Policy'), path: '/listing-policy' },
-                  { label: t('footer.userAgreement', 'User Agreement'), path: '/user-agreement' },
-                  { label: t('footer.cookiePolicy', 'Cookie Policy'), path: '/cookie-policy' },
-                  { label: t('footer.securityStatement', 'Security Statement'), path: '/security-statement' },
-                ].map((link, idx) => (
-                  <li key={idx}>
-                    <Link to={link.path} className="group flex items-center gap-2 hover:text-white transition-colors">
-                      <span className="h-px w-0 bg-red-500 transition-all duration-300 group-hover:w-3"></span>
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-        
-        {/* Bottom Bar */}
-        <div className="border-t border-white/10 bg-black/20 backdrop-blur-sm relative z-10">
-          <div className="container-wide py-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/40 font-light">
-            <div className="flex flex-col gap-2">
-              <p>
-                &copy; {new Date().getFullYear()} Realtynow Properties Private limited. {t('footer.rightsReserved', 'All rights reserved.')}
-              </p>
-              <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/40">
-                <Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
-                <span>•</span>
-                <Link to="/terms" className="hover:text-white transition-colors">Terms & Conditions</Link>
-                <span>•</span>
-                <Link to="/refund-policy" className="hover:text-white transition-colors">Refund & Cancellation</Link>
-                <span>•</span>
-                <Link to="/listing-policy" className="hover:text-white transition-colors">Listing Policy</Link>
-                <span>•</span>
-                <Link to="/user-agreement" className="hover:text-white transition-colors">User Agreement</Link>
-                <span>•</span>
-                <Link to="/cookie-policy" className="hover:text-white transition-colors">Cookie Policy</Link>
-                <span>•</span>
-                <Link to="/security-statement" className="hover:text-white transition-colors">Security Statement</Link>
-              </div>
-            </div>
-            
-            <div className="flex gap-4 items-center">
-              {[
-                { Icon: Facebook, href: '#' },
-                { Icon: XTwitterIcon, href: '#' },
-                { Icon: Instagram, href: '#' },
-                { Icon: Linkedin, href: '#' },
-                { Icon: Youtube, href: '#' },
-              ].map(({ Icon, href }, i) => (
-                <a
-                  key={i}
-                  href={href}
-                  className="text-white/40 hover:text-red-500 transition-colors"
-                >
-                  <Icon className="h-4 w-4" />
-                </a>
-              ))}
-            </div>
-
-            <p className="flex items-center gap-1.5">{t('footer.madeWithLove', 'Made with')} <span className="text-red-500">❤️</span> for Indian Real Estate</p>
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

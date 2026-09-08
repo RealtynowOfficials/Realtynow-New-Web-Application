@@ -71,5 +71,17 @@
   "addToCompare": "তুলনায় যোগ করুন",
   "removeFromCompare": "তুলনা থেকে সরান",
   "bhk": "BHK",
-  "sqft": "বর্গফুট"
+  "sqft": "বর্গফুট",
+  "justNow": "just now",
+  "mAgo": "m ago",
+  "hAgo": "h ago",
+  "dAgo": "d ago",
+  "all": "All",
+  "refresh": "Refresh",
+  "view": "View",
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "approved": "Approved",
+  "rejected": "Rejected"
 }

@@ -71,5 +71,17 @@
   "addToCompare": "સરખામણીમાં ઉમેરો",
   "removeFromCompare": "સરખામણીમાંથી દૂર કરો",
   "bhk": "BHK",
-  "sqft": "ચો.ફૂટ"
+  "sqft": "ચો.ફૂટ",
+  "justNow": "just now",
+  "mAgo": "m ago",
+  "hAgo": "h ago",
+  "dAgo": "d ago",
+  "all": "All",
+  "refresh": "Refresh",
+  "view": "View",
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "approved": "Approved",
+  "rejected": "Rejected"
 }

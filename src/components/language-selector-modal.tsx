@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Globe, Search, Check, X } from 'lucide-react';
 import { useLanguageContext } from '../lib/i18n/language-context';
 
@@ -12,25 +12,54 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({ is
   const [selectedCode, setSelectedCode] = useState<string>(currentLanguage.code);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedCode(currentLanguage.code);
+      setSearchQuery('');
+    }
+  }, [isOpen, currentLanguage.code]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
+  const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredLanguages = supportedLanguages.filter(
     (lang) =>
-      lang.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lang.nativeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lang.code.toLowerCase().includes(searchQuery.toLowerCase()),
+      !normalizedQuery ||
+      lang.name.toLowerCase().includes(normalizedQuery) ||
+      lang.nativeName.toLowerCase().includes(normalizedQuery) ||
+      lang.code.toLowerCase().includes(normalizedQuery),
   );
 
   const handleApply = async () => {
-    if (selectedCode !== currentLanguage.code) {
+    if (selectedCode && selectedCode !== currentLanguage.code) {
       await changeLanguage(selectedCode);
     }
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in">
-      <div className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden border border-slate-100 transform transition-all animate-slide-up">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="language-modal-title"
+    >
+      <div
+        className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden border border-slate-100 transform transition-all animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-white">
           <div className="flex items-center gap-2.5">
@@ -38,7 +67,7 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({ is
               <Globe className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900 leading-tight">
+              <h3 id="language-modal-title" className="text-lg font-bold text-slate-900 leading-tight">
                 {t('common.selectLanguage', 'Select Language')}
               </h3>
               <p className="text-xs text-slate-500">
@@ -48,6 +77,7 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({ is
           </div>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -79,7 +109,7 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({ is
                 onClick={() => setSelectedCode(lang.code)}
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left cursor-pointer ${
                   isSelected
-                    ? 'border-red-600 bg-red-50/60 shadow-sm'
+                    ? 'border-red-600 bg-red-50/60 shadow-sm ring-1 ring-red-600/30'
                     : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/80'
                 }`}
               >

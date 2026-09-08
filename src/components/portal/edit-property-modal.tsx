@@ -1,32 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Camera, Eye, Loader2, PlayCircle, Star, X } from 'lucide-react';
+import { Camera, Loader2, Star, X, Check, Building2, MapPin, Image as ImageIcon, Sliders, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { uploadFile, deleteFile } from '../../lib/storage';
+import { triggerAiVerification, triggerPropertySeoGeneration } from '../../lib/properties';
 import { validatePropertyPrice, validateUnitPrice } from '../../lib/price-validation';
-import { isLandProperty, toAreaUnitCode, getAreaUnitDisplay, getPriceUnitLabel, calculatePlotTotalPrice, AREA_UNIT_OPTIONS } from '../../lib/plot-pricing';
+import { isLandProperty, toAreaUnitCode, getAreaUnitDisplay, calculatePlotTotalPrice } from '../../lib/plot-pricing';
 import { useToast } from '../toast';
 import { Modal, Button, Input, Textarea, Select } from '../ui';
-import { LocationAutocomplete, type SelectedPlace } from '../location-autocomplete';
+import { cn } from '../../lib/utils';
 import {
   type MediaItem,
   AMENITIES_LIST,
   compressImage,
   isVideoUrl,
   MAX_MEDIA_FILES,
-  MAX_IMAGE_FILE_SIZE,
   MAX_VIDEO_FILE_SIZE,
   ACCEPTED_MEDIA_TYPES,
   FieldLabel,
 } from '../../pages/portal/property-form-shared';
 
-// Flat, single-page edit form for an EXISTING property — deliberately not the
-// List Property wizard's multi-step react-hook-form setup. That schema
-// (propertyWizardSchema) is almost entirely `.optional()` at the zod level —
-// real requiredness lives in the wizard's imperative per-step validateStep(),
-// which is tied to wizard navigation state and not reusable here. This modal
-// re-implements the same handful of required-field rules (see validate())
-// instead of dragging in the whole wizard machinery for a one-screen form.
 interface EditPropertyModalProps {
   propertyId: string | null;
   onClose: () => void;
@@ -121,8 +114,11 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
   const toast = useToast();
   const queryClient = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<'basic' | 'specs' | 'location' | 'media'>('basic');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [propertyStatus, setPropertyStatus] = useState<string>('published');
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [existingFeatures, setExistingFeatures] = useState<Record<string, unknown>>({});
   const [form, setForm] = useState<EditFormState>(emptyForm());
@@ -137,7 +133,7 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
   const [mediaUrlInput, setMediaUrlInput] = useState('');
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null);
 
-  // Hero cover banner / video / virtual tour — same "URL or upload" pattern as the wizard
+  // Hero cover banner / video / virtual tour
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
@@ -161,6 +157,7 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
         setLoading(false);
         return;
       }
+      setPropertyStatus(data.status || 'published');
       const features = (data.features as Record<string, unknown>) ?? {};
       const mediaUrls = (data.media_urls as Record<string, unknown>) ?? {};
       setExistingFeatures(features);
@@ -203,29 +200,44 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
         ownership_role: String(features.ownership_role ?? ''),
         rera_number: String(features.rera_number ?? ''),
       });
-      setSelectedAmenities(Array.isArray(data.amenities) ? data.amenities : []);
-      setCoverImageUrl(data.cover_image_url ?? null);
-      setVideoUrl(String((mediaUrls.videos as string[] | undefined)?.[0] ?? ''));
-      setVirtualTourUrl(String(mediaUrls.virtual_tour ?? ''));
 
-      const items = (features.media_items as MediaItem[] | undefined) ?? [];
-      if (items.length > 0) {
-        setMediaItems(items);
-      } else if (Array.isArray(data.images) && data.images.length > 0) {
-        // Rows saved before features.media_items existed only have the flat images[] column.
-        setMediaItems(
-          (data.images as string[]).map((url, i) => ({
+      setSelectedAmenities(Array.isArray(data.amenities) ? (data.amenities as string[]) : []);
+
+      const cover = data.cover_image_url ?? null;
+      setCoverImageUrl(cover);
+      const vids = Array.isArray(mediaUrls.videos) ? (mediaUrls.videos as string[]) : [];
+      setVideoUrl(vids[0] ?? '');
+      setVirtualTourUrl(typeof mediaUrls.virtual_tour === 'string' ? mediaUrls.virtual_tour : '');
+
+      const loadedMedia: MediaItem[] = [];
+      const fMedia = features.media_items;
+      if (Array.isArray(fMedia) && fMedia.length > 0) {
+        for (let i = 0; i < fMedia.length; i++) {
+          const item = fMedia[i] as Record<string, unknown>;
+          if (typeof item.url === 'string') {
+            loadedMedia.push({
+              id: String(item.id ?? crypto.randomUUID()),
+              url: item.url,
+              type: item.type === 'video' ? 'video' : 'image',
+              isCover: item.url === cover || !!item.isCover,
+              order: typeof item.order === 'number' ? item.order : i,
+              bucket: typeof item.bucket === 'string' ? (item.bucket as any) : undefined,
+              path: typeof item.path === 'string' ? item.path : undefined,
+            });
+          }
+        }
+      } else if (Array.isArray(data.images)) {
+        (data.images as string[]).forEach((url, i) => {
+          loadedMedia.push({
             id: crypto.randomUUID(),
             url,
             type: isVideoUrl(url) ? 'video' : 'image',
-            isCover: i === 0,
+            isCover: url === cover || i === 0,
             order: i,
-          })),
-        );
-      } else {
-        setMediaItems([]);
+          });
+        });
       }
-      setErrors({});
+      setMediaItems(loadedMedia);
       setLoading(false);
     })();
     return () => {
@@ -233,169 +245,160 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
     };
   }, [propertyId]);
 
-  // ── Gallery handlers (mirrors list-property.tsx's inline media logic) ──
-  const reindexMedia = (items: MediaItem[]): MediaItem[] => items.map((m, i) => ({ ...m, order: i }));
+  const reindex = (items: MediaItem[]): MediaItem[] => items.map((m, i) => ({ ...m, order: i }));
 
-  const handleGalleryFiles = async (rawFiles: File[]) => {
+  const handleMediaUpload = async (files: FileList | File[]) => {
+    const arr = Array.from(files);
     const room = MAX_MEDIA_FILES - mediaItems.length;
     if (room <= 0) {
-      toast.addToast('error', `Maximum ${MAX_MEDIA_FILES} files allowed`);
+      toast.addToast('error', `Maximum ${MAX_MEDIA_FILES} media files allowed.`);
       return;
     }
-    for (const rawFile of rawFiles.slice(0, room)) {
-      if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type)) {
-        toast.addToast('error', `${rawFile.name}: unsupported file type`);
+    for (const raw of arr.slice(0, room)) {
+      if (!ACCEPTED_MEDIA_TYPES.includes(raw.type)) {
+        toast.addToast('error', `${raw.name}: Unsupported file type.`);
         continue;
       }
-      const isVideo = rawFile.type.startsWith('video/');
-      if (isVideo && rawFile.size > MAX_VIDEO_FILE_SIZE) {
-        toast.addToast('error', `${rawFile.name}: exceeds 20MB limit`);
-        continue;
-      }
-      const file = isVideo ? rawFile : await compressImage(rawFile);
-      if (!isVideo && file.size > MAX_IMAGE_FILE_SIZE) {
-        toast.addToast('error', `${rawFile.name}: still exceeds 5MB after compression`);
-        continue;
-      }
-      const bucket = isVideo ? 'property-videos' : 'property-images';
+      const isVideo = raw.type.startsWith('video/');
+      const file = isVideo ? raw : await compressImage(raw);
       const tempId = crypto.randomUUID();
       const localUrl = URL.createObjectURL(file);
       setMediaItems((prev) =>
-        reindexMedia([...prev, { id: tempId, url: localUrl, type: isVideo ? 'video' : 'image', isCover: prev.length === 0, order: 0, uploading: true }]),
+        reindex([
+          ...prev,
+          {
+            id: tempId,
+            url: localUrl,
+            type: isVideo ? 'video' : 'image',
+            isCover: prev.length === 0 && !isVideo,
+            order: 0,
+            uploading: true,
+          },
+        ])
       );
-      const { url, path, error } = await uploadFile(bucket, file);
-      if (error) {
-        toast.addToast('error', `${file.name}: ${error}`);
-        setMediaItems((prev) => reindexMedia(prev.filter((m) => m.id !== tempId)));
+      const bucket = isVideo ? 'property-videos' : 'property-images';
+      const { url, path, error } = await uploadFile(bucket as any, file);
+      if (error || !url) {
+        toast.addToast('error', `${file.name}: ${error || 'Upload failed'}`);
+        setMediaItems((prev) => reindex(prev.filter((m) => m.id !== tempId)));
         continue;
       }
       setMediaItems((prev) =>
-        reindexMedia(prev.map((m) => (m.id === tempId ? { ...m, url: url!, bucket, path, uploading: false } : m))),
+        reindex(
+          prev.map((m) =>
+            m.id === tempId ? { ...m, url, path, bucket: bucket as any, uploading: false } : m
+          )
+        )
       );
     }
   };
 
   const addMediaUrl = () => {
-    const url = mediaUrlInput.trim();
-    if (!url) return;
-    try {
-      const parsed = new URL(url);
-      if (!/^https?:$/.test(parsed.protocol)) throw new Error();
-    } catch {
-      toast.addToast('error', 'Enter a valid image/video URL');
-      return;
-    }
+    const u = mediaUrlInput.trim();
+    if (!u) return;
+    const isVid = isVideoUrl(u);
+    const isCov = mediaItems.length === 0 && !isVid;
+    if (isCov) setCoverImageUrl(u);
     setMediaItems((prev) =>
-      reindexMedia([...prev, { id: crypto.randomUUID(), url, type: isVideoUrl(url) ? 'video' : 'image', isCover: prev.length === 0, order: 0 }]),
+      reindex([...prev, { id: crypto.randomUUID(), url: u, type: isVid ? 'video' : 'image', isCover: isCov, order: 0 }])
     );
     setMediaUrlInput('');
   };
 
-  const removeMedia = async (item: MediaItem) => {
-    if (item.bucket && item.path) await deleteFile(item.bucket, item.path);
+  const setCoverMedia = (id: string) => {
     setMediaItems((prev) => {
-      const next = prev.filter((m) => m.id !== item.id);
-      if (item.isCover && next.length > 0) next[0] = { ...next[0], isCover: true };
-      return reindexMedia(next);
+      const target = prev.find((m) => m.id === id);
+      if (target) setCoverImageUrl(target.url);
+      return prev.map((m) => ({ ...m, isCover: m.id === id }));
     });
   };
 
-  const setCoverMedia = (id: string) =>
-    setMediaItems((prev) => prev.map((m) => ({ ...m, isCover: m.id === id })));
-
-  const moveMedia = (index: number, dir: -1 | 1) => {
+  const removeMedia = (item: MediaItem) => {
+    if (item.bucket && item.path) deleteFile(item.bucket, item.path).catch(() => {});
     setMediaItems((prev) => {
-      const next = [...prev];
-      const target = index + dir;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
-      return reindexMedia(next);
+      const next = reindex(prev.filter((m) => m.id !== item.id));
+      if (item.isCover) {
+        if (next.length > 0) {
+          next[0].isCover = true;
+          setCoverImageUrl(next[0].url);
+        } else {
+          setCoverImageUrl(null);
+        }
+      }
+      return next;
     });
   };
 
-  // ── Hero cover / video / virtual tour ──
-  const handleCoverUpload = async (rawFile: File) => {
-    if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type) || rawFile.type.startsWith('video/')) {
-      toast.addToast('error', 'Please select a valid image file (JPG, PNG, WEBP)');
-      return;
-    }
+  const moveMedia = (from: number, delta: number) => {
+    const to = from + delta;
+    if (to < 0 || to >= mediaItems.length) return;
+    setMediaItems((prev) => {
+      const copy = [...prev];
+      const [item] = copy.splice(from, 1);
+      copy.splice(to, 0, item);
+      return reindex(copy);
+    });
+  };
+
+  const handleCoverUpload = async (file: File) => {
     setCoverUploading(true);
     try {
-      const file = await compressImage(rawFile);
-      if (file.size > MAX_IMAGE_FILE_SIZE) {
-        toast.addToast('error', `${rawFile.name}: exceeds 5MB limit`);
-        return;
-      }
-      const { url, error } = await uploadFile('property-images', file);
-      if (error) toast.addToast('error', error);
-      else if (url) setCoverImageUrl(url);
+      const compressed = await compressImage(file);
+      const { url, error } = await uploadFile('property-images', compressed);
+      if (error || !url) throw new Error(error || 'Upload failed');
+      setCoverImageUrl(url);
+      setMediaItems((prev) => {
+        const match = prev.find((m) => m.url === url);
+        if (match) return prev.map((m) => ({ ...m, isCover: m.id === match.id }));
+        return reindex([{ id: crypto.randomUUID(), url, type: 'image', isCover: true, order: 0 }, ...prev.map((m) => ({ ...m, isCover: false }))]);
+      });
+      toast.addToast('success', 'Cover image uploaded');
+    } catch (err: any) {
+      toast.addToast('error', err.message || 'Failed to upload cover image');
     } finally {
       setCoverUploading(false);
     }
   };
 
-  const handleVideoUpload = async (rawFile: File) => {
-    if (!rawFile.type.startsWith('video/')) {
-      toast.addToast('error', 'Please select a valid video file (MP4 or MOV)');
-      return;
-    }
-    if (rawFile.size > MAX_VIDEO_FILE_SIZE) {
-      toast.addToast('error', `${rawFile.name}: exceeds ${MAX_VIDEO_FILE_SIZE / 1024 / 1024}MB limit`);
+  const handleVideoUpload = async (file: File) => {
+    if (file.size > MAX_VIDEO_FILE_SIZE) {
+      toast.addToast('error', 'Video exceeds 20MB limit');
       return;
     }
     setVideoUploading(true);
     try {
-      const { url, error } = await uploadFile('property-videos', rawFile);
-      if (error) toast.addToast('error', error);
-      else if (url) setVideoUrl(url);
+      const { url, error } = await uploadFile('property-videos', file);
+      if (error || !url) throw new Error(error || 'Upload failed');
+      setVideoUrl(url);
+      toast.addToast('success', 'Video uploaded');
+    } catch (err: any) {
+      toast.addToast('error', err.message || 'Failed to upload video');
     } finally {
       setVideoUploading(false);
     }
   };
 
-  const handleVirtualTourUpload = async (rawFile: File) => {
-    if (!ACCEPTED_MEDIA_TYPES.includes(rawFile.type)) {
-      toast.addToast('error', 'Unsupported file type for virtual tour');
-      return;
-    }
-    const isVideo = rawFile.type.startsWith('video/');
-    if (isVideo && rawFile.size > MAX_VIDEO_FILE_SIZE) {
-      toast.addToast('error', `${rawFile.name}: exceeds ${MAX_VIDEO_FILE_SIZE / 1024 / 1024}MB limit`);
-      return;
-    }
-    if (!isVideo && rawFile.size > MAX_IMAGE_FILE_SIZE) {
-      toast.addToast('error', `${rawFile.name}: exceeds ${MAX_IMAGE_FILE_SIZE / 1024 / 1024}MB limit`);
-      return;
-    }
+  const handleVirtualTourUpload = async (file: File) => {
     setVirtualTourUploading(true);
     try {
-      const { url, error } = await uploadFile(isVideo ? 'property-videos' : 'property-images', rawFile);
-      if (error) toast.addToast('error', error);
-      else if (url) setVirtualTourUrl(url);
+      const { url, error } = await uploadFile('property-images', file);
+      if (error || !url) throw new Error(error || 'Upload failed');
+      setVirtualTourUrl(url);
+      toast.addToast('success', 'Virtual tour uploaded');
+    } catch (err: any) {
+      toast.addToast('error', err.message || 'Failed to upload virtual tour');
     } finally {
       setVirtualTourUploading(false);
     }
   };
 
-  const handleLocationSelect = (place: SelectedPlace) => {
-    setForm((f) => ({
-      ...f,
-      address: place.address || f.address,
-      city_name: place.city || f.city_name,
-      locality_name: place.locality || f.locality_name,
-      state_name: place.state || f.state_name,
-      pincode: place.postalCode || f.pincode,
-      latitude: place.latitude,
-      longitude: place.longitude,
-      place_id: place.placeId,
-    }));
-  };
-
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
-    if (!form.title.trim() && !form.city_name.trim()) {
-      errs.title = 'Enter a title, or at least a city so one can be generated';
-    }
+    if (!form.title.trim()) errs.title = 'Title is required';
+    if (!form.address.trim()) errs.address = 'Address is required';
+    if (!form.city_name.trim()) errs.city_name = 'City is required';
+    if (!form.locality_name.trim()) errs.locality_name = 'Locality is required';
+
     const isLand = isLandProperty({
       listing_category: form.listing_category,
       property_sub_type: form.property_sub_type,
@@ -403,44 +406,35 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
       area_unit: form.area_unit,
       plot_area: form.plot_area ? parseFloat(form.plot_area) : null,
     });
+
     if (isLand && form.purpose === 'Sale') {
-      const unitPriceError = validateUnitPrice(form.price_per_unit, form.area_unit);
-      if (unitPriceError) errs.price_per_unit = unitPriceError;
-    } else if (form.purpose === 'Sale') {
-      const priceError = validatePropertyPrice(form.price);
-      if (priceError) errs.price = priceError;
+      const unitPriceErr = validateUnitPrice(form.price_per_unit, form.area_unit);
+      if (unitPriceErr) errs.price_per_unit = unitPriceErr;
+      if (!form.plot_area || Number(form.plot_area) <= 0) errs.plot_area = 'Plot area is required';
+    } else {
+      const priceStr = form.purpose === 'Sale' ? form.price : form.rent_amount;
+      const priceErr = validatePropertyPrice(priceStr);
+      if (priceErr) {
+        if (form.purpose === 'Sale') errs.price = priceErr;
+        else errs.rent_amount = priceErr;
+      }
     }
-    if (form.purpose === 'Rent') {
-      const rentError = validatePropertyPrice(form.rent_amount);
-      if (rentError) errs.rent_amount = rentError;
-    }
-    const numericFields: (keyof EditFormState)[] = [
-      'built_up_area', 'carpet_area', 'plot_area', 'price_per_unit', 'floor_number', 'total_floors',
-      'bedrooms', 'bathrooms', 'balconies', 'parking_indoor', 'parking_outdoor', 'age_of_property',
-    ];
-    for (const key of numericFields) {
-      const v = form[key] as string;
-      if (v && Number.isNaN(Number(v))) errs[key] = 'Must be a number';
-    }
-    if (mediaItems.filter((m) => !m.uploading).length === 0) {
-      errs.media = 'Add at least one photo';
-    }
+
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      toast.addToast('error', Object.values(errs)[0]);
+      const first = Object.values(errs)[0];
+      toast.addToast('error', first);
       return false;
     }
     return true;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (shouldSubmit = false) => {
     if (!propertyId) return;
     if (!validate()) return;
     setSaving(true);
     try {
-      const num = (v: string) => (v.trim() ? Number(v) : null);
-      const autoTitle = form.title.trim() || `${form.purpose} - ${form.property_sub_type || form.category || 'Property'}${form.city_name ? ` in ${form.city_name}` : ''}`;
-      const autoAddress = form.address.trim() || [form.locality_name, form.city_name].filter(Boolean).join(', ') || null;
+      const num = (v: string) => (v.trim() === '' || isNaN(Number(v)) ? null : Number(v));
 
       const isLand = isLandProperty({
         listing_category: form.listing_category,
@@ -450,32 +444,43 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
         plot_area: form.plot_area ? parseFloat(form.plot_area) : null,
       });
 
-      const calculatedTotalPrice = isLand && form.plot_area && form.price_per_unit
-        ? calculatePlotTotalPrice(parseFloat(form.plot_area), parseFloat(form.price_per_unit))
-        : null;
+      let priceVal: number | null = null;
+      let rentVal: number | null = null;
+      let pricePerUnitVal: number | null = null;
+      let plotAreaVal: number | null = null;
+      let areaUnitVal: string | null = null;
 
-      // Explicit whitelist of editable columns — never spreads the fetched row, so
-      // system-managed fields (status, approval_status, is_live, owner_id, created_at,
-      // ai_*, verification_*, seo_*, etc.) can never be touched by this update.
+      if (isLand && form.purpose === 'Sale') {
+        pricePerUnitVal = num(form.price_per_unit);
+        plotAreaVal = num(form.plot_area);
+        areaUnitVal = toAreaUnitCode(form.area_unit);
+        if (plotAreaVal && pricePerUnitVal) {
+          priceVal = calculatePlotTotalPrice(plotAreaVal, pricePerUnitVal);
+        }
+      } else {
+        priceVal = form.purpose === 'Sale' ? num(form.price) : 0;
+        rentVal = form.purpose === 'Rent' ? num(form.rent_amount) : null;
+      }
+
       const payload: Record<string, unknown> = {
         purpose: form.purpose,
-        title: autoTitle,
-        description: form.description || null,
-        address: autoAddress,
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        price: priceVal,
+        rent_amount: rentVal,
+        price_per_unit: pricePerUnitVal,
+        area_unit: areaUnitVal,
+        plot_area: plotAreaVal || num(form.plot_area),
+        security_deposit: num(form.security_deposit),
+        address: form.address.trim(),
         state: form.state_name || null,
         pincode: form.pincode || null,
-        place_id: form.place_id || null,
         latitude: form.latitude,
         longitude: form.longitude,
-        price: form.purpose === 'Sale' ? (calculatedTotalPrice ?? num(form.price) ?? 0) : num(form.rent_amount) ?? 0,
-        rent_amount: form.purpose === 'Rent' ? num(form.rent_amount) : null,
-        security_deposit: form.purpose === 'Rent' ? num(form.security_deposit) : null,
-        price_per_unit: isLand && form.price_per_unit ? parseFloat(form.price_per_unit) : null,
-        area_unit: isLand && form.area_unit ? toAreaUnitCode(form.area_unit) : null,
-        plot_area: num(form.plot_area),
-        bedrooms: num(form.bedrooms) ?? 0,
-        bathrooms: num(form.bathrooms) ?? 0,
-        balconies: num(form.balconies) ?? 0,
+        place_id: form.place_id || null,
+        bedrooms: num(form.bedrooms) || 0,
+        bathrooms: num(form.bathrooms) || 0,
+        balconies: num(form.balconies) || 0,
         furnishing: form.furnishing || null,
         floor_number: num(form.floor_number),
         total_floors: num(form.total_floors),
@@ -507,17 +512,35 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
           ownership_role: form.ownership_role || null,
           parking_indoor: Number(form.parking_indoor) || 0,
           parking_outdoor: Number(form.parking_outdoor) || 0,
-          media_items: mediaItems.filter((m) => !m.uploading).map(({ id, url, type, isCover, order, bucket, path }) => ({ id, url, type, isCover, order, bucket, path })),
+          media_items: mediaItems
+            .filter((m) => !m.uploading)
+            .map(({ id, url, type, isCover, order, bucket, path }) => ({ id, url, type, isCover, order, bucket, path })),
         },
       };
+
+      if (shouldSubmit) {
+        payload.status = 'submitted';
+        payload.approval_status = 'Pending';
+        payload.is_draft = false;
+        payload.is_live = false;
+      } else if (propertyStatus === 'draft') {
+        payload.status = 'draft';
+        payload.is_draft = true;
+      }
 
       const { error } = await supabase.from('properties').update(payload).eq('id', propertyId);
       if (error) throw error;
 
+      if (shouldSubmit) {
+        triggerAiVerification(propertyId);
+        triggerPropertySeoGeneration(propertyId);
+      }
+
       queryClient.invalidateQueries({ queryKey: ['portal-my-properties'] });
       queryClient.invalidateQueries({ queryKey: ['agent-properties'] });
       queryClient.invalidateQueries({ queryKey: ['property', propertyId] });
-      toast.addToast('success', 'Property updated successfully');
+
+      toast.addToast('success', shouldSubmit ? 'Property submitted for admin review!' : 'Property updated successfully');
       onClose();
     } catch (err) {
       toast.addToast('error', err instanceof Error ? err.message : 'Failed to update property');
@@ -526,333 +549,321 @@ export function EditPropertyModal({ propertyId, onClose }: EditPropertyModalProp
     }
   };
 
+  const tabs = [
+    { id: 'basic', label: 'Basic & Pricing', icon: Building2 },
+    { id: 'specs', label: 'Specifications', icon: Sliders },
+    { id: 'location', label: 'Location & Amenities', icon: MapPin },
+    { id: 'media', label: 'Photos & Media', icon: ImageIcon },
+  ] as const;
+
   return (
-    <Modal open={!!propertyId} onClose={onClose} title="Edit Property" size="xl">
+    <Modal open={!!propertyId} onClose={onClose} size="lg">
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-navy-400" />
+        <div className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="h-7 w-7 animate-spin text-red-600 mb-2" />
+          <span className="text-xs font-semibold text-navy-500">Loading property details...</span>
         </div>
       ) : loadError ? (
-        <div className="py-10 text-center">
+        <div className="py-10 text-center space-y-3">
           <p className="text-sm font-semibold text-error-600">{loadError}</p>
-          <Button variant="secondary" className="mt-4" onClick={onClose}>Close</Button>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       ) : (
-        <div className="max-h-[75vh] space-y-6 overflow-y-auto pr-1">
-          {/* Basic Information */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Basic Information</h4>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Select label="Purpose" value={form.purpose} onChange={(e) => set('purpose', e.target.value as 'Sale' | 'Rent')}>
-                <option value="Sale">Sale</option>
-                <option value="Rent">Rent</option>
-              </Select>
-              <Input label="Category" value={form.category} onChange={(e) => set('category', e.target.value)} placeholder="Residential, Commercial, Land..." />
-              <Input label="Property Type" value={form.property_sub_type} onChange={(e) => set('property_sub_type', e.target.value)} placeholder="Apartment, Villa, Plot..." />
-              <Input label="Title" value={form.title} error={errors.title} onChange={(e) => set('title', e.target.value)} placeholder="Auto-generated if left blank" />
-              <div className="sm:col-span-2">
-                <Textarea label="Description" rows={4} value={form.description} onChange={(e) => set('description', e.target.value)} />
-              </div>
+        <div className="space-y-4">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-navy-100">
+            <div>
+              <h3 className="font-display text-base sm:text-lg font-bold text-navy-900 flex items-center gap-2">
+                Edit Property Details
+                <span className={cn(
+                  'text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
+                  propertyStatus === 'draft' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                )}>
+                  {propertyStatus}
+                </span>
+              </h3>
+              <p className="text-xs text-navy-400">Update property pricing, specifications, and photos</p>
             </div>
-          </section>
-
-          {/* Pricing */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Pricing</h4>
-            {(() => {
-              const isLand = isLandProperty({
-                listing_category: form.listing_category,
-                property_sub_type: form.property_sub_type,
-                price_per_unit: form.price_per_unit ? parseFloat(form.price_per_unit) : null,
-                area_unit: form.area_unit,
-                plot_area: form.plot_area ? parseFloat(form.plot_area) : null,
-              });
-
-              if (isLand && form.purpose === 'Sale') {
-                return (
-                  <div className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <Input
-                        label={`Price Per ${getPriceUnitLabel(form.area_unit)} (₹) *`}
-                        type="number"
-                        value={form.price_per_unit}
-                        error={errors.price_per_unit}
-                        onChange={(e) => {
-                          set('price_per_unit', e.target.value);
-                          if (errors.price_per_unit) setErrors((errs) => ({ ...errs, price_per_unit: '' }));
-                        }}
-                        placeholder={`e.g. 45000 / ${getPriceUnitLabel(form.area_unit)}`}
-                      />
-                      <Select
-                        label="Area Unit *"
-                        value={form.area_unit}
-                        onChange={(e) => set('area_unit', e.target.value)}
-                      >
-                        {AREA_UNIT_OPTIONS.map((unit) => (
-                          <option key={unit} value={unit}>{unit}</option>
-                        ))}
-                      </Select>
-                      <Input
-                        label={`Total Plot Area (${form.area_unit}) *`}
-                        type="number"
-                        value={form.plot_area}
-                        error={errors.plot_area}
-                        onChange={(e) => set('plot_area', e.target.value)}
-                        placeholder={`e.g. 2400`}
-                      />
-                    </div>
-                    {parseFloat(form.plot_area) > 0 && parseFloat(form.price_per_unit) > 0 && (
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50/60 px-4 py-2.5">
-                        <div className="text-xs font-semibold text-navy-600">
-                          {form.plot_area} {form.area_unit} × ₹{Number(form.price_per_unit).toLocaleString('en-IN')} / {getPriceUnitLabel(form.area_unit)}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold uppercase text-navy-400 mr-2">Estimated Total Value:</span>
-                          <span className="font-display font-bold text-red-600">
-                            ₹{calculatePlotTotalPrice(parseFloat(form.plot_area), parseFloat(form.price_per_unit)).toLocaleString('en-IN')}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              return (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {form.purpose === 'Sale' ? (
-                    <Input
-                      label="Asking Price (₹) *"
-                      type="number"
-                      value={form.price}
-                      error={errors.price}
-                      onChange={(e) => {
-                        set('price', e.target.value);
-                        if (errors.price) setErrors((errs) => ({ ...errs, price: '' }));
-                      }}
-                      placeholder="e.g. 8500000"
-                    />
-                  ) : (
-                    <Input
-                      label="Monthly Rent (₹) *"
-                      type="number"
-                      value={form.rent_amount}
-                      error={errors.rent_amount}
-                      onChange={(e) => {
-                        set('rent_amount', e.target.value);
-                        if (errors.rent_amount) setErrors((errs) => ({ ...errs, rent_amount: '' }));
-                      }}
-                      placeholder="e.g. 25000"
-                    />
-                  )}
-                  {form.purpose === 'Rent' && (
-                    <Input
-                      label="Security Deposit (₹)"
-                      type="number"
-                      value={form.security_deposit}
-                      onChange={(e) => set('security_deposit', e.target.value)}
-                      placeholder="e.g. 50000"
-                    />
-                  )}
-                  <Input
-                    label="Maintenance (₹/mo)"
-                    type="number"
-                    value={form.maintenance}
-                    onChange={(e) => set('maintenance', e.target.value)}
-                    placeholder="e.g. 2000"
-                  />
-                </div>
-              );
-            })()}
-            <label className="mt-3 flex items-center gap-2 text-sm font-medium text-navy-700 cursor-pointer">
-              <input type="checkbox" checked={form.negotiable} onChange={(e) => set('negotiable', e.target.checked)} className="h-4 w-4 rounded border-navy-300 text-red-600 focus:ring-red-400 accent-red-600 cursor-pointer" />
-              Price is negotiable
-            </label>
-          </section>
-
-          {/* Location */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Location</h4>
-            <div className="mb-3">
-              <FieldLabel>Search to update location (optional)</FieldLabel>
-              <LocationAutocomplete onSelect={handleLocationSelect} initialAddress={form.address} initialLat={form.latitude ?? undefined} initialLng={form.longitude ?? undefined} />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Input label="Address" value={form.address} onChange={(e) => set('address', e.target.value)} />
-              </div>
-              <Input label="City" value={form.city_name} onChange={(e) => set('city_name', e.target.value)} />
-              <Input label="Locality" value={form.locality_name} onChange={(e) => set('locality_name', e.target.value)} />
-              <Input label="State" value={form.state_name} onChange={(e) => set('state_name', e.target.value)} />
-              <Input label="Pincode" value={form.pincode} onChange={(e) => set('pincode', e.target.value)} />
-            </div>
-          </section>
-
-          {/* Specifications */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Specifications</h4>
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              <Input label="Bedrooms" type="number" value={form.bedrooms} error={errors.bedrooms} onChange={(e) => set('bedrooms', e.target.value)} />
-              <Input label="Bathrooms" type="number" value={form.bathrooms} error={errors.bathrooms} onChange={(e) => set('bathrooms', e.target.value)} />
-              <Input label="Balconies" type="number" value={form.balconies} error={errors.balconies} onChange={(e) => set('balconies', e.target.value)} />
-              <Input label="Built-up Area (sqft)" type="number" value={form.built_up_area} error={errors.built_up_area} onChange={(e) => set('built_up_area', e.target.value)} />
-              <Input label="Carpet Area (sqft)" type="number" value={form.carpet_area} error={errors.carpet_area} onChange={(e) => set('carpet_area', e.target.value)} />
-              <Input label="Plot Area (sqft)" type="number" value={form.plot_area} error={errors.plot_area} onChange={(e) => set('plot_area', e.target.value)} />
-              <Input label="Floor Number" type="number" value={form.floor_number} error={errors.floor_number} onChange={(e) => set('floor_number', e.target.value)} />
-              <Input label="Total Floors" type="number" value={form.total_floors} error={errors.total_floors} onChange={(e) => set('total_floors', e.target.value)} />
-              <Select label="Facing" value={form.facing} onChange={(e) => set('facing', e.target.value)}>
-                <option value="">Select</option>
-                {FACING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-              </Select>
-              <Select label="Furnishing" value={form.furnishing} onChange={(e) => set('furnishing', e.target.value)}>
-                <option value="">Select</option>
-                {FURNISHING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-              </Select>
-              <Input label="Age of Property (years)" type="number" value={form.age_of_property} error={errors.age_of_property} onChange={(e) => set('age_of_property', e.target.value)} />
-              <Input label="Indoor Parking" type="number" value={form.parking_indoor} error={errors.parking_indoor} onChange={(e) => set('parking_indoor', e.target.value)} />
-              <Input label="Outdoor Parking" type="number" value={form.parking_outdoor} error={errors.parking_outdoor} onChange={(e) => set('parking_outdoor', e.target.value)} />
-              <Input label="Ownership Type" value={form.ownership_type} onChange={(e) => set('ownership_type', e.target.value)} placeholder="Freehold, Leasehold..." />
-            </div>
-          </section>
-
-          {/* Amenities */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Amenities</h4>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {AMENITIES_LIST.map((a) => {
-                const active = selectedAmenities.includes(a.id);
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => toggleAmenity(a.id)}
-                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${active ? 'border-red-400 bg-red-50 text-red-700' : 'border-navy-150 bg-white text-navy-600 hover:bg-navy-50'}`}
-                  >
-                    <span>{a.icon}</span> {a.label}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Ownership & Legal */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-3 text-sm font-bold uppercase tracking-widest text-navy-500">Ownership &amp; Legal</h4>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input label="Ownership Role" value={form.ownership_role} onChange={(e) => set('ownership_role', e.target.value)} placeholder="Owner, Agent, Builder..." />
-              <Input label="RERA Number" value={form.rera_number} onChange={(e) => set('rera_number', e.target.value)} />
-            </div>
-          </section>
-
-          {/* Property Media */}
-          <section className="rounded-2xl border border-navy-100 p-4">
-            <h4 className="mb-1 text-sm font-bold uppercase tracking-widest text-navy-500">Property Gallery</h4>
-            {errors.media && <p className="mb-2 text-xs font-semibold text-error-600">{errors.media}</p>}
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); handleGalleryFiles(Array.from(e.dataTransfer.files)); }}
-              className="rounded-2xl border-2 border-dashed border-navy-200 bg-navy-50/30 p-6 text-center"
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full p-1.5 text-navy-400 hover:bg-navy-100 transition-colors"
             >
-              <Camera className="mx-auto mb-2 h-6 w-6 text-navy-400" />
-              <p className="mb-1 text-xs font-semibold text-navy-700">Drag &amp; drop or upload photos/videos</p>
-              <p className="mb-3 text-[11px] text-navy-400">Images: Max 5MB each. Videos: Max 20MB each. Up to {MAX_MEDIA_FILES} files ({mediaItems.length}/{MAX_MEDIA_FILES})</p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-navy-900 px-4 py-2 text-xs font-semibold text-white hover:bg-navy-800">
-                <Camera className="h-3.5 w-3.5" /> Choose Files
-                <input type="file" multiple accept={ACCEPTED_MEDIA_TYPES.join(',')} className="hidden" onChange={(e) => { handleGalleryFiles(Array.from(e.target.files || [])); e.target.value = ''; }} />
-              </label>
-            </div>
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-            <div className="mt-3 flex gap-2">
-              <Input value={mediaUrlInput} onChange={(e) => setMediaUrlInput(e.target.value)} placeholder="Or paste image/video URL..." onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addMediaUrl(); } }} className="flex-1" />
-              <Button type="button" variant="secondary" onClick={addMediaUrl}>Add</Button>
-            </div>
+          {/* Compact Tab Pills */}
+          <div className="flex items-center gap-1.5 p-1 bg-navy-50 rounded-xl border border-navy-100 overflow-x-auto">
+            {tabs.map((t) => {
+              const isActive = activeTab === t.id;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setActiveTab(t.id)}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap',
+                    isActive ? 'bg-white text-red-600 shadow-xs' : 'text-navy-500 hover:text-navy-900'
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
-            {mediaItems.length > 0 && (
-              <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">
-                {mediaItems.map((item, i) => (
-                  <div key={item.id} className="group relative aspect-square overflow-hidden rounded-xl bg-navy-100 shadow-sm">
-                    {item.type === 'video' ? <video src={item.url} className="h-full w-full object-cover" muted /> : <img src={item.url} alt="" className="h-full w-full object-cover" />}
-                    {item.type === 'video' && <PlayCircle className="pointer-events-none absolute inset-0 m-auto h-7 w-7 text-white drop-shadow" />}
-                    {item.uploading && <div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader2 className="h-5 w-5 animate-spin text-white" /></div>}
-                    {item.isCover && !item.uploading && (
-                      <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-bold text-white shadow"><Star className="h-2.5 w-2.5 fill-current" /> Cover</span>
-                    )}
-                    {!item.uploading && (
-                      <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/0 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100">
-                        <button type="button" onClick={() => setPreviewItem(item)} title="Preview" className="grid h-6 w-6 place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white"><Eye className="h-3 w-3" /></button>
-                        {!item.isCover && <button type="button" onClick={() => setCoverMedia(item.id)} title="Set as cover" className="grid h-6 w-6 place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white"><Star className="h-3 w-3" /></button>}
-                        <button type="button" onClick={() => moveMedia(i, -1)} title="Move left" className="grid h-6 w-6 place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white">‹</button>
-                        <button type="button" onClick={() => moveMedia(i, 1)} title="Move right" className="grid h-6 w-6 place-items-center rounded-full bg-white/90 text-navy-800 hover:bg-white">›</button>
-                        <button type="button" onClick={() => removeMedia(item)} title="Delete" className="grid h-6 w-6 place-items-center rounded-full bg-white/90 text-red-600 hover:bg-red-600 hover:text-white"><X className="h-3 w-3" /></button>
-                      </div>
-                    )}
+          {/* Tab Content Container */}
+          <div className="max-h-[60vh] overflow-y-auto space-y-4 pr-1">
+            {/* TAB 1: BASIC & PRICING */}
+            {activeTab === 'basic' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-navy-50/40 border border-navy-100 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-navy-600">Basic Information</h4>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Select label="Purpose" value={form.purpose} onChange={(e) => set('purpose', e.target.value as 'Sale' | 'Rent')}>
+                      <option value="Sale">Sale</option>
+                      <option value="Rent">Rent</option>
+                    </Select>
+                    <Input label="Category" value={form.category} onChange={(e) => set('category', e.target.value)} placeholder="Apartment, House, Plot..." />
+                    <div className="sm:col-span-2">
+                      <Input label="Property Title *" value={form.title} error={errors.title} onChange={(e) => set('title', e.target.value)} placeholder="Title..." />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Textarea label="Description" rows={3} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Highlight key features..." />
+                    </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-red-50/30 border border-red-100 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-red-700">Pricing & Commercials</h4>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {form.purpose === 'Sale' ? (
+                      <Input
+                        label="Asking Price (₹) *"
+                        type="number"
+                        value={form.price}
+                        error={errors.price}
+                        onChange={(e) => set('price', e.target.value)}
+                        placeholder="e.g. 8500000"
+                      />
+                    ) : (
+                      <Input
+                        label="Monthly Rent (₹) *"
+                        type="number"
+                        value={form.rent_amount}
+                        error={errors.rent_amount}
+                        onChange={(e) => set('rent_amount', e.target.value)}
+                        placeholder="e.g. 25000"
+                      />
+                    )}
+                    <Input label="Security Deposit (₹)" type="number" value={form.security_deposit} onChange={(e) => set('security_deposit', e.target.value)} placeholder="e.g. 50000" />
+                    <Input label="Maintenance (₹/mo)" type="number" value={form.maintenance} onChange={(e) => set('maintenance', e.target.value)} placeholder="e.g. 2500" />
+                    <div className="flex items-center gap-2 pt-6">
+                      <input
+                        type="checkbox"
+                        id="modal-negotiable"
+                        checked={form.negotiable}
+                        onChange={(e) => set('negotiable', e.target.checked)}
+                        className="h-4 w-4 rounded text-red-600 focus:ring-red-500"
+                      />
+                      <label htmlFor="modal-negotiable" className="text-xs font-semibold text-navy-800">
+                        Price is Negotiable
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
-          </section>
 
-          {/* Hero Cover Banner */}
-          <section className="rounded-2xl border border-navy-100 bg-navy-50/30 p-4 mb-4">
-            <FieldLabel>COVER IMAGE</FieldLabel>
-            <p className="mb-3 text-xs text-navy-400">Upload the main cover image for your property. Supported: JPG, JPEG, PNG, WEBP. Maximum size: 5 MB.</p>
-            <div className="flex flex-col items-start gap-3 sm:flex-row">
-              <div className="w-full flex-1 space-y-2">
-                <Input value={coverImageUrl ?? ''} onChange={(e) => setCoverImageUrl(e.target.value || null)} placeholder="Paste cover image URL..." />
-                <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 py-2 text-xs font-semibold text-navy-700 shadow-sm hover:bg-navy-50 ${coverUploading ? 'pointer-events-none opacity-60' : ''}`}>
-                  <Camera className="h-3.5 w-3.5" /> {coverUploading ? 'Uploading…' : 'Upload Cover Image'}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCoverUpload(f); e.target.value = ''; }} />
-                </label>
-              </div>
-              {coverImageUrl && (
-                <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-navy-150 bg-navy-100">
-                  <img src={coverImageUrl} alt="Cover preview" className="h-full w-full object-cover" />
-                  <button type="button" onClick={() => setCoverImageUrl(null)} className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"><X className="h-3 w-3" /></button>
+            {/* TAB 2: SPECIFICATIONS */}
+            {activeTab === 'specs' && (
+              <div className="p-4 rounded-2xl bg-navy-50/40 border border-navy-100 space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-navy-600">Layout & Areas</h4>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Input label="Bedrooms" type="number" value={form.bedrooms} onChange={(e) => set('bedrooms', e.target.value)} placeholder="e.g. 3" />
+                  <Input label="Bathrooms" type="number" value={form.bathrooms} onChange={(e) => set('bathrooms', e.target.value)} placeholder="e.g. 2" />
+                  <Input label="Balconies" type="number" value={form.balconies} onChange={(e) => set('balconies', e.target.value)} placeholder="e.g. 1" />
                 </div>
-              )}
-            </div>
-          </section>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Input label="Carpet Area (Sq.Ft)" type="number" value={form.carpet_area} onChange={(e) => set('carpet_area', e.target.value)} placeholder="e.g. 1450" />
+                  <Input label="Built-Up Area" type="number" value={form.built_up_area} onChange={(e) => set('built_up_area', e.target.value)} placeholder="e.g. 1750" />
+                  <Input label="Plot Area" type="number" value={form.plot_area} onChange={(e) => set('plot_area', e.target.value)} placeholder="e.g. 200" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Input label="Floor No." type="number" value={form.floor_number} onChange={(e) => set('floor_number', e.target.value)} placeholder="e.g. 4" />
+                  <Input label="Total Floors" type="number" value={form.total_floors} onChange={(e) => set('total_floors', e.target.value)} placeholder="e.g. 12" />
+                  <Select label="Facing" value={form.facing} onChange={(e) => set('facing', e.target.value)}>
+                    <option value="">Select Facing</option>
+                    {FACING_OPTIONS.map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Select label="Furnishing Status" value={form.furnishing} onChange={(e) => set('furnishing', e.target.value)}>
+                    <option value="">Select Furnishing</option>
+                    {FURNISHING_OPTIONS.map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </Select>
+                  <Input label="RERA Number" value={form.rera_number} onChange={(e) => set('rera_number', e.target.value)} placeholder="e.g. P51800047XXX" />
+                </div>
+              </div>
+            )}
 
-          {/* Video + Virtual Tour */}
-          <section className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-navy-100 p-4">
-              <FieldLabel>Property Video (YouTube / Vimeo)</FieldLabel>
-              <Input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/..." className="mb-2" />
-              <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 py-2 text-xs font-semibold text-navy-700 shadow-sm hover:bg-navy-50 ${videoUploading ? 'pointer-events-none opacity-60' : ''}`}>
-                <Camera className="h-3.5 w-3.5" /> {videoUploading ? 'Uploading…' : 'Upload Video File'}
-                <input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ''; }} />
-              </label>
-              {videoUrl && !videoUrl.includes('youtube') && !videoUrl.includes('vimeo') && (
-                <video src={videoUrl} controls className="mt-2 h-28 w-full rounded-xl bg-black object-contain" />
-              )}
-            </div>
-            <div className="rounded-2xl border border-navy-100 p-4">
-              <FieldLabel>Virtual Tour URL</FieldLabel>
-              <Input value={virtualTourUrl} onChange={(e) => setVirtualTourUrl(e.target.value)} placeholder="https://..." className="mb-2" />
-              <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 py-2 text-xs font-semibold text-navy-700 shadow-sm hover:bg-navy-50 ${virtualTourUploading ? 'pointer-events-none opacity-60' : ''}`}>
-                <Camera className="h-3.5 w-3.5" /> {virtualTourUploading ? 'Uploading…' : 'Upload Virtual Tour File'}
-                <input type="file" accept={ACCEPTED_MEDIA_TYPES.join(',')} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVirtualTourUpload(f); e.target.value = ''; }} />
-              </label>
-              {virtualTourUrl && <p className="mt-2 truncate text-xs font-medium text-navy-500">📎 {virtualTourUrl}</p>}
-            </div>
-          </section>
+            {/* TAB 3: LOCATION & AMENITIES */}
+            {activeTab === 'location' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-navy-50/40 border border-navy-100 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-navy-600">Location</h4>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Input label="City *" value={form.city_name} error={errors.city_name} onChange={(e) => set('city_name', e.target.value)} placeholder="e.g. Hyderabad" />
+                    <Input label="Locality *" value={form.locality_name} error={errors.locality_name} onChange={(e) => set('locality_name', e.target.value)} placeholder="e.g. Gachibowli" />
+                    <div className="sm:col-span-2">
+                      <Input label="Full Address *" value={form.address} error={errors.address} onChange={(e) => set('address', e.target.value)} placeholder="Door / Flat, Tower, Street..." />
+                    </div>
+                  </div>
+                </div>
 
-          {previewItem && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6" onClick={() => setPreviewItem(null)}>
-              {previewItem.type === 'video' ? (
-                <video src={previewItem.url} controls autoPlay className="max-h-[80vh] max-w-full rounded-xl" onClick={(e) => e.stopPropagation()} />
-              ) : (
-                <img src={previewItem.url} alt="" className="max-h-[80vh] max-w-full rounded-xl" onClick={(e) => e.stopPropagation()} />
-              )}
+                <div className="p-4 rounded-2xl bg-navy-50/40 border border-navy-100 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-navy-600">Amenities ({selectedAmenities.length})</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {AMENITIES_LIST.map((a) => {
+                      const isSelected = selectedAmenities.includes(a.id);
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => toggleAmenity(a.id)}
+                          className={cn(
+                            'flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold text-left transition-all',
+                            isSelected ? 'border-red-500 bg-red-50 text-red-700 font-bold' : 'border-navy-150 bg-white text-navy-700 hover:border-navy-250'
+                          )}
+                        >
+                          <span>{a.icon}</span>
+                          <span className="truncate">{a.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: PHOTOS & MEDIA */}
+            {activeTab === 'media' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-navy-50/40 border border-navy-100 space-y-3">
+                  <FieldLabel>Photo Gallery ({mediaItems.length}/{MAX_MEDIA_FILES})</FieldLabel>
+                  <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-navy-200 rounded-xl cursor-pointer hover:bg-navy-50 transition-colors">
+                    <Camera className="h-6 w-6 text-navy-400 mb-1" />
+                    <span className="text-xs font-bold text-navy-800">Add Property Photos</span>
+                    <span className="text-[10px] text-navy-400">JPG, PNG, WEBP up to 5MB</span>
+                    <input type="file" multiple accept={ACCEPTED_MEDIA_TYPES.join(',')} className="hidden" onChange={(e) => { if (e.target.files) handleMediaUpload(e.target.files); e.target.value = ''; }} />
+                  </label>
+
+                  {mediaItems.length > 0 && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-2">
+                      {mediaItems.map((item, i) => (
+                        <div key={item.id} className="relative aspect-square rounded-xl overflow-hidden bg-navy-100 border border-navy-200 group">
+                          <img src={item.url} alt="" className="h-full w-full object-cover" />
+                          {item.isCover && (
+                            <span className="absolute top-1 left-1 bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
+                              Cover
+                            </span>
+                          )}
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                            {!item.isCover && (
+                              <button type="button" onClick={() => setCoverMedia(item.id)} className="h-6 w-6 rounded-full bg-white text-navy-800 flex items-center justify-center">
+                                <Star className="h-3 w-3" />
+                              </button>
+                            )}
+                            <button type="button" onClick={() => removeMedia(item)} className="h-6 w-6 rounded-full bg-white text-red-600 flex items-center justify-center">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Submission Confirmation Prompt */}
+          {showConfirmSubmit && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 mt-3 text-left space-y-3">
+              <div className="flex items-start gap-2.5">
+                <Send className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-amber-900">Submit Property for Admin Approval?</h4>
+                  <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                    Once submitted, this property will be sent to the admin team for verification and will move to Pending review.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={saving}
+                  onClick={() => setShowConfirmSubmit(false)}
+                >
+                  Cancel / Keep Draft
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  disabled={saving}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold"
+                  onClick={async () => {
+                    setShowConfirmSubmit(false);
+                    await handleSave(true);
+                  }}
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+                  Confirm & Submit
+                </Button>
+              </div>
             </div>
           )}
-        </div>
-      )}
 
-      {!loading && !loadError && (
-        <div className="mt-6 flex justify-end gap-3 border-t border-navy-100 pt-4">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} loading={saving}>Save Changes</Button>
+          {/* Modal Footer */}
+          <div className="pt-3 border-t border-navy-100 flex items-center justify-between gap-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={saving} className="rounded-xl text-xs font-bold">
+              Cancel
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleSave(false)}
+                disabled={saving}
+                className="rounded-xl text-xs font-bold"
+              >
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+                Save Changes
+              </Button>
+              {propertyStatus === 'draft' && !showConfirmSubmit && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => setShowConfirmSubmit(true)}
+                  disabled={saving}
+                  className="rounded-xl text-xs font-bold bg-gradient-to-r from-red-600 to-rose-600 text-white"
+                >
+                  <Send className="h-3.5 w-3.5 mr-1" />
+                  Submit for Review
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </Modal>

@@ -1,9 +1,15 @@
 {
-  "postProperty": "संपत्ति सूचीबद्ध करें",
+  "postProperty": "ఆస్తిని పోస్ట్ చేయండి",
   "title": "Listing Title",
   "selectCity": "Select City",
   "selectLocality": "Select Locality",
   "selectType": "Select Property Type",
   "uploadImages": "Upload Property Images",
-  "generateAI": "Generate AI Description"
+  "generateAI": "Generate AI Description",
+  "firstName": "మొదటి పేరు",
+  "lastName": "చివరి పేరు",
+  "mobileNumber": "మొబైల్ నంబర్ (10 అంకెలు)",
+  "email": "ఇమెయిల్ చిరునామా",
+  "password": "పాస్‌వర్డ్",
+  "submit": "సమర్పించండి"
 }
